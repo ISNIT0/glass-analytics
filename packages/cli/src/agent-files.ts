@@ -1,0 +1,121 @@
+/**
+ * Files written for coding agents by `glass init`, so the next agent session
+ * already knows how to track events and query Glass:
+ *
+ * - AGENTS.md (and CLAUDE.md if present): a marked section, replaced on re-run
+ * - .claude/skills/glass/SKILL.md: recipes, loaded when relevant
+ * - .mcp.json (and .cursor/mcp.json if .cursor/ exists): the MCP server
+ */
+
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { EVENT_NAMING_GUIDE } from '@glass/core/instrument';
+
+const START = '<!-- glass:start -->';
+const END = '<!-- glass:end -->';
+
+export interface AgentFileOptions {
+  root: string;
+  host: string;
+  project: string;
+  /** The install snippet for this project's framework. */
+  snippet: { file: string; code: string };
+}
+
+export function agentsSection(o: AgentFileOptions): string {
+  return `${START}
+## Analytics (Glass)
+
+This project uses Glass for analytics, session replay, feature flags and A/B tests. It runs in our own Cloudflare account; deployment config is in \`.glass/\`.
+
+- Dashboard: ${o.host}/app (print the key with \`npx glass key\`)
+- MCP server \`glass\` is configured in \`.mcp.json\`. Start with the \`overview\` tool, then \`list_events\` for exact event names.
+- Terminal: \`npx glass query web --from -7d\`, \`npx glass sql "SELECT …"\`, \`npx glass --help\`
+
+Tracking (project \`${o.project}\`):
+- Install (${o.snippet.file}): \`${o.snippet.code.split('\n').pop()}\`
+- Custom events: \`glass.capture('signup_completed', { plan: 'pro' })\`. After login: \`glass.identify(user.id, { plan })\`.
+- ${EVENT_NAMING_GUIDE}
+- After adding an event and deploying, confirm it arrives: \`npx glass events <name>\`. Document it: \`npx glass events <name> --describe "…"\`.
+- Feature flags: \`glass.flag('key')\` returns "on", a variant key, or null. Create with \`npx glass flags set <key> --rollout 10\`.
+${END}`;
+}
+
+/** Insert or replace the Glass section in a markdown file. */
+export function upsertSection(path: string, section: string, createIfMissing: boolean): boolean {
+  const exists = existsSync(path);
+  if (!exists && !createIfMissing) return false;
+  const current = exists ? readFileSync(path, 'utf8') : '';
+  const pattern = new RegExp(`${START}[\\s\\S]*?${END}`);
+  const next = pattern.test(current) ? current.replace(pattern, section) : `${current.trimEnd()}${current.trim() ? '\n\n' : ''}${section}\n`;
+  writeFileSync(path, next);
+  return true;
+}
+
+export function skillFile(o: AgentFileOptions): string {
+  return `---
+name: glass
+description: Use when adding analytics events, answering questions about traffic, signups, conversion, retention or errors, debugging what a user did in a session, or creating feature flags and A/B tests in this project.
+---
+
+# Glass analytics
+
+Glass is deployed at ${o.host} (project \`${o.project}\`). Prefer the \`glass\` MCP tools; the CLI (\`npx glass …\`) does the same things.
+
+## Answer a question about usage
+
+1. \`overview\` for the period (visitors, top pages, errors, events that moved).
+2. \`list_events\` to get exact event names — never guess them.
+3. The right query: \`query_trends\` (counts over time), \`query_funnel\` (conversion through steps), \`query_retention\` (who comes back), \`sql\` when nothing else fits.
+4. Report numbers with the dashboard link and SQL from the result.
+
+## Add tracking
+
+1. \`instrument\` with the event name returns the exact code for this framework.
+2. ${EVENT_NAMING_GUIDE}
+3. After deploying, \`describe_event\` (or \`npx glass events <name>\`) confirms events arrive with the expected properties.
+4. \`define_event\` documents what the event means.
+
+## Debug a user problem
+
+1. \`query_funnel\` with a breakdown (browser, device, utm_source) to find where people drop.
+2. \`list_replays\` with \`with_errors: true\` (or a \`person\`) to find affected sessions.
+3. \`summarise_replay\` to read what happened: pages, labelled clicks, rage clicks, errors.
+
+## Run an experiment
+
+1. \`create_experiment\` with a goal event (creates a control/test flag).
+2. In code: \`if (glass.flag('<key>') === 'test') { … }\` — reading the flag records the exposure.
+3. \`update_experiment\` with \`action: "start"\`; later \`experiment_results\`; ship the winner with \`action: "ship"\`.
+`;
+}
+
+export function upsertMcpConfig(path: string): boolean {
+  let config: { mcpServers?: Record<string, unknown> } = {};
+  if (existsSync(path)) {
+    try {
+      config = JSON.parse(readFileSync(path, 'utf8')) as typeof config;
+    } catch {
+      return false; // don't overwrite a file we can't parse
+    }
+  }
+  config.mcpServers = { ...config.mcpServers, glass: { command: 'npx', args: ['-y', 'glass', 'mcp'] } };
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, `${JSON.stringify(config, null, 2)}\n`);
+  return true;
+}
+
+/** Write all agent files. Returns the paths written, relative to root. */
+export function writeAgentFiles(o: AgentFileOptions): string[] {
+  const written: string[] = [];
+  const section = agentsSection(o);
+  if (upsertSection(join(o.root, 'AGENTS.md'), section, true)) written.push('AGENTS.md');
+  if (upsertSection(join(o.root, 'CLAUDE.md'), section, false)) written.push('CLAUDE.md');
+  const skill = join(o.root, '.claude', 'skills', 'glass', 'SKILL.md');
+  mkdirSync(dirname(skill), { recursive: true });
+  writeFileSync(skill, skillFile(o));
+  written.push('.claude/skills/glass/SKILL.md');
+  if (upsertMcpConfig(join(o.root, '.mcp.json'))) written.push('.mcp.json');
+  if (existsSync(join(o.root, '.cursor')) && upsertMcpConfig(join(o.root, '.cursor', 'mcp.json'))) written.push('.cursor/mcp.json');
+  return written;
+}

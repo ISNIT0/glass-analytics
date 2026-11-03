@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Your notes, Inkwell</title>
+  <script defer src="{{GLASS_HOST}}/s.js" data-project="demo" data-replay-sample-rate="1"></script>
+  <link rel="stylesheet" href="data:text/css,body{font:16px/1.5 system-ui;max-width:640px;margin:40px auto;padding:0 20px}a,button{font:inherit}button{padding:8px 14px;border-radius:8px;border:1px solid %23999;background:white;cursor:pointer}nav a{margin-right:12px}">
+</head>
+<body>
+  <nav><a href="/">Home</a><a href="/app">Notes</a></nav>
+  <h1>Your notes</h1>
+  <p>Upgrade to export your notes as PDF.</p>
+  <!-- A deliberately broken button, to show errors and replays. -->
+  <button id="pay" aria-label="Upgrade now">Upgrade now</button>
+  <script>
+    document.getElementById('pay').addEventListener('click', () => {
+      const card = undefined;
+      window.glass?.capture('upgrade_clicked');
+      return card.number; // TypeError: shows up in Errors and in the replay transcript
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,160 @@
+/**
+ * The `glass` CLI.
+ *
+ *   npx glass init              deploy into your Cloudflare account
+ *   npx glass query web         ask questions from the terminal
+ *   npx glass mcp               stdio MCP server for coding agents
+ *
+ * Every command accepts --json for machine-readable output.
+ */
+
+import { parseArgs } from 'node:util';
+import { GLASS_VERSION } from '@glass/core/version';
+import { events, person, projects, query, replays, sql } from './commands/data.ts';
+import { experiments, flags as flagCommands } from './commands/flags.ts';
+import { init } from './commands/init.ts';
+import { mcpBridge } from './commands/mcp.ts';
+import { key, status, upgrade } from './commands/upgrade.ts';
+import { UsageError } from './config.ts';
+import { color, fail, line } from './output.ts';
+
+const HELP = `${color.bold('glass')} ${GLASS_VERSION}: agent-first analytics in your own Cloudflare account
+
+${color.bold('Set up')}
+  glass init                     Deploy Glass and wire it into this project
+    --token <token>                Cloudflare API token (or CLOUDFLARE_API_TOKEN)
+    --account <id>                 Cloudflare account id (or CLOUDFLARE_ACCOUNT_ID)
+    --project <id>                 Project id (default: package.json name)
+    --name <name>                  Worker and resource name (default: glass)
+    --route <host/_glass/*>        Also serve from your domain, e.g. acme.com/_glass/*
+    --lake                         Store events in Iceberg on R2 (Pipelines + Basin SQL)
+    --eu                           Keep data in the EU jurisdiction
+    --no-replay                    Skip session replay storage
+    --no-agent-files               Don't write AGENTS.md, SKILL.md or .mcp.json
+    --dry-run                      Show what would be created
+  glass upgrade                  Redeploy this version of Glass and migrate
+  glass status                   Check the deployment end to end
+  glass key [--read]             Print the dashboard URL and API key
+
+${color.bold('Ask questions')}
+  glass query web [--from -7d]
+  glass query trends --event signup_completed [--math unique_persons] [--interval week] [--breakdown browser]
+  glass query funnel --steps '$pageview,signup_started,signup_completed' [--window 1d] [--breakdown utm_source]
+  glass query retention --cohort signup_completed [--return '$pageview'] [--period week]
+  glass query <kind> --spec '<json>'   Any spec; see GET /api/schema
+    common: --from, --to, --where prop=value[,…], --project, --sql (print SQL)
+  glass sql "SELECT …"           Read-only SQL against your events
+  glass events [name]            Tracked events, or one event's properties
+    --describe "<text>"            Document an event
+  glass person <id> [--delete]   One person's properties and events (or erase them)
+  glass replays [--errors]       Recorded sessions
+  glass replays summary <id>     A session as a text transcript
+
+${color.bold('Flags and experiments')}
+  glass flags [list]
+  glass flags set <key> [--rollout 25] [--variants control:50,test:50] [--enable|--disable] [--rules '<json>']
+  glass flags delete <key>
+  glass experiments [list]
+  glass experiments create <key> --goal <event> [--flag <key>] [--hypothesis "…"]
+  glass experiments start|stop <key>
+  glass experiments ship <key> <variant>
+  glass experiments results <key>
+
+${color.bold('Agents')}
+  glass mcp                      MCP server over stdio (what .mcp.json runs)
+
+Environment: GLASS_HOST, GLASS_API_KEY and GLASS_PROJECT override .glass/ settings.
+Docs: https://github.com/ISNIT0/glass-analytics`;
+
+// Every option must be declared: undeclared options would parse as booleans and lose their values.
+const STRING_OPTIONS = [
+  'token', 'account', 'project', 'name', 'route',
+  'from', 'to', 'event', 'math', 'property', 'interval', 'breakdown', 'steps', 'window',
+  'cohort', 'return', 'period', 'periods', 'spec', 'where', 'limit', 'days', 'describe', 'person',
+  'rollout', 'variants', 'rules', 'description', 'goal', 'flag', 'value', 'hypothesis', 'variant',
+];
+const BOOLEAN_OPTIONS = ['json', 'lake', 'eu', 'no-replay', 'no-agent-files', 'dry-run', 'read', 'sql', 'errors', 'enable', 'disable', 'delete'];
+
+export async function main(argv: string[]): Promise<void> {
+  const { values, positionals } = parseArgs({
+    args: argv,
+    allowPositionals: true,
+    strict: false,
+    options: {
+      ...Object.fromEntries(STRING_OPTIONS.map((o) => [o, { type: 'string' as const }])),
+      ...Object.fromEntries(BOOLEAN_OPTIONS.map((o) => [o, { type: 'boolean' as const }])),
+      help: { type: 'boolean', short: 'h' },
+      version: { type: 'boolean', short: 'v' },
+    },
+  });
+  const flags = values as Record<string, string | boolean | undefined>;
+  const [command, sub, arg, ...rest] = positionals;
+
+  if (flags.version) return line(GLASS_VERSION);
+  if (!command || command === 'help' || (flags.help && !command)) return line(HELP);
+
+  switch (command) {
+    case 'init':
+      return init({
+        token: str(flags.token),
+        account: str(flags.account),
+        project: str(flags.project),
+        name: str(flags.name),
+        route: str(flags.route),
+        lake: flags.lake === true ? true : undefined,
+        eu: flags.eu === true ? true : undefined,
+        replay: flags['no-replay'] ? false : undefined,
+        agentFiles: flags['no-agent-files'] ? false : undefined,
+        dryRun: Boolean(flags['dry-run']),
+        json: Boolean(flags.json),
+      });
+    case 'upgrade':
+    case 'deploy':
+      return upgrade({ token: str(flags.token), json: Boolean(flags.json) });
+    case 'status':
+    case 'doctor':
+      return status({ json: Boolean(flags.json) });
+    case 'key':
+      return key({ read: Boolean(flags.read), json: Boolean(flags.json) });
+    case 'query':
+      return query(sub, flags);
+    case 'sql':
+      return sql(sub, flags);
+    case 'events':
+      return events(sub, flags);
+    case 'person':
+    case 'persons':
+      return person(sub, flags);
+    case 'replays':
+      return replays(sub, arg, flags);
+    case 'projects':
+      return projects(sub, arg, flags);
+    case 'flags':
+      return flagCommands(sub, arg, flags);
+    case 'experiments':
+      return experiments(sub, arg, rest, flags);
+    case 'mcp':
+      return mcpBridge();
+    default:
+      throw new UsageError(`Unknown command "${command}".`, 'Run `glass help` for the list of commands.');
+  }
+}
+
+function str(v: string | boolean | undefined): string | undefined {
+  return typeof v === 'string' ? v : undefined;
+}
+
+// Run when executed directly (the published bin, or `node packages/cli/src/index.ts`).
+const invoked = process.argv[1] ?? '';
+if (/glass(\.js)?$|cli[\\/]src[\\/]index\.ts$/.test(invoked)) {
+  main(process.argv.slice(2)).catch((err: unknown) => {
+    if (err instanceof UsageError) {
+      fail(err.message);
+      if (err.hint) process.stderr.write(`  ${err.hint}\n`);
+    } else {
+      fail(err instanceof Error ? err.message : String(err));
+      if (process.env.GLASS_DEBUG && err instanceof Error) process.stderr.write(`${err.stack}\n`);
+    }
+    process.exitCode = 1;
+  });
+}

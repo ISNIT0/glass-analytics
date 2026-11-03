@@ -1,0 +1,31 @@
+{
+  // One typecheck for the whole repo. Builds are done by esbuild (scripts/build.ts);
+  // tsc only checks types, so `noEmit` is on and `.ts` import specifiers are allowed.
+  // Node runs the .ts sources directly in tests via built-in type stripping, which is
+  // why `erasableSyntaxOnly` forbids enums, namespaces and parameter properties.
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "types": ["node"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "exactOptionalPropertyTypes": false,
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": [
+    "packages/*/src/**/*.ts",
+    "packages/*/test/**/*.ts",
+    "scripts/**/*.ts",
+    "e2e/**/*.ts"
+  ]
+}

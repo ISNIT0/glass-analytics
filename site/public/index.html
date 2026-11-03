@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Glass: analytics that lives in your Cloudflare account</title>
+  <meta name="description" content="Open-source web analytics, product analytics, session replay and A/B tests. Deployed into your own Cloudflare account with npx glass init, and queried by your coding agent.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+  <!-- For agents: this page as markdown, and full install instructions. -->
+  <link rel="alternate" type="text/markdown" href="/index.md" title="Glass (markdown)">
+  <link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt">
+  <!-- Glass measures this page with Glass. Uncomment with your own Worker URL:
+  <script defer src="https://glass.example.workers.dev/s.js" data-project="glass-site" data-persistence="cookieless"></script> -->
+  <script defer src="/main.js"></script>
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/"><span class="mark" aria-hidden="true"></span>Glass</a>
+    <nav aria-label="Site">
+      <a href="https://github.com/ISNIT0/glass-analytics/tree/main/docs">Docs</a>
+      <a href="https://github.com/ISNIT0/glass-analytics">GitHub</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="hero-copy">
+        <h1>Analytics that lives in your Cloudflare account.</h1>
+        <p class="lede">Web analytics, product analytics, session replay and A/B tests. Deployed by one command, queried by your coding agent, and open source. Your data never leaves your account.</p>
+
+        <div class="install">
+          <div class="command" data-copy-source>
+            <code><span class="prompt" aria-hidden="true">$ </span>npx glass init</code>
+            <button type="button" class="copy" data-copy="npx glass init" data-event="install_command_copied">Copy</button>
+          </div>
+          <p class="install-alt">Or paste this into your coding agent:</p>
+          <div class="agent-prompt">
+            <p id="agent-prompt">Add Glass analytics to this project: run <code>npx glass init</code>, track signups and purchases, then show me today's visitors.</p>
+            <button type="button" class="copy" data-copy-from="agent-prompt" data-event="agent_prompt_copied">Copy</button>
+          </div>
+          <p class="fine">Needs a Cloudflare account and an API token. Takes about two minutes.</p>
+        </div>
+      </div>
+
+      <figure class="pane-stack" aria-labelledby="pane-caption">
+        <pre class="pane-sql" aria-hidden="true"><code>WITH s1 AS (
+  SELECT pid, MIN(ts_ms) AS t1 FROM ev
+  WHERE event = '$pageview'
+    AND path = '/pricing'
+  GROUP BY pid
+),
+s2 AS (
+  SELECT s1.pid, s1.t1, MIN(ev.ts_ms) AS t2
+  FROM s1 JOIN ev ON ev.pid = s1.pid
+  WHERE ev.event = 'signup_started'
+    AND ev.ts_ms > s1.t1
+    AND ev.ts_ms &lt;= s1.t1 + 604800000
+  GROUP BY s1.pid, s1.t1
+),
+s3 AS ( … )
+SELECT 1 AS step, COUNT(*) AS n FROM s1
+UNION ALL …</code></pre>
+        <div class="pane">
+          <p class="pane-title">Pricing to signup, last 30 days</p>
+          <ol class="pane-funnel">
+            <li><span>Viewed pricing</span><span class="num">4,812</span><span class="bar" style="--w: 100%"></span></li>
+            <li><span>Started signup</span><span class="num">1,394</span><span class="bar" style="--w: 29%"></span></li>
+            <li><span>Completed signup</span><span class="num">1,041</span><span class="bar" style="--w: 21.6%"></span></li>
+          </ol>
+          <p class="pane-note">Biggest drop-off: into "Started signup" (29.0% of the previous step).</p>
+        </div>
+        <figcaption id="pane-caption">Every number in Glass comes with the SQL that produced it. Your agent gets both.</figcaption>
+      </figure>
+    </section>
+
+    <section class="steps" aria-labelledby="how">
+      <h2 id="how">From zero to answers</h2>
+      <ol>
+        <li>
+          <h3>Run one command</h3>
+          <p><code>npx glass init</code> creates a D1 database, an R2 bucket and a Worker in your account, then writes instructions and an MCP server config for your agent.</p>
+        </li>
+        <li>
+          <h3>Add one script tag</h3>
+          <p>Or let your agent do it. Pageviews, clicks, errors and web vitals arrive straight away; custom events are one line.</p>
+        </li>
+        <li>
+          <h3>Ask your agent</h3>
+          <p>"Why did signups drop last week?" It runs funnels, reads session replays as text, and can ship a fix behind an experiment.</p>
+        </li>
+      </ol>
+    </section>
+
+    <section class="transcript-section" aria-labelledby="example">
+      <h2 id="example">What that looks like</h2>
+      <p class="section-lede">An example session in a coding agent with the Glass MCP server.</p>
+      <div class="transcript" role="log" aria-label="Example agent session">
+        <p class="turn user">Signups dropped this week. Find out why.</p>
+        <p class="turn tool">overview <span>from: "-7d"</span></p>
+        <p class="turn result">Visitors steady (+2%). signup_completed down 31% vs previous period.</p>
+        <p class="turn tool">query_funnel <span>steps: pricing, signup_started, signup_completed; breakdown: browser</span></p>
+        <p class="turn result">Safari: 412 started, 38 completed (9.2%). Chrome: 64.0%. Firefox: 61.5%.</p>
+        <p class="turn tool">list_replays <span>with_errors: true</span></p>
+        <p class="turn tool">summarise_replay <span>session: "01a2…"</span></p>
+        <p class="turn result">00:41 Rage-clicked "Create account" (button) ×5<br>00:42 ERROR TypeError: crypto.randomUUID is not a function</p>
+        <p class="turn agent">Safari 15 has no <code>crypto.randomUUID</code>, so the signup form throws on submit. I've replaced it with a fallback and added a test. Want me to ship it behind a flag and watch the funnel?</p>
+      </div>
+    </section>
+
+    <section class="pillars" aria-labelledby="tools">
+      <h2 id="tools">Four tools on one event stream</h2>
+      <dl>
+        <div class="pillar green">
+          <dt>Web analytics</dt>
+          <dd>Visitors, pages, referrers, campaigns, countries and devices, plus errors and Core Web Vitals. Cookieless mode needs no consent banner.</dd>
+        </div>
+        <div class="pillar cobalt">
+          <dt>Product analytics</dt>
+          <dd>Trends, funnels and retention on any event, filtered or broken down by any event or person property. Raw SQL when you need it.</dd>
+        </div>
+        <div class="pillar amber">
+          <dt>Session replay</dt>
+          <dd>rrweb recordings with inputs masked, and a text transcript of each session (clicks, rage clicks, errors) that agents can read.</dd>
+        </div>
+        <div class="pillar ruby">
+          <dt>Flags and experiments</dt>
+          <dd>Feature flags evaluated in your Worker, and A/B tests with Bayesian results and sample-ratio checks.</dd>
+        </div>
+      </dl>
+    </section>
+
+    <section class="split" aria-labelledby="own">
+      <div>
+        <h2 id="own">Your account, your data</h2>
+        <ul class="checks">
+          <li>Events, people and recordings live in your D1 database and R2 bucket. Glass has no servers.</li>
+          <li>Keep data in the EU with <code>glass init --eu</code>.</li>
+          <li>Delete a person and everything about them with one call.</li>
+          <li>This page loads nothing from third parties. Neither does the Glass dashboard.</li>
+        </ul>
+      </div>
+      <div>
+        <h2>What it costs</h2>
+        <p>Your Cloudflare bill, nothing else. The default D1 store runs on the Workers free plan for small sites; Workers Paid ($5 a month) raises the limits. For large volumes, <code>--lake</code> streams events to Iceberg tables in R2 and queries them with Basin SQL.</p>
+      </div>
+    </section>
+
+    <section aria-labelledby="compare">
+      <h2 id="compare">How it compares</h2>
+      <div class="table-wrap">
+        <table class="compare">
+          <thead>
+            <tr><th scope="col"></th><th scope="col">Glass</th><th scope="col">Google Analytics</th><th scope="col">PostHog</th><th scope="col">Plausible</th></tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">Where your data lives</th><td>Your Cloudflare account</td><td>Google</td><td>PostHog cloud, or your servers</td><td>Plausible cloud, or your servers</td></tr>
+            <tr><th scope="row">Open source</th><td>Yes (MIT)</td><td>No</td><td>Yes</td><td>Yes</td></tr>
+            <tr><th scope="row">Session replay</th><td>Yes</td><td>No</td><td>Yes</td><td>No</td></tr>
+            <tr><th scope="row">Feature flags and A/B tests</th><td>Yes</td><td>No</td><td>Yes</td><td>No</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="fine">From each product's public documentation. Spotted something out of date? Open an issue on GitHub.</p>
+    </section>
+
+    <section class="oss" aria-labelledby="open">
+      <h2 id="open">Open source, and yours to change</h2>
+      <p>Glass is MIT licensed. The Worker that runs in your account is the code in the repository, so you can read it, fork it, or add a query type, an MCP tool or a storage engine. The contributing guide shows where each lives.</p>
+      <p><a class="button" href="https://github.com/ISNIT0/glass-analytics">Read the code on GitHub</a> <a class="button ghost" href="https://github.com/ISNIT0/glass-analytics/blob/main/CONTRIBUTING.md">Contributing guide</a></p>
+    </section>
+
+    <section class="closing" aria-labelledby="start">
+      <h2 id="start">Start in your terminal</h2>
+      <div class="command">
+        <code><span class="prompt" aria-hidden="true">$ </span>npx glass init</code>
+        <button type="button" class="copy" data-copy="npx glass init" data-event="install_command_copied">Copy</button>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <p>Glass is MIT licensed. <a href="https://github.com/ISNIT0/glass-analytics">GitHub</a> <a href="https://github.com/ISNIT0/glass-analytics/tree/main/docs">Docs</a> <a href="/llms.txt">llms.txt</a></p>
+  </footer>
+</body>
+</html>

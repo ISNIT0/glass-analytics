@@ -1,0 +1,26 @@
+// Configuration for running the Glass Worker locally with `pnpm dev:wrangler`
+// (from the repo root, after `pnpm build`). Deployments made by `glass init`
+// generate their own config in the user's `.glass/` folder; see
+// packages/cli/src/cloudflare/config.ts.
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "glass-dev",
+  "main": "dist/worker.js",
+  "compatibility_date": "2026-10-01",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "glass",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [{ "binding": "REPLAYS", "bucket_name": "glass-replays" }],
+  "vars": {
+    "GLASS_STORE": "d1"
+  },
+  "triggers": { "crons": ["17 3 * * *"] }
+  // Secrets: create a .dev.vars file containing
+  //   GLASS_ADMIN_KEY=dev-admin-key
+  //   GLASS_READ_KEY=dev-read-key
+}

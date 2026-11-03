@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign up, Inkwell</title>
+  <script defer src="{{GLASS_HOST}}/s.js" data-project="demo" data-replay-sample-rate="1"></script>
+  <link rel="stylesheet" href="data:text/css,body{font:16px/1.5 system-ui;max-width:640px;margin:40px auto;padding:0 20px}a,button,input{font:inherit}input{padding:6px 10px;margin-right:8px}button{padding:8px 14px;border-radius:8px;border:1px solid %23999;background:white;cursor:pointer}nav a{margin-right:12px}">
+</head>
+<body>
+  <nav><a href="/">Home</a><a href="/pricing">Pricing</a><a href="/signup">Sign up</a></nav>
+  <h1>Create your account</h1>
+  <form id="signup">
+    <input id="email" type="email" placeholder="Email" required>
+    <button type="submit">Create account</button>
+  </form>
+  <script>
+    document.getElementById('signup').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const plan = new URLSearchParams(location.search).get('plan') ?? 'free';
+      const userId = 'user-' + document.getElementById('email').value.split('@')[0];
+      // Link this browser to the user, then record the conversion.
+      window.glass.identify(userId, { plan });
+      window.glass.capture('signup_completed', { plan });
+      await window.glass.flush();
+      location.href = '/app';
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,145 @@
+/**
+ * The JSON API under `/api`. Every route is a thin wrapper over GlassService;
+ * agents can discover everything from `GET /api`.
+ */
+
+import { INSIGHTS, experimentSpec, filterSchema, sqlSpec } from '@glass/core/insights';
+import { GLASS_VERSION } from '@glass/core/version';
+import { z } from 'zod/v4';
+import { type Scope, requireScope } from './auth.ts';
+import type { Env } from './env.ts';
+import { HttpError, Router, json, readJson } from './http.ts';
+import { TOOLS } from './mcp/tools.ts';
+import type { GlassService } from './service.ts';
+
+const NUMERIC = new Set(['days', 'limit']);
+const BOOLEAN = new Set(['with_errors', 'compare']);
+
+/** Query string → plain object, converting the few numeric/boolean parameters. */
+function params(url: URL): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of url.searchParams) {
+    out[key] = NUMERIC.has(key) ? Number(value) : BOOLEAN.has(key) ? value === 'true' : value;
+  }
+  return out;
+}
+
+export function apiRouter(service: GlassService, env: Env, request: Request): Router {
+  const scope: Scope = requireScope(request, env, 'read');
+  const admin = () => {
+    if (scope !== 'admin') throw new HttpError(403, 'This action needs the admin key');
+  };
+  const body = () => readJson<Record<string, unknown>>(request);
+  const r = new Router();
+
+  r.get('/api', () =>
+    json({
+      name: 'Glass',
+      version: GLASS_VERSION,
+      scope,
+      store: service.store.kind,
+      docs: `${service.baseUrl}/llms.txt`,
+      schemas: `${service.baseUrl}/api/schema`,
+      mcp: `${service.baseUrl}/mcp`,
+      endpoints: {
+        'GET /api/overview?from=-30d': 'Headline stats and movers',
+        'POST /api/query': `Run an insight: { "kind": ${Object.keys(INSIGHTS).map((k) => `"${k}"`).join(' | ')}, ...spec }`,
+        'POST /api/sql': 'Read-only SQL: { "query": "SELECT ..." }',
+        'GET /api/events': 'Tracked events',
+        'GET /api/events/:name': 'Properties of an event',
+        'PUT /api/events/:name': 'Document an event (admin)',
+        'GET /api/persons?query=': 'Search identified people',
+        'GET /api/persons/:id': 'One person with events and replays',
+        'PATCH /api/persons/:id': 'Set person properties (admin)',
+        'DELETE /api/persons/:id': 'Erase a person (admin)',
+        'GET /api/replays?with_errors=true': 'Recorded sessions',
+        'GET /api/replays/:session/summary': 'Text transcript of a session',
+        'GET /api/replays/:session/events': 'Raw rrweb events',
+        'GET /api/flags': 'Feature flags',
+        'PUT /api/flags/:key': 'Create/update a flag (admin)',
+        'DELETE /api/flags/:key': 'Delete a flag (admin)',
+        'GET /api/experiments': 'Experiments',
+        'POST /api/experiments': 'Create an experiment (admin)',
+        'GET /api/experiments/:key': 'Experiment with results',
+        'POST /api/experiments/:key/start|stop|ship': 'Change experiment state (admin)',
+        'GET /api/projects': 'Projects',
+        'POST /api/projects': 'Create a project (admin)',
+        'GET /api/instrument?event=&framework=': 'Tracking code for an event',
+      },
+      tools: TOOLS.map((t) => t.name),
+    }),
+  );
+
+  r.get('/api/schema', () =>
+    json({
+      filter: z.toJSONSchema(filterSchema, { io: 'input' }),
+      sql: z.toJSONSchema(sqlSpec, { io: 'input' }),
+      experiment: z.toJSONSchema(experimentSpec, { io: 'input' }),
+      insights: Object.fromEntries(
+        Object.entries(INSIGHTS).map(([kind, def]) => [kind, { description: def.description, schema: z.toJSONSchema(def.schema, { io: 'input' }) }]),
+      ),
+    }),
+  );
+
+  r.get('/api/projects', async () => json(await service.listProjects()));
+  r.post('/api/projects', async () => {
+    admin();
+    return json(await service.createProject(await body()), { status: 201 });
+  });
+
+  r.get('/api/overview', async ({ url }) => json(await service.overview(params(url))));
+  r.post('/api/query', async () => {
+    const { kind, ...spec } = await body();
+    return json(await service.runInsight(String(kind ?? ''), spec));
+  });
+  r.post('/api/sql', async () => json(await service.sql(await body())));
+
+  r.get('/api/events', async ({ url }) => json(await service.listEvents(params(url))));
+  r.get('/api/events/:name', async ({ url, params: p }) => json(await service.describeEvent({ ...params(url), event: p.name })));
+  r.put('/api/events/:name', async ({ params: p }) => {
+    admin();
+    return json(await service.defineEvent({ ...(await body()), event: p.name }));
+  });
+
+  r.get('/api/persons', async ({ url }) => json(await service.searchPersons(params(url))));
+  r.get('/api/persons/:id', async ({ url, params: p }) => json(await service.getPerson({ ...params(url), person_id: p.id })));
+  r.patch('/api/persons/:id', async ({ params: p }) => {
+    admin();
+    const b = await body();
+    return json(await service.setPersonProperties({ project: b.project, person_id: p.id, properties: b.properties ?? b }));
+  });
+  r.delete('/api/persons/:id', async ({ url, params: p }) => {
+    admin();
+    return json(await service.deletePerson({ ...params(url), person_id: p.id }));
+  });
+
+  r.get('/api/replays', async ({ url }) => json(await service.listReplays(params(url))));
+  r.get('/api/replays/:id/summary', async ({ url, params: p }) => json(await service.summariseReplay({ ...params(url), session_id: p.id })));
+  r.get('/api/replays/:id/events', async ({ url, params: p }) => json(await service.replayEvents({ ...params(url), session_id: p.id })));
+
+  r.get('/api/flags', async ({ url }) => json(await service.listFlags(params(url))));
+  r.get('/api/flags/:key', async ({ url, params: p }) => json(await service.getFlag({ ...params(url), key: p.key })));
+  r.put('/api/flags/:key', async ({ params: p }) => {
+    admin();
+    return json(await service.saveFlag({ ...(await body()), key: p.key }));
+  });
+  r.delete('/api/flags/:key', async ({ url, params: p }) => {
+    admin();
+    return json(await service.deleteFlag({ ...params(url), key: p.key }));
+  });
+
+  r.get('/api/experiments', async ({ url }) => json(await service.listExperiments(params(url))));
+  r.post('/api/experiments', async () => {
+    admin();
+    return json(await service.createExperiment(await body()), { status: 201 });
+  });
+  r.get('/api/experiments/:key', async ({ url, params: p }) => json(await service.experimentResults({ ...params(url), key: p.key })));
+  r.post('/api/experiments/:key/:action', async ({ url, params: p }) => {
+    admin();
+    const b = await body();
+    return json(await service.updateExperiment({ ...params(url), ...b, key: p.key, action: p.action }));
+  });
+
+  r.get('/api/instrument', ({ url }) => json(service.instrument(params(url))));
+  return r;
+}

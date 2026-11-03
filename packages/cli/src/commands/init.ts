@@ -1,0 +1,248 @@
+/**
+ * `glass init` — deploy Glass into your Cloudflare account and wire it into
+ * the current project. Safe to re-run: every step finds existing resources.
+ */
+
+import { readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { randomToken } from '@glass/core/ids';
+import { FRAMEWORKS, detectFramework } from '@glass/core/instrument';
+import { GLASS_VERSION } from '@glass/core/version';
+import { writeAgentFiles } from '../agent-files.ts';
+import { call } from '../client.ts';
+import {
+  type ProvisionReport,
+  TOKEN_SCOPES,
+  deploy,
+  ensureBucket,
+  ensureD1,
+  ensureLake,
+  installWorkerFiles,
+  listAccounts,
+  migrate,
+  putSecrets,
+  renderWranglerConfig,
+} from '../cloudflare/provision.ts';
+import { type Wrangler, WranglerError, createWrangler } from '../cloudflare/wrangler.ts';
+import { type Credentials, type GlassConfig, UsageError, glassDir, loadConfig, loadCredentials, projectRoot, saveConfig, saveCredentials } from '../config.ts';
+import { color, line, ok, printJson, skip } from '../output.ts';
+import { ask, choose } from '../prompt.ts';
+import { workerBundleDir } from './upgrade.ts';
+
+export interface InitOptions {
+  token?: string;
+  account?: string;
+  project?: string;
+  name?: string;
+  lake?: boolean;
+  eu?: boolean;
+  route?: string;
+  replay?: boolean;
+  agentFiles?: boolean;
+  dryRun?: boolean;
+  json?: boolean;
+}
+
+/** Dependencies, injectable for tests. */
+export interface InitDeps {
+  wrangler?: (auth: { token: string; accountId: string }, cwd: string) => Wrangler;
+  fetcher?: typeof fetch;
+  root?: string;
+  /** Directory containing worker.js and migrations/ (defaults to the bundled Worker). */
+  bundleDir?: string;
+  /** Delay between health checks, ms. */
+  pollMs?: number;
+}
+
+function defaultProjectId(root: string): string {
+  try {
+    const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as { name?: string };
+    const id = (pkg.name ?? '').replace(/^@[^/]+\//, '').toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
+    if (id) return id.slice(0, 63);
+  } catch {
+    // no package.json
+  }
+  return 'default';
+}
+
+function readPackageJson(root: string): { dependencies?: Record<string, string>; devDependencies?: Record<string, string> } | null {
+  try {
+    return JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+async function waitForWorker(host: string, key: string, fetcher: typeof fetch, pollMs: number): Promise<void> {
+  // New deployments and secrets take a few seconds to propagate.
+  for (let attempt = 0; attempt < 20; attempt++) {
+    try {
+      const res = await fetcher(`${host}/api`, { headers: { Authorization: `Bearer ${key}` } });
+      if (res.ok) return;
+    } catch {
+      // not reachable yet
+    }
+    await new Promise((r) => setTimeout(r, pollMs));
+  }
+  throw new UsageError(`The Worker at ${host} did not come up.`, 'Run `glass status` in a minute; if it persists, `glass upgrade` redeploys.');
+}
+
+export async function init(options: InitOptions, deps: InitDeps = {}): Promise<void> {
+  const root = deps.root ?? projectRoot();
+  const dir = glassDir(root);
+  const fetcher = deps.fetcher ?? fetch;
+  const existing = loadConfig(root);
+  const quiet = Boolean(options.json);
+  const steps: { status: string; label: string; detail?: string }[] = [];
+  const report: ProvisionReport = (status, label, detail) => {
+    steps.push({ status, label, detail });
+    if (quiet) return;
+    const text = `${label}${detail ? color.dim(` (${detail})`) : status === 'created' ? color.dim(' (created)') : ''}`;
+    if (status === 'skipped') skip(text);
+    else ok(text);
+  };
+
+  if (!quiet) {
+    line(color.bold('Glass: analytics in your own Cloudflare account'));
+    line();
+  }
+
+  const token = options.token ?? process.env.CLOUDFLARE_API_TOKEN ?? (await ask('Cloudflare API token', { flag: '--token (or CLOUDFLARE_API_TOKEN)', secret: true }));
+  if (!token) throw new UsageError('A Cloudflare API token is required.', `Create one at https://dash.cloudflare.com/profile/api-tokens with: ${TOKEN_SCOPES.join('; ')}.`);
+  const accounts = await listAccounts(token, fetcher).catch((err: unknown) => {
+    throw new UsageError(err instanceof Error ? err.message : String(err), 'Check the token, or create a new one at https://dash.cloudflare.com/profile/api-tokens');
+  });
+  const accountId = options.account ?? process.env.CLOUDFLARE_ACCOUNT_ID ?? existing?.accountId;
+  const account = accountId
+    ? (accounts.find((a) => a.id === accountId) ?? { id: accountId, name: accountId })
+    : await choose('Which account?', accounts, (a) => `${a.name} (${a.id})`, '--account');
+  if (!account) throw new UsageError('This token cannot see any Cloudflare accounts.', `Give it account permissions: ${TOKEN_SCOPES.join('; ')}.`);
+  report('ok', `Cloudflare token works (account ${account.name})`);
+
+  const name = options.name ?? existing?.name ?? 'glass';
+  const project = options.project ?? existing?.project ?? defaultProjectId(root);
+  const lake = options.lake ?? existing?.store === 'lake';
+  const eu = options.eu ?? existing?.eu ?? false;
+  const route = options.route ?? existing?.route ?? null;
+  const wantReplay = options.replay ?? true;
+
+  if (options.dryRun) {
+    const plan = {
+      account: account.id,
+      worker: name,
+      project,
+      store: lake ? 'lake' : 'd1',
+      eu,
+      route,
+      replay: wantReplay,
+      resources: [
+        `D1 database "${name}"`,
+        wantReplay ? `R2 bucket "${name}-replays"` : null,
+        lake ? `R2 bucket "${name}-data" with data catalog, Pipelines streams/sinks for events and identities` : null,
+      ].filter(Boolean),
+      files: ['.glass/config.json', '.glass/wrangler.jsonc', '.glass/worker.js', '.glass/migrations/', '.glass/credentials.json (git-ignored)', 'AGENTS.md', '.claude/skills/glass/SKILL.md', '.mcp.json'],
+    };
+    if (quiet) printJson(plan);
+    else {
+      line();
+      line('Dry run: nothing was changed. This would create:');
+      for (const r of plan.resources) line(`  ${r}`);
+      line(`and deploy Worker "${name}" for project "${project}", writing ${plan.files.join(', ')}.`);
+    }
+    return;
+  }
+
+  const wrangler = (deps.wrangler ?? createWrangler)({ token, accountId: account.id }, root);
+  try {
+    const d1 = await ensureD1(wrangler, name, eu, report);
+    let replay: GlassConfig['replay'] = null;
+    if (wantReplay) {
+      const bucket = `${name}-replays`;
+      if (await ensureBucket(wrangler, bucket, eu, report, 'session replay')) replay = { bucket };
+      else report('skipped', 'Session replay', 'R2 is not enabled on this account; enable it in the Cloudflare dashboard, then run `glass upgrade`');
+    } else {
+      report('skipped', 'Session replay', 'disabled with --no-replay');
+    }
+    const lakeConfig = lake ? await ensureLake(wrangler, { bucket: `${name}-data`, namespace: 'glass', token, eu, dir }, report) : null;
+
+    const config: GlassConfig = {
+      name,
+      accountId: account.id,
+      host: existing?.host ?? '',
+      project,
+      store: lake ? 'lake' : 'd1',
+      d1,
+      replay,
+      lake: lakeConfig,
+      route,
+      eu,
+      version: GLASS_VERSION,
+    };
+    const credentials: Credentials = loadCredentials(root) ?? { adminKey: randomToken(), readKey: randomToken(), saltSecret: randomToken() };
+    installWorkerFiles(dir, deps.bundleDir ?? workerBundleDir());
+    const configPath = join(dir, 'wrangler.jsonc');
+    writeFileSync(configPath, renderWranglerConfig(config));
+    saveCredentials(credentials, root);
+
+    await migrate(wrangler, d1.name, configPath);
+    report('ok', 'Database migrated');
+    const url = await deploy(wrangler, configPath);
+    config.host = route ? `https://${route.replace(/\/\*$/, '')}` : (url ?? config.host);
+    if (!config.host) throw new UsageError('Deployed, but could not read the Worker URL.', 'Enable a workers.dev subdomain in the Cloudflare dashboard (Workers & Pages), then run `glass upgrade`.');
+    await putSecrets(
+      wrangler,
+      {
+        GLASS_ADMIN_KEY: credentials.adminKey,
+        GLASS_READ_KEY: credentials.readKey,
+        GLASS_SALT_SECRET: credentials.saltSecret,
+        ...(lake ? { CF_API_TOKEN: token } : {}),
+      },
+      configPath,
+      dir,
+    );
+    saveConfig(config, root);
+    report('ok', `Worker deployed at ${config.host}`);
+
+    await waitForWorker(config.host, credentials.adminKey, fetcher, deps.pollMs ?? 1500);
+    await call('POST', '/api/projects', { id: project }, { host: config.host, key: credentials.adminKey, fetcher });
+    report('ok', `Project "${project}" ready`);
+    const auth = { host: config.host, key: credentials.adminKey, fetcher };
+    await call('POST', '/e', { project, events: [{ id: randomToken(16), event: '$install_check', ts: Date.now(), distinct_id: 'glass-cli' }] }, auth);
+    if (lake) {
+      report('ok', 'Test event sent', 'the lake shows events within about two minutes');
+    } else {
+      const seen = await call<{ events: { event: string }[] }>('GET', `/api/events?days=1&project=${encodeURIComponent(project)}`, undefined, auth);
+      if (seen.events.some((e) => e.event === '$install_check')) report('ok', 'Test event received');
+      else report('skipped', 'Test event not visible yet', 'run `glass status` in a minute');
+    }
+
+    const framework = detectFramework(readPackageJson(root));
+    const snippet = FRAMEWORKS[framework].snippet({ host: config.host, project });
+    const written = options.agentFiles === false ? [] : writeAgentFiles({ root, host: config.host, project, snippet });
+
+    if (quiet) {
+      printJson({ host: config.host, project, dashboard: `${config.host}/app`, framework, snippet, written, steps });
+      return;
+    }
+    line();
+    line(color.bold(`Next: add Glass to your site (${FRAMEWORKS[framework].name})`));
+    line();
+    line(color.dim(`  ${snippet.file}`));
+    for (const l of snippet.code.split('\n')) line(`  ${l}`);
+    line();
+    line(`Then track what matters: ${color.cyan("glass.capture('signup_completed', { plan: 'pro' })")}`);
+    if (written.length) {
+      line();
+      line(color.bold('Written for your agent'));
+      for (const f of written) line(`  ${f}`);
+      line(`  .glass/ ${color.dim('(deployment config: commit it; credentials.json is git-ignored)')}`);
+    }
+    line();
+    line(`Dashboard: ${color.cyan(`${config.host}/app`)} ${color.dim('(sign in with the key from `npx glass key`)')}`);
+  } catch (err) {
+    if (err instanceof WranglerError && /Authentication|not authorized|permission|10000|9109/i.test(err.output)) {
+      throw new UsageError(`Cloudflare refused a request: ${err.message.split('\n')[0]}`, `The API token needs: ${TOKEN_SCOPES.join('; ')}.`);
+    }
+    throw err;
+  }
+}

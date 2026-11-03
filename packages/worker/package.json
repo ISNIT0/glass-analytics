@@ -1,0 +1,21 @@
+{
+  "name": "@glass/worker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The Glass Cloudflare Worker: ingest, query API, MCP server, flags, replay and the dashboard.",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "migrate:local": "wrangler d1 migrations apply glass --local"
+  },
+  "dependencies": {
+    "@glass/core": "workspace:*",
+    "zod": "^3.25.0 || ^4.0.0"
+  },
+  "devDependencies": {
+    "@glass/dashboard": "workspace:*",
+    "@glass/web": "workspace:*",
+    "rrweb": "^2.0.0",
+    "wrangler": "^4.0.0"
+  }
+}

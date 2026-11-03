@@ -1,0 +1,30 @@
+# Glass
+
+> Open-source, agent-first analytics that runs in your own Cloudflare account: web analytics, product analytics (trends, funnels, retention), session replay with text transcripts, feature flags and A/B tests. Installed with one command and queried through MCP, a CLI or HTTP.
+
+## Install (for coding agents)
+
+1. In the user's project, run `npx glass init`. It needs a Cloudflare API token, from the `CLOUDFLARE_API_TOKEN` environment variable or the `--token` flag. In non-interactive shells, also pass `--account <id>` when the token can see several accounts.
+   - Optional flags: `--project <id>`, `--eu` (EU data jurisdiction), `--lake` (Iceberg storage for high volume), `--route example.com/_glass/*` (first-party serving), `--dry-run`.
+   - Token permissions: Account › Workers Scripts › Edit; Account › D1 › Edit; Account › Workers R2 Storage › Edit; Account › Account Settings › Read.
+2. `glass init` prints the install snippet for the detected framework. Add it to the site's <head>, for example:
+   `<script defer src="https://glass.<subdomain>.workers.dev/s.js" data-project="<project>"></script>`
+3. Track key events: `glass.capture('signup_completed', { plan: 'pro' })`; after login `glass.identify(user.id, { plan })`.
+   Name events object_action in snake_case past tense. Put details in properties, never personal data.
+4. Verify: `npx glass status`, then `npx glass events signup_completed` after triggering the event.
+
+`glass init` also writes AGENTS.md instructions, a Claude Code skill (.claude/skills/glass/SKILL.md) and an MCP server entry in .mcp.json (`npx glass mcp`).
+
+## Query
+
+- MCP tools: overview, query_web, query_trends, query_funnel, query_retention, sql, list_events, describe_event, define_event, instrument, search_persons, get_person, list_replays, summarise_replay, list_flags, save_flag, delete_flag, list_experiments, create_experiment, experiment_results, update_experiment, list_projects, create_project.
+- CLI: `npx glass query web --from -7d`, `npx glass query funnel --steps '$pageview,signup_completed'`, `npx glass sql "SELECT …"`, `npx glass --help`.
+- HTTP: `GET <worker>/api` lists every endpoint; `GET <worker>/llms.txt` on a deployment has its real URLs.
+
+## Docs
+
+- README: https://github.com/ISNIT0/glass-analytics#readme
+- Getting started: https://github.com/ISNIT0/glass-analytics/blob/main/docs/getting-started.md
+- Agents (MCP, CLI, HTTP): https://github.com/ISNIT0/glass-analytics/blob/main/docs/agents.md
+- SDK reference: https://github.com/ISNIT0/glass-analytics/blob/main/docs/sdk.md
+- Architecture: https://github.com/ISNIT0/glass-analytics/blob/main/docs/architecture.md

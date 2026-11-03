@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Changelog, Inkwell</title>
+  <script defer src="{{GLASS_HOST}}/s.js" data-project="demo" data-replay-sample-rate="1"></script>
+  <link rel="stylesheet" href="data:text/css,body{font:16px/1.5 system-ui;max-width:640px;margin:40px auto;padding:0 20px}nav a{margin-right:12px}">
+</head>
+<body>
+  <nav><a href="/">Home</a><a href="/pricing">Pricing</a><a href="/signup">Sign up</a></nav>
+  <h1>Changelog</h1>
+  <!-- A long page. Its DOM snapshot is several times bigger than the 64 KB a browser
+       lets a page send as it closes, like most real pages. The e2e tests visit it
+       briefly to check that the recording still arrives. -->
+  <ol id="entries" reversed></ol>
+  <script>
+    const areas = ['editor', 'search', 'sharing', 'sync', 'export', 'comments'];
+    const entries = [];
+    for (let i = 1500; i > 0; i--) {
+      entries.push(`<li><strong>1.${Math.floor(i / 10)}.${i % 10}</strong> Improved ${areas[i % areas.length]}: faster loading and clearer error messages.</li>`);
+    }
+    document.getElementById('entries').innerHTML = entries.join('');
+  </script>
+</body>
+</html>

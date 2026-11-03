@@ -1,0 +1,621 @@
+/*
+ * glass landing page. Same tokens as the dashboard: a cool clear field, ink,
+ * float-glass green, and bottle-glass colours for the four tools.
+ */
+
+:root {
+  --field: #f6f8f7;
+  --surface: #ffffff;
+  --ink: #1e2925;
+  --muted: #5f6f69;
+  --hairline: #d9e3df;
+  --pane: #eaf3f0;
+  --pane-ink: #3d6158;
+  --green: #2e7d6b;
+  --green-soft: #cfe7df;
+  --cobalt: #3159c4;
+  --amber: #b8791d;
+  --ruby: #b03a48;
+  --sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+  --measure: 64ch;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --field: #121917;
+    --surface: #18211e;
+    --ink: #e4ece9;
+    --muted: #93a39d;
+    --hairline: #2a3632;
+    --pane: #1d2b27;
+    --pane-ink: #8fb8ab;
+    --green: #5fb59f;
+    --green-soft: #24453c;
+    --cobalt: #7d9bf0;
+    --amber: #e0a54f;
+    --ruby: #e07884;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--field);
+  color: var(--ink);
+  font: 17px/1.6 var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  margin: 0;
+}
+
+a {
+  color: var(--green);
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+}
+
+code {
+  font-family: var(--mono);
+  font-size: 0.9em;
+}
+
+:focus-visible {
+  outline: 2px solid var(--cobalt);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+main {
+  max-width: 1160px;
+  margin: 0 auto;
+  padding: 0 32px;
+}
+
+section {
+  padding: 72px 0 0;
+}
+
+h1,
+h2,
+h3 {
+  letter-spacing: -0.025em;
+  line-height: 1.08;
+  margin: 0;
+}
+
+h2 {
+  font-size: clamp(1.6rem, 1.2rem + 1.4vw, 2.2rem);
+  font-weight: 750;
+  margin-bottom: 20px;
+}
+
+h3 {
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin-bottom: 6px;
+}
+
+p {
+  max-width: var(--measure);
+}
+
+.fine {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+/* ── Header ─────────────────────────────────────── */
+
+.site-header {
+  max-width: 1160px;
+  margin: 0 auto;
+  padding: 24px 32px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 750;
+  font-size: 1.15rem;
+  color: var(--ink);
+  text-decoration: none;
+  letter-spacing: -0.01em;
+}
+
+.mark {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: 1.5px solid var(--green);
+  background: linear-gradient(135deg, var(--surface) 0 58%, var(--green-soft) 58% 78%, var(--green) 78%);
+}
+
+.site-header nav {
+  display: flex;
+  gap: 24px;
+}
+
+.site-header nav a {
+  color: var(--ink);
+  text-decoration: none;
+  font-weight: 550;
+}
+
+.site-header nav a:hover {
+  color: var(--green);
+}
+
+/* ── Hero ───────────────────────────────────────── */
+
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  gap: 56px;
+  align-items: center;
+  padding-top: 48px;
+}
+
+h1 {
+  font-size: clamp(2.4rem, 1.4rem + 3.6vw, 4.1rem);
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  line-height: 1.02;
+  max-width: 13ch;
+}
+
+.lede {
+  font-size: 1.2rem;
+  color: var(--muted);
+  margin: 22px 0 28px;
+  max-width: 46ch;
+}
+
+.install {
+  max-width: 520px;
+}
+
+.command,
+.agent-prompt {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--surface);
+  border: 1.5px solid var(--ink);
+  border-radius: 12px;
+  padding: 10px 10px 10px 18px;
+}
+
+.command code {
+  font-size: 1.15rem;
+  font-weight: 600;
+  flex: 1;
+}
+
+.prompt {
+  color: var(--muted);
+  user-select: none;
+}
+
+.agent-prompt {
+  border-width: 1px;
+  border-color: var(--hairline);
+  align-items: flex-start;
+}
+
+.agent-prompt p {
+  margin: 2px 0;
+  font-size: 0.95rem;
+  flex: 1;
+}
+
+.install-alt {
+  margin: 18px 0 8px;
+  font-size: 0.95rem;
+}
+
+button,
+.button {
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 650;
+  border-radius: 8px;
+  padding: 7px 14px;
+  border: 1px solid var(--green);
+  background: var(--green);
+  color: #fff;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+  white-space: nowrap;
+}
+
+button:hover,
+.button:hover {
+  filter: brightness(1.08);
+}
+
+.button.ghost {
+  background: transparent;
+  color: var(--ink);
+  border-color: var(--hairline);
+}
+
+.agent-prompt .copy {
+  background: var(--surface);
+  color: var(--ink);
+  border-color: var(--hairline);
+}
+
+/* The signature: a pane of results in front of the query that produced it. */
+.pane-stack {
+  position: relative;
+  margin: 0;
+  padding: 0 0 0 48px;
+}
+
+.pane-sql {
+  margin: 0;
+  background: var(--pane);
+  color: var(--pane-ink);
+  border-radius: 14px;
+  padding: 22px 24px 120px;
+  font-size: 0.8rem;
+  line-height: 1.55;
+  overflow: hidden;
+  white-space: pre;
+}
+
+.pane {
+  position: absolute;
+  left: 0;
+  right: 48px;
+  bottom: 56px;
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  border: 1px solid var(--hairline);
+  border-left: 4px solid var(--green);
+  border-radius: 14px;
+  padding: 20px 22px 16px;
+  box-shadow: 0 24px 48px -24px rgb(30 41 37 / 0.35);
+  animation: settle 900ms cubic-bezier(0.2, 0.7, 0.2, 1) 200ms both;
+}
+
+@keyframes settle {
+  from {
+    transform: translate(48px, -140px);
+    opacity: 0.6;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+.pane-title {
+  font-weight: 700;
+  margin: 0 0 12px;
+}
+
+.pane-funnel {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.pane-funnel li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 12px;
+  font-size: 0.95rem;
+}
+
+.pane-funnel .num {
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+
+.pane-funnel .bar {
+  grid-column: 1 / -1;
+  height: 12px;
+  border-radius: 4px;
+  background: linear-gradient(var(--green), var(--green)) left / var(--w) 100% no-repeat, var(--field);
+}
+
+.pane-note {
+  margin: 14px 0 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.pane-stack figcaption {
+  margin-top: 14px;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+/* ── Steps (a real sequence, so numbered) ───────── */
+
+.steps ol {
+  list-style: none;
+  counter-reset: step;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 32px;
+}
+
+.steps li {
+  counter-increment: step;
+  border-top: 2px solid var(--ink);
+  padding-top: 16px;
+}
+
+.steps li::before {
+  content: counter(step);
+  display: block;
+  font-weight: 800;
+  font-size: 1.5rem;
+  color: var(--green);
+  margin-bottom: 8px;
+}
+
+.steps p {
+  margin: 0;
+  color: var(--muted);
+}
+
+/* ── Example transcript ─────────────────────────── */
+
+.section-lede {
+  margin-top: -8px;
+  color: var(--muted);
+}
+
+.transcript {
+  background: var(--ink);
+  color: #dfe8e4;
+  border-radius: 14px;
+  padding: 24px 28px;
+  font-family: var(--mono);
+  font-size: 0.88rem;
+  line-height: 1.6;
+  max-width: 880px;
+}
+
+.turn {
+  margin: 0 0 10px;
+  max-width: none;
+}
+
+.turn.user {
+  color: #ffffff;
+  font-family: var(--sans);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.turn.user::before {
+  content: 'You  ';
+  color: #9fb3ab;
+  font-weight: 400;
+}
+
+.turn.tool {
+  color: #8fd3c1;
+}
+
+.turn.tool span {
+  color: #9fb3ab;
+}
+
+.turn.result {
+  color: #c9d6d1;
+  padding-left: 16px;
+  border-left: 2px solid #3a4a45;
+}
+
+.turn.agent {
+  font-family: var(--sans);
+  font-size: 1rem;
+  color: #ffffff;
+  margin: 16px 0 0;
+}
+
+.turn.agent code {
+  color: #8fd3c1;
+}
+
+/* ── Four tools ─────────────────────────────────── */
+
+.pillars dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 28px 40px;
+  margin: 0;
+}
+
+.pillar {
+  padding-left: 18px;
+  border-left: 4px solid var(--c);
+}
+
+.pillar.green {
+  --c: var(--green);
+}
+
+.pillar.cobalt {
+  --c: var(--cobalt);
+}
+
+.pillar.amber {
+  --c: var(--amber);
+}
+
+.pillar.ruby {
+  --c: var(--ruby);
+}
+
+.pillar dt {
+  font-weight: 750;
+  font-size: 1.15rem;
+  letter-spacing: -0.01em;
+}
+
+.pillar dd {
+  margin: 4px 0 0;
+  color: var(--muted);
+  max-width: 52ch;
+}
+
+/* ── Data and cost ──────────────────────────────── */
+
+.split {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 48px;
+}
+
+.checks {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.checks li {
+  padding-left: 28px;
+  position: relative;
+}
+
+.checks li::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 0.55em;
+  width: 12px;
+  height: 7px;
+  border-left: 2.5px solid var(--green);
+  border-bottom: 2.5px solid var(--green);
+  transform: rotate(-45deg);
+}
+
+/* ── Comparison ─────────────────────────────────── */
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+.compare {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.95rem;
+}
+
+.compare th,
+.compare td {
+  text-align: left;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--hairline);
+  vertical-align: top;
+}
+
+.compare thead th {
+  font-weight: 700;
+}
+
+.compare tbody th {
+  font-weight: 550;
+  color: var(--muted);
+}
+
+.compare td:nth-child(2),
+.compare th:nth-child(2) {
+  background: var(--green-soft);
+  font-weight: 650;
+}
+
+/* ── Open source, closing ───────────────────────── */
+
+.oss p {
+  font-size: 1.05rem;
+}
+
+.oss .button + .button {
+  margin-left: 8px;
+}
+
+.closing {
+  padding-bottom: 96px;
+}
+
+.closing .command {
+  max-width: 420px;
+}
+
+.site-footer {
+  border-top: 1px solid var(--hairline);
+  padding: 24px 32px 40px;
+  max-width: 1160px;
+  margin: 0 auto;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.site-footer a {
+  margin-left: 14px;
+}
+
+/* ── Small screens ──────────────────────────────── */
+
+@media (max-width: 920px) {
+  .hero,
+  .split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .steps ol,
+  .pillars dl {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .pane-stack {
+    padding-left: 24px;
+  }
+  .pane {
+    right: 24px;
+  }
+}
+
+@media (max-width: 560px) {
+  main,
+  .site-header,
+  .site-footer {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  .command code {
+    font-size: 1rem;
+  }
+  .pane-sql {
+    font-size: 0.7rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pane {
+    animation: none;
+  }
+}

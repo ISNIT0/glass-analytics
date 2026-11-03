@@ -1,0 +1,201 @@
+/**
+ * MCP tools.
+ *
+ * Every tool is one declarative entry: a name, a description written for
+ * agents, a zod input schema (converted to JSON Schema for `tools/list`), a
+ * scope, and a handler that calls the shared GlassService. Query tools are
+ * generated from the insight registry, so a new insight type automatically
+ * becomes a `query_<kind>` tool.
+ *
+ * To add a tool: add an entry to TOOLS. See docs/extending.md.
+ */
+
+import { INSIGHTS, sqlSpec } from '@glass/core/insights';
+import { z } from 'zod/v4';
+import type { Scope } from '../auth.ts';
+import { type GlassService, inputs } from '../service.ts';
+
+export interface ToolDefinition {
+  name: string;
+  title: string;
+  description: string;
+  input: z.ZodType;
+  /** "read" tools work with the read-only key; "admin" tools change state. */
+  scope: Scope;
+  run(service: GlassService, args: unknown): Promise<unknown> | unknown;
+}
+
+const projectOnly = z.object({ project: z.string().optional() });
+
+const queryTools: ToolDefinition[] = Object.entries(INSIGHTS).map(([kind, def]) => ({
+  name: `query_${kind}`,
+  title: `${kind[0]!.toUpperCase()}${kind.slice(1)} query`,
+  description: def.description,
+  input: def.schema,
+  scope: 'read',
+  run: (service, args) => service.runInsight(kind, args),
+}));
+
+export const TOOLS: ToolDefinition[] = [
+  {
+    name: 'overview',
+    title: 'Analytics overview',
+    description:
+      'Start here. Visitors, pageviews, sessions and bounce rate for a period vs the previous one, top pages, referrers and errors, the most frequent events and the events that changed most.',
+    input: inputs.overview,
+    scope: 'read',
+    run: (s, a) => s.overview(a),
+  },
+  ...queryTools,
+  {
+    name: 'sql',
+    title: 'SQL query',
+    description:
+      'Run one read-only SELECT against the event store when no query tool fits. Columns: id, project, event, ts_ms (epoch ms), distinct_id, user_id, person_id, session_id, url, host, path, referrer_host, title, utm_*, country, region, city, device, browser, os, flags (JSON), props (JSON), person_props (JSON). Always filter on project and ts_ms.',
+    input: sqlSpec,
+    scope: 'read',
+    run: (s, a) => s.sql(a),
+  },
+  {
+    name: 'list_events',
+    title: 'List tracked events',
+    description: 'Every event name seen recently with counts, last-seen time and documentation status. Use before querying to get exact names.',
+    input: inputs.listEvents,
+    scope: 'read',
+    run: (s, a) => s.listEvents(a),
+  },
+  {
+    name: 'describe_event',
+    title: 'Describe an event',
+    description: 'Properties sent with an event (sampled from recent events): types, coverage and example values.',
+    input: inputs.describeEvent,
+    scope: 'read',
+    run: (s, a) => s.describeEvent(a),
+  },
+  {
+    name: 'define_event',
+    title: 'Document an event',
+    description: 'Save a description, owner and property descriptions for an event so future agents and teammates understand it.',
+    input: inputs.defineEvent,
+    scope: 'admin',
+    run: (s, a) => s.defineEvent(a),
+  },
+  {
+    name: 'instrument',
+    title: 'Get tracking code',
+    description: 'The exact code to install Glass and capture a named event in a given framework, plus naming warnings.',
+    input: inputs.instrument,
+    scope: 'read',
+    run: (s, a) => s.instrument(a),
+  },
+  {
+    name: 'search_persons',
+    title: 'Search people',
+    description: 'Identified people, most recently active first, optionally matching an id or property value.',
+    input: inputs.searchPersons,
+    scope: 'read',
+    run: (s, a) => s.searchPersons(a),
+  },
+  {
+    name: 'get_person',
+    title: 'Get a person',
+    description: 'A person\'s properties, devices, last 100 events and recorded sessions.',
+    input: inputs.getPerson,
+    scope: 'read',
+    run: (s, a) => s.getPerson(a),
+  },
+  {
+    name: 'list_replays',
+    title: 'List session replays',
+    description: 'Recorded sessions, newest first. Filter by person or to sessions with errors.',
+    input: inputs.listReplays,
+    scope: 'read',
+    run: (s, a) => s.listReplays(a),
+  },
+  {
+    name: 'summarise_replay',
+    title: 'Read a session replay',
+    description:
+      'A text transcript of a recorded session: pages viewed, labelled clicks, rage clicks, inputs, custom events, errors and idle gaps. Use it to "watch" a broken session.',
+    input: inputs.replay,
+    scope: 'read',
+    run: (s, a) => s.summariseReplay(a),
+  },
+  {
+    name: 'list_flags',
+    title: 'List feature flags',
+    description: 'All feature flags with rollout, variants and targeting rules.',
+    input: projectOnly,
+    scope: 'read',
+    run: (s, a) => s.listFlags(a),
+  },
+  {
+    name: 'save_flag',
+    title: 'Create or update a flag',
+    description:
+      'Create a flag or change its rollout, variants or targeting. Fields you omit keep their current values. Read it in code with glass.flag(key), which returns "on", a variant key, or null.',
+    input: inputs.saveFlag,
+    scope: 'admin',
+    run: (s, a) => s.saveFlag(a),
+  },
+  {
+    name: 'delete_flag',
+    title: 'Delete a flag',
+    description: 'Delete a flag. Remove it from code first.',
+    input: inputs.flagKey,
+    scope: 'admin',
+    run: (s, a) => s.deleteFlag(a),
+  },
+  {
+    name: 'list_experiments',
+    title: 'List experiments',
+    description: 'All A/B tests with their status.',
+    input: projectOnly,
+    scope: 'read',
+    run: (s, a) => s.listExperiments(a),
+  },
+  {
+    name: 'create_experiment',
+    title: 'Create an experiment',
+    description:
+      'Create an A/B test (draft) with a goal event. Creates a control/test flag unless you pass an existing multivariate flag. Then branch on glass.flag(flag) in code and start it with update_experiment.',
+    input: inputs.createExperiment,
+    scope: 'admin',
+    run: (s, a) => s.createExperiment(a),
+  },
+  {
+    name: 'experiment_results',
+    title: 'Experiment results',
+    description:
+      'Per-variant exposures, conversions and rates, probability to beat control, lift interval, sample ratio mismatch check, winner and days to significance.',
+    input: inputs.experimentKey,
+    scope: 'read',
+    run: (s, a) => s.experimentResults(a),
+  },
+  {
+    name: 'update_experiment',
+    title: 'Start, stop or ship an experiment',
+    description: '"start" enables the flag; "stop" freezes results; "ship" gives everyone the chosen variant.',
+    input: inputs.updateExperiment,
+    scope: 'admin',
+    run: (s, a) => s.updateExperiment(a),
+  },
+  {
+    name: 'list_projects',
+    title: 'List projects',
+    description: 'Projects (sites or apps) in this Glass install.',
+    input: z.object({}),
+    scope: 'read',
+    run: (s) => s.listProjects(),
+  },
+  {
+    name: 'create_project',
+    title: 'Create a project',
+    description: 'Add a project for another site or app.',
+    input: inputs.createProject,
+    scope: 'admin',
+    run: (s, a) => s.createProject(a),
+  },
+];
+
+export const TOOLS_BY_NAME = new Map(TOOLS.map((t) => [t.name, t]));

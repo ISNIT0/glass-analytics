@@ -1,0 +1,27 @@
+{
+  "name": "glass",
+  "version": "0.1.0",
+  "description": "Agent-first analytics in your own Cloudflare account. `npx glass init` deploys it.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "glass": "./dist/glass.js"
+  },
+  "files": ["dist", "README.md"],
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ISNIT0/glass-analytics.git",
+    "directory": "packages/cli"
+  },
+  "keywords": ["analytics", "cloudflare", "mcp", "agents", "product-analytics", "session-replay", "ab-testing"],
+  "dependencies": {
+    "wrangler": "^4.0.0"
+  },
+  "devDependencies": {
+    "@glass/core": "workspace:*",
+    "@glass/worker": "workspace:*"
+  }
+}

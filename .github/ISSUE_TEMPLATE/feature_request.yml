@@ -1,0 +1,22 @@
+name: Feature request
+description: Suggest something Glass should do.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The question you want answered or the job you're trying to get done, not the solution yet.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would help?
+      description: How you imagine it working, including for agents (an MCP tool? a query option?).
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Contributing
+      options:
+        - label: I'd like to work on this (see CONTRIBUTING.md for where things live)

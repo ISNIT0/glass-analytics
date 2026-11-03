@@ -1,0 +1,13 @@
+{
+  "name": "@glass/site",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The Glass landing page (static, no build step).",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

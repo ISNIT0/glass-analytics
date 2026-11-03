@@ -1,0 +1,46 @@
+name: Bug report
+description: Something in Glass doesn't work as documented.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How can we reproduce it?
+      description: Commands, code or a minimal page. If it happens locally, say whether `pnpm dev` reproduces it.
+    validations:
+      required: true
+  - type: textarea
+    id: status
+    attributes:
+      label: Output of `npx glass status --json`
+      description: Remove anything private. Never paste API keys.
+      render: json
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - glass init / upgrade (CLI)
+        - Browser SDK
+        - Dashboard
+        - MCP server / agents
+        - Queries (web, trends, funnels, retention, SQL)
+        - Session replay
+        - Flags and experiments
+        - Lake store (beta)
+        - Docs
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Glass version
+      placeholder: "0.1.0"

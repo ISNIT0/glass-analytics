@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or idea
+    url: https://github.com/ISNIT0/glass/discussions
+    about: Ask in Discussions; issues are for bugs and concrete feature requests.
+  - name: Security vulnerability
+    url: https://github.com/ISNIT0/glass/security/advisories/new
+    about: Report privately, please don't open a public issue.
