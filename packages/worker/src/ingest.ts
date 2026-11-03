@@ -15,10 +15,10 @@
  * independently (see docs/extending.md, "Enriching events").
  */
 
-import { type StoredEvent, type WireBatch, type WireEvent, isValidEventName } from '@glass/core/events';
-import { sha256Hex } from '@glass/core/hash';
-import { isBot, parseUserAgent } from '@glass/core/ua';
-import { parsePage, referrerHost } from '@glass/core/url';
+import { type StoredEvent, type WireBatch, type WireEvent, isValidEventName } from '@glassanalytics/core/events';
+import { sha256Hex } from '@glassanalytics/core/hash';
+import { isBot, parseUserAgent } from '@glassanalytics/core/ua';
+import { parsePage, referrerHost } from '@glassanalytics/core/url';
 import type { D1Database, Env } from './env.ts';
 import { HttpError, readJson } from './http.ts';
 import { getProject } from './projects.ts';

@@ -8,7 +8,7 @@
  * Ingest endpoints (/e, /r, /f) are public by design: browsers call them.
  */
 
-import { timingSafeEqual } from '@glass/core/hash';
+import { timingSafeEqual } from '@glassanalytics/core/hash';
 import type { Env } from './env.ts';
 import { HttpError } from './http.ts';
 

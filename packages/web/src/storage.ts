@@ -3,7 +3,7 @@
  * and cached flags. In cookieless mode everything lives in memory only.
  */
 
-import { uuidv7 } from '@glass/core/ids';
+import { uuidv7 } from '@glassanalytics/core/ids';
 import type { Persistence } from './types.ts';
 
 const SESSION_IDLE_MS = 30 * 60_000;

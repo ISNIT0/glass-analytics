@@ -9,7 +9,7 @@
  * Spec: https://modelcontextprotocol.io/specification
  */
 
-import { GLASS_VERSION } from '@glass/core/version';
+import { GLASS_VERSION } from '@glassanalytics/core/version';
 import { z } from 'zod/v4';
 import type { Scope } from '../auth.ts';
 import { HttpError, describeIssues, isValidationError, json } from '../http.ts';

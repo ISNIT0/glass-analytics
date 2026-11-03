@@ -2,8 +2,8 @@
  * The Glass browser client.
  */
 
-import { uuidv7 } from '@glass/core/ids';
-import { GLASS_VERSION } from '@glass/core/version';
+import { uuidv7 } from '@glassanalytics/core/ids';
+import { GLASS_VERSION } from '@glassanalytics/core/version';
 import { trackClicks, trackErrors, trackPageviews } from './autocapture.ts';
 import { Store } from './storage.ts';
 import { Transport } from './transport.ts';

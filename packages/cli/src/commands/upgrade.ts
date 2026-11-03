@@ -7,7 +7,7 @@
 import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { GLASS_VERSION } from '@glass/core/version';
+import { GLASS_VERSION } from '@glassanalytics/core/version';
 import { call } from '../client.ts';
 import { deploy, ensureBucket, installWorkerFiles, migrate, putSecrets, renderWranglerConfig } from '../cloudflare/provision.ts';
 import { type Wrangler, createWrangler } from '../cloudflare/wrangler.ts';
@@ -29,7 +29,7 @@ export async function upgrade(options: { token?: string; json?: boolean }, deps:
   const root = projectRoot();
   const config = loadConfig(root);
   const credentials = loadCredentials(root);
-  if (!config || !credentials) throw new UsageError('No Glass deployment in this project.', 'Run `npx glass init` first.');
+  if (!config || !credentials) throw new UsageError('No Glass deployment in this project.', 'Run `npx @glassanalytics/cli init` first.');
   const token = options.token ?? process.env.CLOUDFLARE_API_TOKEN ?? (await ask('Cloudflare API token', { flag: '--token (or CLOUDFLARE_API_TOKEN)', secret: true }));
   const wrangler = (deps.wrangler ?? createWrangler)({ token, accountId: config.accountId }, root);
   const dir = glassDir(root);

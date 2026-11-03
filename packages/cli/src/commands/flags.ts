@@ -2,7 +2,7 @@
  * `glass flags` and `glass experiments`.
  */
 
-import type { ExperimentResult } from '@glass/core/insights/experiment';
+import type { ExperimentResult } from '@glassanalytics/core/insights/experiment';
 import { call, withProject } from '../client.ts';
 import { UsageError } from '../config.ts';
 import { color, line, pct, printJson, table } from '../output.ts';

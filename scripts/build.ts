@@ -43,7 +43,7 @@ await bundle({ entryPoints: [pkg('web', 'src', 'index.ts')], outfile: join(webDi
 await bundle({ entryPoints: [pkg('web', 'src', 'script.ts')], outfile: join(webDist, 'glass.js'), format: 'iife', target: 'es2020', platform: 'browser', minify: true });
 await bundle({ entryPoints: [pkg('web', 'src', 'replay.ts')], outfile: join(webDist, 'replay.js'), format: 'iife', target: 'es2020', platform: 'browser', minify: true });
 // Type declarations for the npm package. The SDK's public types are self-contained,
-// so the emitted .d.ts files never reference the private @glass/core package.
+// so the emitted .d.ts files never reference the private @glassanalytics/core package.
 execFileSync(process.execPath, [join(root, 'node_modules', 'typescript', 'bin', 'tsc'), '-p', pkg('web', 'tsconfig.build.json')], { stdio: 'inherit' });
 for (const file of ['index.d.ts', 'client.d.ts', 'types.d.ts']) {
   // Declaration output keeps `.ts` specifiers; published files must point at `.js`.
@@ -102,7 +102,7 @@ await bundle({
   target: 'node20',
   platform: 'node',
   packages: 'external',
-  // @glass/* are workspace packages bundled into the CLI; wrangler stays a real dependency.
+  // @glassanalytics/* are workspace packages bundled into the CLI; wrangler stays a real dependency.
   plugins: [
     {
       name: 'bundle-workspace',

@@ -99,7 +99,7 @@ export function connection(): { host: string; key: string; project: string | und
   if (!host || !key) {
     throw new UsageError(
       'No Glass deployment found here.',
-      'Run `npx glass init` in your project, or set GLASS_HOST and GLASS_API_KEY.',
+      'Run `npx @glassanalytics/cli init` in your project, or set GLASS_HOST and GLASS_API_KEY.',
     );
   }
   return { host: host.replace(/\/+$/, ''), key, project: process.env.GLASS_PROJECT ?? config?.project };

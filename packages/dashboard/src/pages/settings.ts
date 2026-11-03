@@ -114,7 +114,7 @@ export function keyScreen(onDone: () => void): HTMLElement {
     'main',
     { class: 'key-screen' },
     h('h1', {}, 'Glass'),
-    h('p', {}, 'Paste the API key created by glass init. Run ', h('code', {}, 'npx glass key'), ' in your project to print it.'),
+    h('p', {}, 'Paste the API key created by glass init. Run ', h('code', {}, 'npx @glassanalytics/cli key'), ' in your project to print it.'),
     form,
     h('p', { class: 'muted small' }, 'The key stays in this browser. Use the read-only key to share the dashboard without letting people change flags.'),
   );

@@ -1,5 +1,5 @@
 // The public landing page, served as Workers static assets.
-// Deploy with `pnpm --filter @glass/site deploy`.
+// Deploy with `pnpm --filter @glassanalytics/site deploy`.
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
   "name": "glass-site",

@@ -5,16 +5,16 @@
  * gets the same answer whichever way it asks.
  */
 
-import { type InsightKind, INSIGHTS, experimentSpec, filterSchema, isInsightKind, sqlSpec, webSpec } from '@glass/core/insights';
-import type { QueryContext, ResultBase } from '@glass/core/insights/types';
-import { runWeb } from '@glass/core/insights/web';
-import { EVENT_NAMING_GUIDE, FRAMEWORKS, type Framework } from '@glass/core/instrument';
-import { summariseReplay } from '@glass/core/replay-summary';
-import { assertReadOnlySql } from '@glass/core/sql/guard';
-import { eventsCte, num, text } from '@glass/core/sql/source';
-import { DAY_MS, resolveRange } from '@glass/core/time';
-import { GLASS_VERSION } from '@glass/core/version';
-import { runExperiment } from '@glass/core/insights/experiment';
+import { type InsightKind, INSIGHTS, experimentSpec, filterSchema, isInsightKind, sqlSpec, webSpec } from '@glassanalytics/core/insights';
+import type { QueryContext, ResultBase } from '@glassanalytics/core/insights/types';
+import { runWeb } from '@glassanalytics/core/insights/web';
+import { EVENT_NAMING_GUIDE, FRAMEWORKS, type Framework } from '@glassanalytics/core/instrument';
+import { summariseReplay } from '@glassanalytics/core/replay-summary';
+import { assertReadOnlySql } from '@glassanalytics/core/sql/guard';
+import { eventsCte, num, text } from '@glassanalytics/core/sql/source';
+import { DAY_MS, resolveRange } from '@glassanalytics/core/time';
+import { GLASS_VERSION } from '@glassanalytics/core/version';
+import { runExperiment } from '@glassanalytics/core/insights/experiment';
 import { z } from 'zod/v4';
 import type { Env } from './env.ts';
 import {

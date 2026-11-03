@@ -10,7 +10,7 @@
  * To add a tool: add an entry to TOOLS. See docs/extending.md.
  */
 
-import { INSIGHTS, sqlSpec } from '@glass/core/insights';
+import { INSIGHTS, sqlSpec } from '@glassanalytics/core/insights';
 import { z } from 'zod/v4';
 import type { Scope } from '../auth.ts';
 import { type GlassService, inputs } from '../service.ts';

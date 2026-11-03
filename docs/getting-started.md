@@ -22,7 +22,7 @@ The token is used by the CLI on your machine. It is not stored by Glass, except 
 From your project's root:
 
 ```sh
-CLOUDFLARE_API_TOKEN=… npx glass init
+CLOUDFLARE_API_TOKEN=… npx @glassanalytics/cli init
 ```
 
 It will:
@@ -66,7 +66,7 @@ The script tag works everywhere and needs no build step:
 | SvelteKit | `src/app.html` |
 | Nuxt | `app.head.script` in `nuxt.config.ts` |
 | Remix / React Router | `app/root.tsx` |
-| Vite apps | `npm i @glass/web`, then `glass.init({ host, project })` in `main.ts` |
+| Vite apps | `npm i @glassanalytics/web`, then `glass.init({ host, project })` in `main.ts` |
 | Server-side | `POST <host>/e`; see [sdk.md](sdk.md#server-side-events) |
 
 ## 4. Track what matters
@@ -88,17 +88,17 @@ Name events `object_action` in snake_case and past tense. Put details in propert
 
 ## 5. Look at the data
 
-- **Dashboard:** `https://glass.<you>.workers.dev/app`. Sign in with the key from `npx glass key`. Share a view-only dashboard with `npx glass key --read`.
+- **Dashboard:** `https://glass.<you>.workers.dev/app`. Sign in with the key from `npx @glassanalytics/cli key`. Share a view-only dashboard with `npx @glassanalytics/cli key --read`.
 - **Your agent:** with `.mcp.json` in place, ask "what were our top traffic sources this week?". See [agents.md](agents.md).
-- **Terminal:** `npx glass query web --from -7d`, `npx glass events`, `npx glass --help`.
+- **Terminal:** `npx @glassanalytics/cli query web --from -7d`, `npx @glassanalytics/cli events`, `npx @glassanalytics/cli --help`.
 
 ## Upgrading
 
 ```sh
-npx glass@latest upgrade
+npx @glassanalytics/cli@latest upgrade
 ```
 
-This copies the new Worker into `.glass/`, applies new migrations and redeploys. `npx glass status` tells you when an upgrade is available.
+This copies the new Worker into `.glass/`, applies new migrations and redeploys. `npx @glassanalytics/cli status` tells you when an upgrade is available.
 
 ## Removing Glass
 

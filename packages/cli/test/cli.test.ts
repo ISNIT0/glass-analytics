@@ -140,7 +140,7 @@ describe('glass init', () => {
     assert.match(agents, /next\/script|Script src=/);
     assert.match(readFileSync(join(root, 'CLAUDE.md'), 'utf8'), /^# Project notes\n\n<!-- glass:start -->/);
     assert.match(readFileSync(join(root, '.claude', 'skills', 'glass', 'SKILL.md'), 'utf8'), /^---\nname: glass\n/);
-    assert.deepEqual(JSON.parse(readFileSync(join(root, '.mcp.json'), 'utf8')).mcpServers.glass, { command: 'npx', args: ['-y', 'glass', 'mcp'] });
+    assert.deepEqual(JSON.parse(readFileSync(join(root, '.mcp.json'), 'utf8')).mcpServers.glass, { command: 'npx', args: ['-y', '@glassanalytics/cli', 'mcp'] });
   });
 
   it('is idempotent: a second run reuses resources and keys', async () => {

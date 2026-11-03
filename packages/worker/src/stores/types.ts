@@ -15,9 +15,9 @@
  * implement this interface and a `Dialect`; see docs/extending.md.
  */
 
-import type { StoredEvent } from '@glass/core/events';
-import type { Row } from '@glass/core/insights/types';
-import type { Dialect } from '@glass/core/sql/dialect';
+import type { StoredEvent } from '@glassanalytics/core/events';
+import type { Row } from '@glassanalytics/core/insights/types';
+import type { Dialect } from '@glassanalytics/core/sql/dialect';
 
 export interface IdentityLink {
   project: string;

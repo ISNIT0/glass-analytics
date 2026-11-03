@@ -2,7 +2,7 @@
  * Experiments: list, create, and the results readout.
  */
 
-import type { ExperimentResult } from '@glass/core/insights/experiment';
+import type { ExperimentResult } from '@glassanalytics/core/insights/experiment';
 import { api } from '../api.ts';
 import { copyButton, empty, errorState, later, pageHeader, panel, table, toast } from '../components/ui.ts';
 import { h, mount } from '../dom.ts';

@@ -29,7 +29,7 @@ This is enough for web analytics. It is not enough for funnels across days, rete
 ## Deleting a person
 
 ```sh
-npx glass person <user-id> --delete
+npx @glassanalytics/cli person <user-id> --delete
 ```
 
 This deletes the person, their device links, their replays and (in D1 mode) every event from their user id and devices. In lake mode, Iceberg tables are append-only to Glass, so events must be removed with a separate delete job against the table; this is on the [roadmap](../ROADMAP.md).

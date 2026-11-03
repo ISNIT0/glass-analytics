@@ -1,15 +1,15 @@
 /**
  * The `glass` CLI.
  *
- *   npx glass init              deploy into your Cloudflare account
- *   npx glass query web         ask questions from the terminal
- *   npx glass mcp               stdio MCP server for coding agents
+ *   npx @glassanalytics/cli init              deploy into your Cloudflare account
+ *   npx @glassanalytics/cli query web         ask questions from the terminal
+ *   npx @glassanalytics/cli mcp               stdio MCP server for coding agents
  *
  * Every command accepts --json for machine-readable output.
  */
 
 import { parseArgs } from 'node:util';
-import { GLASS_VERSION } from '@glass/core/version';
+import { GLASS_VERSION } from '@glassanalytics/core/version';
 import { events, person, projects, query, replays, sql } from './commands/data.ts';
 import { experiments, flags as flagCommands } from './commands/flags.ts';
 import { init } from './commands/init.ts';

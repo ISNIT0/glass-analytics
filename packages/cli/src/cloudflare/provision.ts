@@ -6,7 +6,7 @@
 
 import { copyFileSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { LAKE_TABLES, type LakeTable, streamSchemaFile } from '@glass/core/lake';
+import { LAKE_TABLES, type LakeTable, streamSchemaFile } from '@glassanalytics/core/lake';
 import type { GlassConfig } from '../config.ts';
 import { type Wrangler, WranglerError, must, parseJsonOutput } from './wrangler.ts';
 

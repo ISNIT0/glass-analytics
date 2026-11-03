@@ -2,7 +2,7 @@
  * Daily housekeeping (Cron Trigger): data retention for events and replays.
  */
 
-import { DAY_MS } from '@glass/core/time';
+import { DAY_MS } from '@glassanalytics/core/time';
 import type { Env } from './env.ts';
 import { listProjects } from './projects.ts';
 import { deleteReplays } from './replays.ts';

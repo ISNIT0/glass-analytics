@@ -2,7 +2,7 @@
  * Web analytics: the Plausible-style default view.
  */
 
-import type { BreakdownRow, WebBreakdown, WebResult } from '@glass/core/insights/web';
+import type { BreakdownRow, WebBreakdown, WebResult } from '@glassanalytics/core/insights/web';
 import { api } from '../api.ts';
 import { barList, lineChart } from '../components/charts.ts';
 import { empty, later, pageHeader, panel, tabs } from '../components/ui.ts';

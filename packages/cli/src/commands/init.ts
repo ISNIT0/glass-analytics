@@ -5,9 +5,9 @@
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { randomToken } from '@glass/core/ids';
-import { FRAMEWORKS, detectFramework } from '@glass/core/instrument';
-import { GLASS_VERSION } from '@glass/core/version';
+import { randomToken } from '@glassanalytics/core/ids';
+import { FRAMEWORKS, detectFramework } from '@glassanalytics/core/instrument';
+import { GLASS_VERSION } from '@glassanalytics/core/version';
 import { writeAgentFiles } from '../agent-files.ts';
 import { call } from '../client.ts';
 import {
@@ -238,7 +238,7 @@ export async function init(options: InitOptions, deps: InitDeps = {}): Promise<v
       line(`  .glass/ ${color.dim('(deployment config: commit it; credentials.json is git-ignored)')}`);
     }
     line();
-    line(`Dashboard: ${color.cyan(`${config.host}/app`)} ${color.dim('(sign in with the key from `npx glass key`)')}`);
+    line(`Dashboard: ${color.cyan(`${config.host}/app`)} ${color.dim('(sign in with the key from `npx @glassanalytics/cli key`)')}`);
   } catch (err) {
     if (err instanceof WranglerError && /Authentication|not authorized|permission|10000|9109/i.test(err.output)) {
       throw new UsageError(`Cloudflare refused a request: ${err.message.split('\n')[0]}`, `The API token needs: ${TOKEN_SCOPES.join('; ')}.`);

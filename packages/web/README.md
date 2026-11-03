@@ -1,15 +1,15 @@
-# @glass/web
+# @glassanalytics/web
 
 The browser SDK for [Glass](https://github.com/ISNIT0/glass-analytics): open-source, agent-first analytics that runs in your own Cloudflare account.
 
-You need a Glass deployment first: run `npx glass init` in your project.
+You need a Glass deployment first: run `npx @glassanalytics/cli init` in your project.
 
 ```sh
-npm i @glass/web
+npm i @glassanalytics/web
 ```
 
 ```ts
-import { glass } from '@glass/web';
+import { glass } from '@glassanalytics/web';
 
 glass.init({ host: 'https://glass.acme.workers.dev', project: 'acme' });
 

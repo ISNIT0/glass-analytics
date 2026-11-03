@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Glass: analytics that lives in your Cloudflare account</title>
-  <meta name="description" content="Open-source web analytics, product analytics, session replay and A/B tests. Deployed into your own Cloudflare account with npx glass init, and queried by your coding agent.">
+  <meta name="description" content="Open-source web analytics, product analytics, session replay and A/B tests. Deployed into your own Cloudflare account with npx @glassanalytics/cli init, and queried by your coding agent.">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/styles.css">
   <!-- For agents: this page as markdown, and full install instructions. -->
@@ -31,12 +31,12 @@
 
         <div class="install">
           <div class="command" data-copy-source>
-            <code><span class="prompt" aria-hidden="true">$ </span>npx glass init</code>
-            <button type="button" class="copy" data-copy="npx glass init" data-event="install_command_copied">Copy</button>
+            <code><span class="prompt" aria-hidden="true">$ </span>npx @glassanalytics/cli init</code>
+            <button type="button" class="copy" data-copy="npx @glassanalytics/cli init" data-event="install_command_copied">Copy</button>
           </div>
           <p class="install-alt">Or paste this into your coding agent:</p>
           <div class="agent-prompt">
-            <p id="agent-prompt">Add Glass analytics to this project: run <code>npx glass init</code>, track signups and purchases, then show me today's visitors.</p>
+            <p id="agent-prompt">Add Glass analytics to this project: run <code>npx @glassanalytics/cli init</code>, track signups and purchases, then show me today's visitors.</p>
             <button type="button" class="copy" data-copy-from="agent-prompt" data-event="agent_prompt_copied">Copy</button>
           </div>
           <p class="fine">Needs a Cloudflare account and an API token. Takes about two minutes.</p>
@@ -79,7 +79,7 @@ UNION ALL …</code></pre>
       <ol>
         <li>
           <h3>Run one command</h3>
-          <p><code>npx glass init</code> creates a D1 database, an R2 bucket and a Worker in your account, then writes instructions and an MCP server config for your agent.</p>
+          <p><code>npx @glassanalytics/cli init</code> creates a D1 database, an R2 bucket and a Worker in your account, then writes instructions and an MCP server config for your agent.</p>
         </li>
         <li>
           <h3>Add one script tag</h3>
@@ -173,8 +173,8 @@ UNION ALL …</code></pre>
     <section class="closing" aria-labelledby="start">
       <h2 id="start">Start in your terminal</h2>
       <div class="command">
-        <code><span class="prompt" aria-hidden="true">$ </span>npx glass init</code>
-        <button type="button" class="copy" data-copy="npx glass init" data-event="install_command_copied">Copy</button>
+        <code><span class="prompt" aria-hidden="true">$ </span>npx @glassanalytics/cli init</code>
+        <button type="button" class="copy" data-copy="npx @glassanalytics/cli init" data-event="install_command_copied">Copy</button>
       </div>
     </section>
   </main>

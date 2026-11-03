@@ -1,5 +1,5 @@
 /**
- * One event as sent to the Worker. Mirrors `WireEvent` in @glass/core (kept as
+ * One event as sent to the Worker. Mirrors `WireEvent` in @glassanalytics/core (kept as
  * a copy so the published type declarations are self-contained; a test fails
  * if the two drift apart).
  */

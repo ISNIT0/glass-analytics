@@ -6,9 +6,9 @@
  * opens here exactly as it ran.
  */
 
-import type { FunnelResult } from '@glass/core/insights/funnel';
-import type { RetentionResult } from '@glass/core/insights/retention';
-import type { TrendsResult } from '@glass/core/insights/trends';
+import type { FunnelResult } from '@glassanalytics/core/insights/funnel';
+import type { RetentionResult } from '@glassanalytics/core/insights/retention';
+import type { TrendsResult } from '@glassanalytics/core/insights/trends';
 import { api } from '../api.ts';
 import { funnelChart, lineChart, retentionGrid } from '../components/charts.ts';
 import { copyButton, empty, errorState, loading, pageHeader, panel, table, tabs } from '../components/ui.ts';

@@ -3,12 +3,12 @@
 **Analytics that lives in your Cloudflare account.** Web analytics, product analytics, session replay, feature flags and A/B tests — deployed by one command, queried by your coding agent, and open source. Your data never leaves your account.
 
 ```sh
-npx glass init
+npx @glassanalytics/cli init
 ```
 
 Or paste this into your coding agent:
 
-> Add Glass analytics to this project: run `npx glass init`, track signups and purchases, then show me today's visitors.
+> Add Glass analytics to this project: run `npx @glassanalytics/cli init`, track signups and purchases, then show me today's visitors.
 
 ## Why Glass
 
@@ -22,7 +22,7 @@ Or paste this into your coding agent:
 1. **Create a Cloudflare API token** at [dash.cloudflare.com/profile/api-tokens](https://dash.cloudflare.com/profile/api-tokens) with *Workers Scripts: Edit*, *D1: Edit*, *Workers R2 Storage: Edit* and *Account Settings: Read*.
 2. **Deploy** from your project directory:
    ```sh
-   CLOUDFLARE_API_TOKEN=… npx glass init
+   CLOUDFLARE_API_TOKEN=… npx @glassanalytics/cli init
    ```
    This creates the database, the replay bucket and the Worker, then prints the snippet for your framework.
 3. **Add the snippet** to every page:
@@ -34,9 +34,9 @@ Or paste this into your coding agent:
    glass.capture('signup_completed', { plan: 'pro' });
    glass.identify(user.id, { plan: user.plan }); // after login
    ```
-5. **Ask.** Open `https://glass.<you>.workers.dev/app` (sign in with `npx glass key`), or ask your agent: *"Which traffic source converts best to signup?"*
+5. **Ask.** Open `https://glass.<you>.workers.dev/app` (sign in with `npx @glassanalytics/cli key`), or ask your agent: *"Which traffic source converts best to signup?"*
 
-Run `npx glass status` any time to check everything end to end. See [docs/getting-started.md](docs/getting-started.md) for frameworks, custom domains and EU data residency.
+Run `npx @glassanalytics/cli status` any time to check everything end to end. See [docs/getting-started.md](docs/getting-started.md) for frameworks, custom domains and EU data residency.
 
 ## What you get
 

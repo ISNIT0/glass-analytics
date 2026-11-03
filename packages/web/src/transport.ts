@@ -6,7 +6,7 @@
  * sent as `text/plain` so browsers skip the CORS preflight request.
  */
 
-import type { WireBatch, WireEvent } from '@glass/core/events';
+import type { WireBatch, WireEvent } from '@glassanalytics/core/events';
 
 const MAX_BATCH = 20;
 const MAX_QUEUE = 500;

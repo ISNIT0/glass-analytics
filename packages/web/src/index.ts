@@ -1,8 +1,8 @@
 /**
- * @glass/web — the Glass browser SDK.
+ * @glassanalytics/web — the Glass browser SDK.
  *
  * ```ts
- * import { glass } from '@glass/web';
+ * import { glass } from '@glassanalytics/web';
  *
  * glass.init({ host: 'https://glass.acme.workers.dev', project: 'acme' });
  * glass.capture('signup_completed', { plan: 'pro' });

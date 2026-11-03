@@ -30,7 +30,7 @@ const browserCapture = (event: string, props?: Record<string, unknown>) =>
   `window.glass?.capture(${JSON.stringify(event)}${props && Object.keys(props).length ? `, ${JSON.stringify(props)}` : ''});`;
 
 const moduleCapture = (event: string, props?: Record<string, unknown>) =>
-  `import { glass } from '@glass/web';\n\nglass.capture(${JSON.stringify(event)}${props && Object.keys(props).length ? `, ${JSON.stringify(props)}` : ''});`;
+  `import { glass } from '@glassanalytics/web';\n\nglass.capture(${JSON.stringify(event)}${props && Object.keys(props).length ? `, ${JSON.stringify(props)}` : ''});`;
 
 export const FRAMEWORKS: Record<Framework, { name: string; snippet(o: SnippetOptions): FrameworkSnippet }> = {
   html: {
@@ -68,8 +68,8 @@ export const FRAMEWORKS: Record<Framework, { name: string; snippet(o: SnippetOpt
   vite: {
     name: 'Vite (React, Vue, Svelte, Solid…)',
     snippet: (o) => ({
-      file: 'src/main.ts (or main.tsx) — after `npm install @glass/web`',
-      code: `import { glass } from '@glass/web';\n\nglass.init({ host: '${o.host}', project: '${o.project}' });`,
+      file: 'src/main.ts (or main.tsx) — after `npm install @glassanalytics/web`',
+      code: `import { glass } from '@glassanalytics/web';\n\nglass.init({ host: '${o.host}', project: '${o.project}' });`,
       capture: moduleCapture,
     }),
   },

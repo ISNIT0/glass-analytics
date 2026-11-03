@@ -3,7 +3,7 @@
 By default Glass keeps events in D1, which is exact, real-time and free-plan friendly. D1 databases have a size limit, though, so for high volumes Glass can stream events into Apache Iceberg tables in R2 and query them with Basin SQL (Cloudflare's DataFusion engine, formerly R2 SQL):
 
 ```sh
-npx glass init --lake
+npx @glassanalytics/cli init --lake
 ```
 
 Status: **beta**. Pipelines and Basin SQL are themselves in beta, and the Basin SQL response format is not documented yet, so Glass parses it tolerantly (`normaliseRows()` in `packages/worker/src/stores/lake.ts`). Please report anything odd.

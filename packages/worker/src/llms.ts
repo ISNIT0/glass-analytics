@@ -3,9 +3,9 @@
  * instrument and query Glass, with this Worker's real URLs filled in.
  */
 
-import { INSIGHTS } from '@glass/core/insights';
-import { EVENT_NAMING_GUIDE } from '@glass/core/instrument';
-import { GLASS_VERSION } from '@glass/core/version';
+import { INSIGHTS } from '@glassanalytics/core/insights';
+import { EVENT_NAMING_GUIDE } from '@glassanalytics/core/instrument';
+import { GLASS_VERSION } from '@glassanalytics/core/version';
 import { TOOLS } from './mcp/tools.ts';
 
 export function llmsTxt(base: string, store: string): string {
@@ -17,7 +17,7 @@ export function llmsTxt(base: string, store: string): string {
 
     <script defer src="${base}/s.js" data-project="PROJECT_ID"></script>
 
-Or with npm: \`npm i @glass/web\`, then \`glass.init({ host: '${base}', project: 'PROJECT_ID' })\`.
+Or with npm: \`npm i @glassanalytics/web\`, then \`glass.init({ host: '${base}', project: 'PROJECT_ID' })\`.
 Pageviews, clicks, errors and web vitals are captured automatically.
 
 ## Track events
@@ -32,7 +32,7 @@ ${EVENT_NAMING_GUIDE}
 ## Query (MCP)
 
 MCP endpoint: ${base}/mcp (Streamable HTTP, header "Authorization: Bearer <key>").
-stdio clients: \`npx glass mcp\` in a project set up with \`glass init\`.
+stdio clients: \`npx @glassanalytics/cli mcp\` in a project set up with \`glass init\`.
 
 Tools:
 ${TOOLS.map((t) => `- ${t.name}: ${t.description}`).join('\n')}

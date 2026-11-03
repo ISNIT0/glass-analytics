@@ -9,9 +9,9 @@
  * change; the endpoint paths and response parsing are isolated here for that reason.
  */
 
-import type { StoredEvent } from '@glass/core/events';
-import type { Row } from '@glass/core/insights/types';
-import { basin } from '@glass/core/sql/dialect';
+import type { StoredEvent } from '@glassanalytics/core/events';
+import type { Row } from '@glassanalytics/core/insights/types';
+import { basin } from '@glassanalytics/core/sql/dialect';
 import type { Env } from '../env.ts';
 import { HttpError } from '../http.ts';
 import type { EventStore, IdentityLink } from './types.ts';

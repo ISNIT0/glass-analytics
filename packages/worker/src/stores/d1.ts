@@ -1,6 +1,6 @@
-import { EVENT_COLUMNS, type StoredEvent } from '@glass/core/events';
-import type { Row } from '@glass/core/insights/types';
-import { sqlite } from '@glass/core/sql/dialect';
+import { EVENT_COLUMNS, type StoredEvent } from '@glassanalytics/core/events';
+import type { Row } from '@glassanalytics/core/insights/types';
+import { sqlite } from '@glassanalytics/core/sql/dialect';
 import type { D1Database } from '../env.ts';
 import type { EventStore, IdentityLink } from './types.ts';
 

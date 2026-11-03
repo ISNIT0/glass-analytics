@@ -16,8 +16,8 @@
  * page: see `loadReplayPages`.
  */
 
-import type { RrwebEvent } from '@glass/core/replay-summary';
-import { parseUserAgent } from '@glass/core/ua';
+import type { RrwebEvent } from '@glassanalytics/core/replay-summary';
+import { parseUserAgent } from '@glassanalytics/core/ua';
 import type { D1Database, Env, R2Bucket } from './env.ts';
 import { HttpError } from './http.ts';
 import { requestInfo } from './ingest.ts';

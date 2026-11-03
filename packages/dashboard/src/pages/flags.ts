@@ -2,7 +2,7 @@
  * Feature flags: list, create and edit.
  */
 
-import type { FlagDefinition } from '@glass/core/flags';
+import type { FlagDefinition } from '@glassanalytics/core/flags';
 import { api } from '../api.ts';
 import { copyButton, empty, errorState, later, pageHeader, panel, table, toast } from '../components/ui.ts';
 import { h, mount } from '../dom.ts';

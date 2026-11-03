@@ -20,8 +20,8 @@ A flag has a rollout percentage, optional variants, and optional targeting rules
 - Change the `salt` to reshuffle everyone.
 
 ```sh
-npx glass flags set beta-editor --rollout 10
-npx glass flags set beta-editor --rules '[{"conditions":[{"property":"person.plan","value":"pro"}],"rollout":100}]'
+npx @glassanalytics/cli flags set beta-editor --rollout 10
+npx @glassanalytics/cli flags set beta-editor --rules '[{"conditions":[{"property":"person.plan","value":"pro"}],"rollout":100}]'
 ```
 
 ## Experiments
@@ -29,7 +29,7 @@ npx glass flags set beta-editor --rules '[{"conditions":[{"property":"person.pla
 An experiment is a multivariate flag plus a goal event:
 
 ```sh
-npx glass experiments create checkout-v2 --goal purchase_completed --hypothesis "A one-page checkout converts better"
+npx @glassanalytics/cli experiments create checkout-v2 --goal purchase_completed --hypothesis "A one-page checkout converts better"
 ```
 
 This creates the experiment as a draft, plus a `checkout-v2` flag with `control` and `test` at 50/50, disabled until you start. In code, read the flag where the variant is shown:
@@ -38,7 +38,7 @@ This creates the experiment as a draft, plus a `checkout-v2` flag with `control`
 if (glass.flag('checkout-v2') === 'test') renderOnePageCheckout();
 ```
 
-Then `npx glass experiments start checkout-v2`, wait, and read `npx glass experiments results checkout-v2`. Ship the winner with `npx glass experiments ship checkout-v2 test`; everyone gets that variant from then on.
+Then `npx @glassanalytics/cli experiments start checkout-v2`, wait, and read `npx @glassanalytics/cli experiments results checkout-v2`. Ship the winner with `npx @glassanalytics/cli experiments ship checkout-v2 test`; everyone gets that variant from then on.
 
 ## How results are computed
 

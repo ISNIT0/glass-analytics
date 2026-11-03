@@ -10,7 +10,7 @@ We'll acknowledge your report, keep you updated while we investigate, and credit
 
 ## Supported versions
 
-Security fixes go into the latest release. Users get them with `npx glass@latest upgrade`.
+Security fixes go into the latest release. Users get them with `npx @glassanalytics/cli@latest upgrade`.
 
 ## Scope notes
 

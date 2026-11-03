@@ -4,10 +4,10 @@
  * agents and scripts.
  */
 
-import type { FunnelResult } from '@glass/core/insights/funnel';
-import type { RetentionResult } from '@glass/core/insights/retention';
-import type { TrendsResult } from '@glass/core/insights/trends';
-import type { WebResult } from '@glass/core/insights/web';
+import type { FunnelResult } from '@glassanalytics/core/insights/funnel';
+import type { RetentionResult } from '@glassanalytics/core/insights/retention';
+import type { TrendsResult } from '@glassanalytics/core/insights/trends';
+import type { WebResult } from '@glassanalytics/core/insights/web';
 import { call, withProject } from '../client.ts';
 import { UsageError } from '../config.ts';
 import { color, line, pct, printJson, table } from '../output.ts';

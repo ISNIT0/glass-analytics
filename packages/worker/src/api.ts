@@ -3,8 +3,8 @@
  * agents can discover everything from `GET /api`.
  */
 
-import { INSIGHTS, experimentSpec, filterSchema, sqlSpec } from '@glass/core/insights';
-import { GLASS_VERSION } from '@glass/core/version';
+import { INSIGHTS, experimentSpec, filterSchema, sqlSpec } from '@glassanalytics/core/insights';
+import { GLASS_VERSION } from '@glassanalytics/core/version';
 import { z } from 'zod/v4';
 import { type Scope, requireScope } from './auth.ts';
 import type { Env } from './env.ts';

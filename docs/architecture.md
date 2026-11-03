@@ -51,13 +51,13 @@ The core tests execute every compiler on real SQLite against the production migr
 
 | Package | Published | |
 | --- | --- | --- |
-| `@glass/core` | no (bundled) | Event model, SQL, stats, flags, replay summaries, snippets |
-| `@glass/web` | npm | Browser SDK |
-| `@glass/worker` | no (bundled into the CLI) | The Worker |
-| `@glass/dashboard` | no (bundled into the Worker) | The dashboard |
-| `glass` | npm | CLI, carrying the built Worker and migrations |
+| `@glassanalytics/core` | no (bundled) | Event model, SQL, stats, flags, replay summaries, snippets |
+| `@glassanalytics/web` | npm | Browser SDK |
+| `@glassanalytics/worker` | no (bundled into the CLI) | The Worker |
+| `@glassanalytics/dashboard` | no (bundled into the Worker) | The dashboard |
+| `@glassanalytics/cli` | npm | CLI, carrying the built Worker and migrations |
 
-Versioning the CLI and the Worker together means `npx glass@x upgrade` always deploys exactly the Worker that CLI was tested with.
+Versioning the CLI and the Worker together means `npx @glassanalytics/cli@x upgrade` always deploys exactly the Worker that CLI was tested with.
 
 ## Why not…
 

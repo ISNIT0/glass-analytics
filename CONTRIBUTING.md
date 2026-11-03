@@ -33,7 +33,7 @@ packages/
   core/        Pure logic shared by everything: the event model, SQL dialects and
                compilers (trends, funnels, retention, web, experiments), stats,
                flag evaluation, replay summaries, framework snippets. No I/O.
-  web/         The browser SDK (@glass/web) and the replay recorder (replay.js).
+  web/         The browser SDK (@glassanalytics/web) and the replay recorder (replay.js).
   worker/      The Cloudflare Worker: ingest, API, MCP server, flags, replay storage,
                the dashboard's host. migrations/ holds the D1 schema.
   dashboard/   The dashboard: dependency-free TypeScript, bundled into the Worker.
@@ -79,14 +79,14 @@ Biome formats and lints (`pnpm format`). TypeScript is strict, with `noUnchecked
 1. Open an issue first for anything large, so we can agree on the approach.
 2. Keep PRs focused; include tests for behaviour changes.
 3. Run `pnpm check` (and `pnpm test:e2e` if you touched the SDK, ingest or dashboard).
-4. Add a changeset if your change affects a published package (`glass` or `@glass/web`): `pnpm changeset`.
+4. Add a changeset if your change affects a published package (`glass` or `@glassanalytics/web`): `pnpm changeset`.
 5. Fill in the PR template, including how you tested it.
 
 We squash-merge, with the PR title as the commit message.
 
 ## Releasing (maintainers)
 
-Changesets collects changes. Merging the "Version packages" PR that the release workflow opens publishes `glass` and `@glass/web` to npm and tags the release. `GLASS_VERSION` in `packages/core/src/version.ts` must match the CLI version; `glass upgrade` compares the two.
+Changesets collects changes. Merging the "Version packages" PR that the release workflow opens publishes `@glassanalytics/cli` and `@glassanalytics/web` to npm and tags the release. `GLASS_VERSION` in `packages/core/src/version.ts` must match the CLI version; `glass upgrade` compares the two.
 
 ## Getting help
 

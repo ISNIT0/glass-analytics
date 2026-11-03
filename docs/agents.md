@@ -7,7 +7,7 @@ Everything in Glass is available to agents in three equivalent ways. They call t
 `glass init` adds this to `.mcp.json`, which Claude Code, Cursor and other MCP clients read:
 
 ```json
-{ "mcpServers": { "glass": { "command": "npx", "args": ["-y", "glass", "mcp"] } } }
+{ "mcpServers": { "glass": { "command": "npx", "args": ["-y", "@glassanalytics/cli", "mcp"] } } }
 ```
 
 `glass mcp` is a small stdio bridge that forwards to your Worker's `/mcp` endpoint with the key from `.glass/credentials.json`, so no secret goes into the config file. Clients that support remote servers can connect directly instead:
@@ -16,7 +16,7 @@ Everything in Glass is available to agents in three equivalent ways. They call t
 claude mcp add --transport http glass https://glass.<you>.workers.dev/mcp --header "Authorization: Bearer $GLASS_API_KEY"
 ```
 
-Use the read-only key (`npx glass key --read`) for agents that shouldn't change flags or experiments; write tools then return a clear error.
+Use the read-only key (`npx @glassanalytics/cli key --read`) for agents that shouldn't change flags or experiments; write tools then return a clear error.
 
 ### Tools
 
@@ -51,17 +51,17 @@ Every result includes a `summary` sentence, the `sql` that ran, and a `dashboard
 All commands accept `--json`. In a project set up with `glass init` they need no configuration; elsewhere set `GLASS_HOST`, `GLASS_API_KEY` and optionally `GLASS_PROJECT`.
 
 ```sh
-npx glass query web --from -7d
-npx glass query trends --event signup_completed --math unique_persons --interval week --breakdown utm_source
-npx glass query funnel --steps '$pageview,signup_started,signup_completed' --window 1d --where 'device=mobile'
-npx glass query retention --cohort signup_completed --return '$pageview' --period week
-npx glass query funnel --spec '{"steps":[{"event":"a"},{"event":"b"}],"from":"-90d"}' --sql
-npx glass sql "SELECT path, COUNT(*) AS n FROM events WHERE event = '\$pageview' GROUP BY path ORDER BY n DESC LIMIT 10"
-npx glass events signup_completed
-npx glass replays --errors
-npx glass replays summary <session-id>
-npx glass flags set new-checkout --variants control:50,test:50
-npx glass experiments create checkout-v2 --goal purchase_completed
+npx @glassanalytics/cli query web --from -7d
+npx @glassanalytics/cli query trends --event signup_completed --math unique_persons --interval week --breakdown utm_source
+npx @glassanalytics/cli query funnel --steps '$pageview,signup_started,signup_completed' --window 1d --where 'device=mobile'
+npx @glassanalytics/cli query retention --cohort signup_completed --return '$pageview' --period week
+npx @glassanalytics/cli query funnel --spec '{"steps":[{"event":"a"},{"event":"b"}],"from":"-90d"}' --sql
+npx @glassanalytics/cli sql "SELECT path, COUNT(*) AS n FROM events WHERE event = '\$pageview' GROUP BY path ORDER BY n DESC LIMIT 10"
+npx @glassanalytics/cli events signup_completed
+npx @glassanalytics/cli replays --errors
+npx @glassanalytics/cli replays summary <session-id>
+npx @glassanalytics/cli flags set new-checkout --variants control:50,test:50
+npx @glassanalytics/cli experiments create checkout-v2 --goal purchase_completed
 ```
 
 ## HTTP

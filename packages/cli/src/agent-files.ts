@@ -9,7 +9,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { EVENT_NAMING_GUIDE } from '@glass/core/instrument';
+import { EVENT_NAMING_GUIDE } from '@glassanalytics/core/instrument';
 
 const START = '<!-- glass:start -->';
 const END = '<!-- glass:end -->';
@@ -28,16 +28,16 @@ export function agentsSection(o: AgentFileOptions): string {
 
 This project uses Glass for analytics, session replay, feature flags and A/B tests. It runs in our own Cloudflare account; deployment config is in \`.glass/\`.
 
-- Dashboard: ${o.host}/app (print the key with \`npx glass key\`)
+- Dashboard: ${o.host}/app (print the key with \`npx @glassanalytics/cli key\`)
 - MCP server \`glass\` is configured in \`.mcp.json\`. Start with the \`overview\` tool, then \`list_events\` for exact event names.
-- Terminal: \`npx glass query web --from -7d\`, \`npx glass sql "SELECT …"\`, \`npx glass --help\`
+- Terminal: \`npx @glassanalytics/cli query web --from -7d\`, \`npx @glassanalytics/cli sql "SELECT …"\`, \`npx @glassanalytics/cli --help\`
 
 Tracking (project \`${o.project}\`):
 - Install (${o.snippet.file}): \`${o.snippet.code.split('\n').pop()}\`
 - Custom events: \`glass.capture('signup_completed', { plan: 'pro' })\`. After login: \`glass.identify(user.id, { plan })\`.
 - ${EVENT_NAMING_GUIDE}
-- After adding an event and deploying, confirm it arrives: \`npx glass events <name>\`. Document it: \`npx glass events <name> --describe "…"\`.
-- Feature flags: \`glass.flag('key')\` returns "on", a variant key, or null. Create with \`npx glass flags set <key> --rollout 10\`.
+- After adding an event and deploying, confirm it arrives: \`npx @glassanalytics/cli events <name>\`. Document it: \`npx @glassanalytics/cli events <name> --describe "…"\`.
+- Feature flags: \`glass.flag('key')\` returns "on", a variant key, or null. Create with \`npx @glassanalytics/cli flags set <key> --rollout 10\`.
 ${END}`;
 }
 
@@ -60,7 +60,7 @@ description: Use when adding analytics events, answering questions about traffic
 
 # Glass analytics
 
-Glass is deployed at ${o.host} (project \`${o.project}\`). Prefer the \`glass\` MCP tools; the CLI (\`npx glass …\`) does the same things.
+Glass is deployed at ${o.host} (project \`${o.project}\`). Prefer the \`glass\` MCP tools; the CLI (\`npx @glassanalytics/cli …\`) does the same things.
 
 ## Answer a question about usage
 
@@ -73,7 +73,7 @@ Glass is deployed at ${o.host} (project \`${o.project}\`). Prefer the \`glass\` 
 
 1. \`instrument\` with the event name returns the exact code for this framework.
 2. ${EVENT_NAMING_GUIDE}
-3. After deploying, \`describe_event\` (or \`npx glass events <name>\`) confirms events arrive with the expected properties.
+3. After deploying, \`describe_event\` (or \`npx @glassanalytics/cli events <name>\`) confirms events arrive with the expected properties.
 4. \`define_event\` documents what the event means.
 
 ## Debug a user problem
@@ -99,7 +99,7 @@ export function upsertMcpConfig(path: string): boolean {
       return false; // don't overwrite a file we can't parse
     }
   }
-  config.mcpServers = { ...config.mcpServers, glass: { command: 'npx', args: ['-y', 'glass', 'mcp'] } };
+  config.mcpServers = { ...config.mcpServers, glass: { command: 'npx', args: ['-y', '@glassanalytics/cli', 'mcp'] } };
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(config, null, 2)}\n`);
   return true;

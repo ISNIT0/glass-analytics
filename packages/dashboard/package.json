@@ -1,11 +1,11 @@
 {
-  "name": "@glass/dashboard",
+  "name": "@glassanalytics/dashboard",
   "version": "0.1.0",
   "private": true,
   "description": "The Glass dashboard: a dependency-free TypeScript single-page app bundled into the Worker.",
   "type": "module",
   "dependencies": {
-    "@glass/core": "workspace:*",
+    "@glassanalytics/core": "workspace:*",
     "rrweb": "^2.0.0"
   }
 }
