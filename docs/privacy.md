@@ -22,9 +22,12 @@ This is enough for web analytics. It is not enough for funnels across days, rete
 
 ## Session replay
 
-- Every input is masked (`maskAllInputs`). Set `maskAllText` to mask all text as well.
+- Every input is masked (`maskAllInputs`). Set `maskAllText` to mask all text as well, or mark elements with `data-glass-mask` to mask just their text.
 - Elements matching `[data-glass-block]` (configurable) aren't recorded.
 - Recording is sampled; nothing is recorded unless you set a sample rate.
+- Network requests are recorded as method, URL without its query string, status and timing. Headers and bodies never are. Turn it off with `network: false`.
+- Console `warn` and `error` messages are recorded by default; they contain whatever your code logs. Turn it off with `console: false`.
+- Notes left on a session, and its cached summary, are deleted with the session (retention, or erasing a person).
 
 ## Deleting a person
 

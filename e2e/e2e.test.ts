@@ -139,17 +139,38 @@ describe('Glass end to end', { timeout: 120_000 }, () => {
       'one recorded page per page load',
     );
     assert.ok(recording.events.length > 10);
-    const summary = await api<{ transcript: string; stats: { clicks: number; errors: number; pages: number } }>('GET', `/api/replays/${session}/summary?project=demo`);
+    const summary = await eventually(
+      () =>
+        api<{ transcript: string; stats: { clicks: number; errors: number; pages: number; failedRequests: number; consoleErrors: number } }>(
+          'GET',
+          `/api/replays/${session}/summary?project=demo`,
+        ),
+      (r) => r.stats.failedRequests > 0 && r.stats.consoleErrors > 0,
+      'the failed billing request and its console error',
+    );
     assert.match(summary.transcript, /Viewed \/pricing/);
-    // Every click is labelled from the page it happened on, including the ones that navigate away.
+    // Every click is labelled from the page it happened on, including the ones that navigate away,
+    // and including the call to action the flag rewrites after load (rrweb records it as a mutation).
     const clicks = summary.transcript
       .split('\n')
-      .map((l) => l.slice(6))
+      .map((l) => l.slice(6).replace(/ · .*$/, ''))
       .filter((l) => /^(Rage-)?[Cc]licked /.test(l));
     assert.match(clicks[0] ?? '', /^Clicked "(See pricing|Start your free trial)" \(link\)$/); // the new-cta flag picks the text
     assert.deepEqual(clicks.slice(1), ['Clicked "Choose Team" (button)', 'Clicked "Create account" (button)', 'Rage-clicked "Upgrade now" (button) ×3']);
+    assert.match(summary.transcript, /Rage-clicked "Upgrade now" \(button\) ×3 · #pay \[.*an error followed\]/);
     assert.match(summary.transcript, /ERROR TypeError/);
+    assert.match(summary.transcript, /Request failed: POST http:\/\/[^ ]+\/api\/billing → 404/);
+    assert.doesNotMatch(summary.transcript, /plan=pro/, 'query strings are not recorded');
+    assert.match(summary.transcript, /Console error: Billing request failed: 404/);
     assert.match(summary.transcript, /Event signup_completed \(plan="team"\)/);
+
+    const shot = await api<{ screen: string }>('GET', `/api/replays/${session}/snapshot?project=demo&at=00:00`);
+    assert.match(shot.screen, /# Inkwell/);
+    const found = await api<{ replays: { session: string }[] }>('GET', '/api/replays?project=demo&has=rage_clicks,failed_requests&url=/app');
+    assert.deepEqual(
+      found.replays.map((r) => r.session),
+      [session],
+    );
   });
 
   it('shows it in the dashboard', async () => {
@@ -174,9 +195,12 @@ describe('Glass end to end', { timeout: 120_000 }, () => {
     await page.screenshot({ path: `${SHOTS}dashboard-funnel.png`, fullPage: true });
 
     await page.goto(`${server.glassUrl}/app#/replays?project=demo`);
-    await page.click('table a >> nth=0');
-    await page.waitForSelector('pre.transcript');
-    assert.match((await page.textContent('pre.transcript')) ?? '', /Rage-clicked/);
+    await page.click('table a.replay-link >> nth=0');
+    await page.waitForSelector('.activity-item');
+    await page.waitForSelector('.scrub-markers .marker.error');
+    assert.match((await page.textContent('.activity-list')) ?? '', /Upgrade now/);
+    await page.keyboard.press('Space');
+    await page.waitForTimeout(1500);
     await page.screenshot({ path: `${SHOTS}dashboard-replay.png`, fullPage: true });
 
     await page.goto(`${server.glassUrl}/app#/flags?project=demo`);

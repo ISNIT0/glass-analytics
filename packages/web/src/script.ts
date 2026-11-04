@@ -8,7 +8,9 @@
  * Attributes: `data-project` (required), `data-host` (defaults to where the
  * script was loaded from), `data-persistence="cookieless"`,
  * `data-autocapture="false"`, `data-replay-sample-rate="0.1"`,
- * `data-replay-on-error-sample-rate="1"`, `data-debug="true"`.
+ * `data-replay-on-error-sample-rate="1"`, `data-replay-console="false"` (or
+ * `"all"`), `data-replay-network="false"`, `data-replay-mask-all-text="true"`,
+ * `data-debug="true"`.
  *
  * Calls made before the script loads can be queued with this one-line stub:
  * `<script>window.glass=window.glass||{q:[],capture(){this.q.push(['capture',...arguments])},identify(){this.q.push(['identify',...arguments])}}</script>`
@@ -33,7 +35,16 @@ if (script && data?.project) {
     project: data.project,
     persistence: data.persistence === 'cookieless' ? 'cookieless' : 'localStorage',
     autocapture: data.autocapture !== 'false',
-    replay: sampleRate > 0 || onErrorSampleRate > 0 ? { sampleRate, onErrorSampleRate } : false,
+    replay:
+      sampleRate > 0 || onErrorSampleRate > 0
+        ? {
+            sampleRate,
+            onErrorSampleRate,
+            console: data.replayConsole === 'false' ? false : data.replayConsole === 'all' ? true : undefined,
+            network: data.replayNetwork !== 'false',
+            maskAllText: data.replayMaskAllText === 'true',
+          }
+        : false,
     debug: data.debug === 'true',
   });
 }

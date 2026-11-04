@@ -15,12 +15,19 @@
  *   sent uncompressed because compression is asynchronous and a page that is
  *   going away can't wait for it.
  *
- * Privacy defaults: every input is masked; `maskAllText` masks all text too;
- * elements matching `blockSelector` are not recorded at all.
+ * Besides the DOM, the recording carries rrweb custom events the player and
+ * transcript read: `glass:url` (client-side navigation), `glass:console`
+ * (console messages, warn and error by default) and `glass:network` (method,
+ * URL without query string, status and timing of fetch/XHR requests; never
+ * headers or bodies).
+ *
+ * Privacy defaults: every input is masked; `maskAllText` masks all text too,
+ * and elements matching `maskTextSelector` have their text masked; elements
+ * matching `blockSelector` are not recorded at all.
  */
 
 import { record } from 'rrweb';
-import type { ReplayController, ReplayModule, ReplayStartOptions } from './types.ts';
+import type { ConsoleLevel, ReplayController, ReplayModule, ReplayStartOptions } from './types.ts';
 
 const CHUNK_MS = 10_000;
 /** What one beacon can carry, leaving room for the SDK's own batch (browsers allow 64 KB in flight). */
@@ -28,7 +35,12 @@ const BEACON_CHARS = 48_000;
 /** Size-triggered uploads happen at most this often, so a busy page can't create thousands of chunks. */
 const MIN_UPLOAD_GAP_MS = 1_000;
 const BUFFER_CHECKOUT_MS = 30_000;
+const RETRY_MS = 3_000;
 const FULL_SNAPSHOT = 2;
+const RAGE_GAP_MS = 1500;
+/** Per page load, so a logging loop or polling can't flood a recording. */
+const MAX_CONSOLE = 300;
+const MAX_REQUESTS = 500;
 
 interface RecordedEvent {
   type: number;
@@ -38,6 +50,128 @@ interface RecordedEvent {
 }
 
 const isClick = (e: RecordedEvent) => e.type === 3 && e.data?.source === 2 && e.data?.type === 2;
+
+/** origin + path: query strings hold tokens and personal data more often than they help. */
+function bare(url: string): string {
+  try {
+    const u = new URL(url, location.href);
+    return `${u.origin}${u.pathname}`.slice(0, 500);
+  } catch {
+    return String(url).split('?')[0]!.slice(0, 500);
+  }
+}
+
+function stringify(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (value instanceof Error) return `${value.name}: ${value.message}`;
+  try {
+    return JSON.stringify(value) ?? String(value);
+  } catch {
+    return String(value);
+  }
+}
+
+/** Wrap console methods; returns a function that restores them. */
+function watchConsole(
+  levels: ConsoleLevel[],
+  report: (level: ConsoleLevel, message: string, stack?: string) => void,
+): () => void {
+  const originals: Partial<Record<ConsoleLevel, (...args: unknown[]) => void>> = {};
+  let busy = false;
+  for (const level of levels) {
+    const original = console[level];
+    if (typeof original !== 'function') continue;
+    originals[level] = original;
+    console[level] = function (this: Console, ...args: unknown[]) {
+      if (!busy) {
+        busy = true;
+        try {
+          const error = args.find((a): a is Error => a instanceof Error);
+          report(level, args.map(stringify).join(' ').slice(0, 1000), error?.stack?.slice(0, 2000));
+        } catch {
+          // Never let recording break the page's logging.
+        }
+        busy = false;
+      }
+      return original.apply(this, args);
+    };
+  }
+  return () => {
+    for (const [level, fn] of Object.entries(originals))
+      console[level as ConsoleLevel] = fn as never;
+  };
+}
+
+/** Wrap fetch and XMLHttpRequest to time requests; returns a function that restores them. */
+function watchNetwork(
+  ignore: (url: string) => boolean,
+  report: (r: {
+    method: string;
+    url: string;
+    status: number;
+    duration: number;
+    error?: string;
+  }) => void,
+): () => void {
+  const originalFetch = window.fetch;
+  if (typeof originalFetch === 'function') {
+    window.fetch = async function (this: unknown, input: RequestInfo | URL, init?: RequestInit) {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (ignore(url)) return originalFetch.call(this, input, init);
+      const method = init?.method ?? (input instanceof Request ? input.method : 'GET');
+      const started = performance.now();
+      try {
+        const res = await originalFetch.call(this, input, init);
+        report({ method, url, status: res.status, duration: performance.now() - started });
+        return res;
+      } catch (err) {
+        report({
+          method,
+          url,
+          status: 0,
+          duration: performance.now() - started,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        throw err;
+      }
+    } as typeof fetch;
+  }
+  const proto = typeof XMLHttpRequest === 'undefined' ? null : XMLHttpRequest.prototype;
+  const originalOpen = proto?.open;
+  const originalSend = proto?.send;
+  type Tracked = XMLHttpRequest & { __glass?: { method: string; url: string } };
+  if (proto && originalOpen && originalSend) {
+    proto.open = function (this: Tracked, method: string, url: string | URL, ...rest: unknown[]) {
+      this.__glass = { method, url: String(url) };
+      return (originalOpen as (...a: unknown[]) => void).call(this, method, url, ...rest);
+    } as typeof proto.open;
+    proto.send = function (this: Tracked, body?: Document | XMLHttpRequestBodyInit | null) {
+      const info = this.__glass;
+      if (info && !ignore(info.url)) {
+        const started = performance.now();
+        this.addEventListener(
+          'loadend',
+          () =>
+            report({
+              method: info.method,
+              url: info.url,
+              status: this.status,
+              duration: performance.now() - started,
+            }),
+          { once: true },
+        );
+      }
+      return originalSend.call(this, body);
+    };
+  }
+  return () => {
+    if (typeof originalFetch === 'function') window.fetch = originalFetch;
+    if (proto && originalOpen && originalSend) {
+      proto.open = originalOpen;
+      proto.send = originalSend;
+    }
+  };
+}
 
 function startReplay(options: ReplayStartOptions): ReplayController {
   let mode = options.mode;
@@ -49,12 +183,36 @@ function startReplay(options: ReplayStartOptions): ReplayController {
   let pendingChars = 0;
   let firstTs = 0;
   let lastTs = 0;
-  let clicks = 0;
-  let errors = 0;
+  // Counts for the session list, reset with every chunk.
+  const counts = { clicks: 0, errors: 0, rage: 0, console: 0, failed: 0 };
+  let lastClick = { id: -1, ts: 0, run: 0 };
+  let consoleCount = 0;
+  let requestCount = 0;
+  let lastHref = bare(location.href);
   let lastUpload = 0;
   let uploadTimer: ReturnType<typeof setTimeout> | undefined;
   // In buffer mode, keep the current and previous 30s segments (each starts with a full snapshot).
   let segments: RecordedEvent[][] = [[]];
+  const glassHost = bare(options.host);
+
+  function count(event: RecordedEvent): void {
+    if (isClick(event)) {
+      counts.clicks++;
+      const id = event.data.id;
+      const run =
+        id === lastClick.id && event.timestamp - lastClick.ts < RAGE_GAP_MS ? lastClick.run + 1 : 1;
+      // Count a burst once, when it reaches three clicks.
+      if (run === 3) counts.rage++;
+      lastClick = { id, ts: event.timestamp, run };
+    } else if (event.type === 5) {
+      const tag = event.data?.tag;
+      if (tag === 'glass:console' && event.data.payload?.level === 'error') counts.console++;
+      if (tag === 'glass:network') {
+        const status = event.data.payload?.status;
+        if (!status || status >= 400) counts.failed++;
+      }
+    }
+  }
 
   function append(event: RecordedEvent): void {
     const json = JSON.stringify(event);
@@ -62,7 +220,7 @@ function startReplay(options: ReplayStartOptions): ReplayController {
     lastTs = event.timestamp;
     pending.push(json);
     pendingChars += json.length;
-    if (isClick(event)) clicks++;
+    count(event);
   }
 
   /** Upload as soon as the rate limit allows. */
@@ -71,6 +229,40 @@ function startReplay(options: ReplayStartOptions): ReplayController {
     const wait = lastUpload + MIN_UPLOAD_GAP_MS - Date.now();
     if (wait <= 0) void upload(false);
     else uploadTimer = setTimeout(() => void upload(false), wait);
+  }
+
+  async function send(
+    target: (enc: 'gzip' | 'json') => string,
+    body: string,
+    pageIsHidden: boolean,
+  ): Promise<void> {
+    // sendBeacon returns false when the body is over the browser's limit; then try the slower ways.
+    if (
+      pageIsHidden &&
+      body.length <= BEACON_CHARS &&
+      navigator.sendBeacon?.(target('json'), new Blob([body], { type: 'text/plain' }))
+    )
+      return;
+    let res: Response;
+    if (typeof CompressionStream === 'undefined') {
+      res = await originalFetch(target('json'), {
+        method: 'POST',
+        body,
+        headers: { 'Content-Type': 'text/plain' },
+        keepalive: body.length <= BEACON_CHARS,
+      });
+    } else {
+      const gz = await new Response(
+        new Blob([body]).stream().pipeThrough(new CompressionStream('gzip')),
+      ).blob();
+      // keepalive lets the upload finish if the page navigates away, but only small bodies may use it.
+      res = await originalFetch(target('gzip'), {
+        method: 'POST',
+        body: new Blob([gz], { type: 'text/plain' }),
+        keepalive: gz.size <= BEACON_CHARS,
+      });
+    }
+    if (res.status >= 500 || res.status === 429) throw new Error(`upload failed: ${res.status}`);
   }
 
   async function upload(pageIsHidden: boolean): Promise<void> {
@@ -87,33 +279,45 @@ function startReplay(options: ReplayStartOptions): ReplayController {
       page,
       start: String(firstTs),
       end: String(lastTs),
-      clicks: String(clicks),
-      errors: String(errors),
+      clicks: String(counts.clicks),
+      errors: String(counts.errors),
+      rage: String(counts.rage),
+      console: String(counts.console),
+      failed: String(counts.failed),
       href: location.href.split('?')[0]!.slice(0, 500),
     });
     if (options.distinctId) q.set('d', options.distinctId);
     if (options.userId) q.set('u', options.userId);
     pending = [];
     pendingChars = 0;
-    clicks = 0;
-    errors = 0;
+    for (const k of Object.keys(counts) as (keyof typeof counts)[]) counts[k] = 0;
     lastUpload = Date.now();
     const target = (enc: 'gzip' | 'json') => `${options.host}/r?${q}&enc=${enc}`;
-    const plain = { 'Content-Type': 'text/plain' };
 
     try {
-      // sendBeacon returns false when the body is over the browser's limit; then try the slower ways.
-      if (pageIsHidden && body.length <= BEACON_CHARS && navigator.sendBeacon?.(target('json'), new Blob([body], { type: 'text/plain' }))) return;
-      if (typeof CompressionStream === 'undefined') {
-        await fetch(target('json'), { method: 'POST', body, headers: plain, keepalive: body.length <= BEACON_CHARS });
-        return;
-      }
-      const gz = await new Response(new Blob([body]).stream().pipeThrough(new CompressionStream('gzip'))).blob();
-      // keepalive lets the upload finish if the page navigates away, but only small bodies may use it.
-      await fetch(target('gzip'), { method: 'POST', body: new Blob([gz], { type: 'text/plain' }), keepalive: gz.size <= BEACON_CHARS });
+      await send(target, body, pageIsHidden);
     } catch {
-      // Network failure: drop the chunk rather than grow memory without bound.
+      // One retry for a flaky network or a busy Worker; then drop the chunk rather than grow memory without bound.
+      if (pageIsHidden) return;
+      await new Promise((r) => setTimeout(r, RETRY_MS));
+      await send(target, body, false).catch(() => {});
     }
+  }
+
+  /** Add one of our custom events; rrweb routes it through `onEvent` like any other. */
+  function custom(tag: string, payload: Record<string, unknown>): void {
+    try {
+      record.addCustomEvent(tag, payload);
+    } catch {
+      // Not recording (stopped): ignore.
+    }
+  }
+
+  function checkUrl(): void {
+    const href = bare(location.href);
+    if (href === lastHref) return;
+    lastHref = href;
+    custom('glass:url', { href });
   }
 
   function onEvent(event: RecordedEvent, isCheckout?: boolean): void {
@@ -135,25 +339,66 @@ function startReplay(options: ReplayStartOptions): ReplayController {
     if (document.visibilityState === 'hidden') void upload(true);
   };
 
+  // Keep an unwrapped fetch for our own uploads, so they never show up as recorded requests.
+  const originalFetch = window.fetch.bind(window);
+
   // Everything above must exist before record(): it emits the first snapshot synchronously.
+  const maskSelectors = [options.maskAllText ? '*' : '', options.maskTextSelector]
+    .filter(Boolean)
+    .join(', ');
   const stopRecording = record({
     emit: onEvent,
     checkoutEveryNms: mode === 'buffer' ? BUFFER_CHECKOUT_MS : undefined,
     maskAllInputs: true,
-    maskTextSelector: options.maskAllText ? '*' : undefined,
+    maskTextSelector: maskSelectors || undefined,
     blockSelector: options.blockSelector,
     recordCanvas: false,
     collectFonts: false,
     sampling: { mousemove: 50, scroll: 150, input: 'last' },
   });
+
+  const restore: (() => void)[] = [];
+  if (options.console.length) {
+    restore.push(
+      watchConsole(options.console, (level, message, stack) => {
+        if (++consoleCount > MAX_CONSOLE) return;
+        custom('glass:console', { level, message, stack });
+      }),
+    );
+  }
+  if (options.network) {
+    restore.push(
+      watchNetwork(
+        (url) => bare(url).startsWith(glassHost),
+        (r) => {
+          if (++requestCount > MAX_REQUESTS) return;
+          custom('glass:network', {
+            method: r.method.toUpperCase(),
+            url: bare(r.url),
+            status: r.status,
+            duration: Math.round(r.duration),
+            error: r.error,
+          });
+          checkUrl();
+        },
+      ),
+    );
+  }
+  // Client-side navigation: history changes don't produce a new rrweb Meta event.
+  const urlTimer = setInterval(checkUrl, 500);
+  addEventListener('popstate', checkUrl);
+
   const timer = setInterval(() => void upload(false), CHUNK_MS);
   addEventListener('visibilitychange', onHide);
   addEventListener('pagehide', onHide);
 
   return {
     stop() {
+      for (const fn of restore) fn();
       stopRecording?.();
       clearInterval(timer);
+      clearInterval(urlTimer);
+      removeEventListener('popstate', checkUrl);
       removeEventListener('visibilitychange', onHide);
       removeEventListener('pagehide', onHide);
       void upload(true);
@@ -166,7 +411,7 @@ function startReplay(options: ReplayStartOptions): ReplayController {
       void upload(false);
     },
     noteError() {
-      errors++;
+      counts.errors++;
     },
   };
 }

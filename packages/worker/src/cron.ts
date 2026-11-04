@@ -1,14 +1,21 @@
 /**
- * Daily housekeeping (Cron Trigger): data retention for events and replays.
+ * Hourly housekeeping (Cron Trigger): data retention for events and replays,
+ * and summaries of sessions that have finished (for replay search and
+ * analysis; see `GlassService.summariseSettled`).
  */
 
 import { DAY_MS } from '@glassanalytics/core/time';
 import type { Env } from './env.ts';
 import { listProjects } from './projects.ts';
-import { deleteReplays } from './replays.ts';
+import { deleteReplays, sessionsToSummarise } from './replays.ts';
+import { GlassService } from './service.ts';
 import type { EventStore } from './stores/types.ts';
 
-export async function runMaintenance(env: Env, store: EventStore, now = Date.now()): Promise<{ events: number; replays: number }> {
+/** Sessions summarised per run: each reads all its chunks, and a run has a subrequest budget. */
+const SUMMARIES_PER_RUN = 10;
+const SETTLED_MS = 30 * 60_000;
+
+export async function runMaintenance(env: Env, store: EventStore, now = Date.now()): Promise<{ events: number; replays: number; summarised: number }> {
   let events = 0;
   let replays = 0;
   const eventDays = Number(env.GLASS_RETENTION_DAYS);
@@ -33,5 +40,10 @@ export async function runMaintenance(env: Env, store: EventStore, now = Date.now
       }
     }
   }
-  return { events, replays };
+  let summarised = 0;
+  if (env.REPLAYS) {
+    const service = new GlassService(env, store, env.GLASS_PUBLIC_URL?.replace(/\/+$/, '') ?? '');
+    summarised = await service.summariseSettled(await sessionsToSummarise(env.DB, now - SETTLED_MS, SUMMARIES_PER_RUN));
+  }
+  return { events, replays, summarised };
 }

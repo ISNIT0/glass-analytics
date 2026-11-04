@@ -153,22 +153,116 @@ export async function person(id: string | undefined, flags: Flags): Promise<void
   table(['Time', 'Event', 'Page'], r.recentEvents.slice(0, 25).map((e) => [e.time.slice(0, 19).replace('T', ' '), e.event, e.path]));
 }
 
-export async function replays(sub: string | undefined, arg: string | undefined, flags: Flags): Promise<void> {
+export async function replays(
+  sub: string | undefined,
+  arg: string | undefined,
+  flags: Flags,
+): Promise<void> {
   const project = str(flags.project);
+  const q = (extra: Record<string, string | undefined> = {}) => {
+    const params = new URLSearchParams();
+    for (const [k, v] of Object.entries({ project, ...extra })) if (v) params.set(k, v);
+    const text = params.toString();
+    return text ? `?${text}` : '';
+  };
+  const session = (usage: string) => {
+    if (!arg) throw new UsageError(`Pass a session id: ${usage}`);
+    return encodeURIComponent(arg);
+  };
   if (sub === 'summary' || sub === 'show') {
-    if (!arg) throw new UsageError('Pass a session id: glass replays summary <session>');
-    const r = await call<{ transcript: string }>('GET', `/api/replays/${encodeURIComponent(arg)}/summary${project ? `?project=${project}` : ''}`);
+    const r = await call<{ transcript: string }>(
+      'GET',
+      `/api/replays/${session('glass replays summary <session>')}/summary${q({ detail: flags.full ? 'full' : undefined })}`,
+    );
     return flags.json ? printJson(r) : line(r.transcript);
   }
-  const params = new URLSearchParams();
-  if (project) params.set('project', project);
-  if (flags.errors) params.set('with_errors', 'true');
-  if (typeof flags.person === 'string') params.set('person', flags.person);
-  const r = await call<{ summary: string; replays: { session: string; started: string; person: string; durationSeconds: number; errors: number; url: string }[] }>('GET', `/api/replays?${params}`);
+  if (sub === 'snapshot') {
+    const at = str(flags.at);
+    if (!at)
+      throw new UsageError(
+        'Pass a time: glass replays snapshot <session> --at 01:24',
+        'Times are mm:ss from the start of the transcript.',
+      );
+    const r = await call<{ summary: string; screen: string }>(
+      'GET',
+      `/api/replays/${session('glass replays snapshot <session> --at 01:24')}/snapshot${q({ at })}`,
+    );
+    if (flags.json) return printJson(r);
+    line(color.bold(r.summary));
+    line();
+    return line(r.screen);
+  }
+  if (sub === 'note') {
+    const at = str(flags.at);
+    const text = str(flags.text);
+    if (!at || !text)
+      throw new UsageError(
+        'Pass a time and text: glass replays note <session> --at 00:14 --text "…"',
+      );
+    const r = await call<{ summary: string }>(
+      'POST',
+      `/api/replays/${session('glass replays note <session> --at 00:14 --text "…"')}/notes${q()}`,
+      { at, text, author: str(flags.author) },
+    );
+    return flags.json ? printJson(r) : line(r.summary);
+  }
+  const filters = {
+    from: str(flags.from),
+    to: str(flags.to),
+    person: str(flags.person),
+    search: str(flags.search),
+    url: str(flags.url),
+    did_event: str(flags.did),
+    not_event: str(flags.not),
+    has:
+      [
+        str(flags.has),
+        flags.errors ? 'errors' : undefined,
+        flags.rage ? 'rage_clicks' : undefined,
+        flags.dead ? 'dead_clicks' : undefined,
+      ]
+        .filter(Boolean)
+        .join(',') || undefined,
+    limit: str(flags.limit),
+  };
+  if (sub === 'analyse' || sub === 'analyze' || sub === 'patterns') {
+    const r = await call<{ summary: string }>('GET', `/api/replays/analyse${q(filters)}`);
+    return flags.json ? printJson(r) : line(r.summary);
+  }
+  if (sub)
+    throw new UsageError(
+      `Unknown replays command "${sub}"`,
+      'Use: glass replays [summary|snapshot|note|analyse].',
+    );
+  const r = await call<{
+    summary: string;
+    replays: {
+      session: string;
+      started: string;
+      person: string;
+      durationSeconds: number;
+      errors: number;
+      rageClicks: number;
+      failedRequests: number;
+      url: string;
+    }[];
+  }>('GET', `/api/replays${q({ ...filters, sort: str(flags.sort) })}`);
   if (flags.json) return printJson(r);
   line(color.bold(r.summary));
   line();
-  table(['Session', 'Started', 'Person', 'Seconds', 'Errors', 'First page'], r.replays.map((x) => [x.session, x.started.slice(0, 16).replace('T', ' '), x.person, x.durationSeconds, x.errors, x.url]));
+  table(
+    ['Session', 'Started', 'Person', 'Seconds', 'Errors', 'Rage', 'Failed req', 'First page'],
+    r.replays.map((x) => [
+      x.session,
+      x.started.slice(0, 16).replace('T', ' '),
+      x.person,
+      x.durationSeconds,
+      x.errors,
+      x.rageClicks,
+      x.failedRequests,
+      x.url,
+    ]),
+  );
 }
 
 export async function projects(sub: string | undefined, arg: string | undefined, flags: Flags): Promise<void> {

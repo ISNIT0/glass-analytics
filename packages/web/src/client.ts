@@ -296,7 +296,10 @@ export class Glass {
       userId: this.store.userId(),
       mode,
       maskAllText: opts.maskAllText ?? false,
+      maskTextSelector: opts.maskTextSelector ?? '[data-glass-mask]',
       blockSelector: opts.blockSelector ?? '[data-glass-block]',
+      console: opts.console === true ? ['log', 'info', 'warn', 'error', 'debug'] : opts.console === false ? [] : (opts.console ?? ['warn', 'error']),
+      network: opts.network ?? true,
     });
   }
 }

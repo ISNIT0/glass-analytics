@@ -11,12 +11,16 @@
   <nav><a href="/">Home</a><a href="/app">Notes</a></nav>
   <h1>Your notes</h1>
   <p>Upgrade to export your notes as PDF.</p>
-  <!-- A deliberately broken button, to show errors and replays. -->
+  <!-- A deliberately broken button, to show errors, failed requests and console errors in replays. -->
   <button id="pay" aria-label="Upgrade now">Upgrade now</button>
   <script>
     document.getElementById('pay').addEventListener('click', () => {
       const card = undefined;
       window.glass?.capture('upgrade_clicked');
+      // The demo server has no billing API: a failed request and a console error in the replay.
+      fetch('/api/billing?plan=pro', { method: 'POST' }).then((res) => {
+        if (!res.ok) console.error('Billing request failed:', res.status);
+      });
       return card.number; // TypeError: shows up in Errors and in the replay transcript
     });
   </script>

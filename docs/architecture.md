@@ -23,6 +23,8 @@ Glass is one Worker, one D1 database and one R2 bucket in the user's Cloudflare 
 - **Replay**: each upload is one gzipped JSON array of rrweb events, stored as its own R2 object keyed by start time, page load and sequence. A D1 row indexes the session, so listing replays never touches R2. Two constraints shape this:
   - *A page that is going away can send about 64 KB* (`sendBeacon` and `keepalive` share that limit), and most pages' DOM snapshots are bigger. So `replay.js` uploads each page's snapshot the moment it's taken and never lets more than a beacon's worth of events wait, which leaves only a small remainder for the beacon when the page is hidden.
   - *rrweb numbers DOM nodes per page load*, so node 42 means something different on each page. Anything that resolves node ids, such as the transcript in `packages/core/src/replay-summary.ts`, reads each page load separately (`loadReplayPages()` groups chunks by their page id).
+  - *Most of a single-page app arrives as mutations*, not in the first snapshot, and rrweb sends each added node separately. `packages/core/src/replay-dom.ts` rebuilds the DOM from snapshots plus every mutation (adds, removes, text and attribute changes), which is what names clicked elements and renders `replay_snapshot`.
+  - *Reading every chunk is expensive*, so an hourly cron summarises sessions about 30 minutes after they end: the timeline is cached at `summaries/<project>/<session>.json`, and its frustration counts and a searchable digest (pages, clicked elements, errors) go on the D1 row. Search and `analyse_replays` read those; a new chunk makes the cache stale.
 
 ## Identity
 

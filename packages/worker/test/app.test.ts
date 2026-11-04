@@ -536,6 +536,118 @@ describe('session replay', () => {
     assert.match(transcript, /00:00 Clicked "Choose Team" \(button\)\n00:01 Clicked "Create account" \(button\)/);
   });
 
+  describe('search, snapshots, notes and analysis', () => {
+    // Three sessions: one with a rage-clicked Pay button and an error on /checkout, one that bought, one quiet.
+    const T = Date.now() - 2 * 3_600_000;
+    const button = (label: string) => ({
+      type: 2,
+      timestamp: 0,
+      data: {
+        node: {
+          id: 1,
+          type: 0,
+          childNodes: [{ id: 2, type: 2, tagName: 'body', childNodes: [{ id: 3, type: 2, tagName: 'button', attributes: { id: 'pay' }, childNodes: [{ id: 4, type: 3, textContent: label }] }] }],
+        },
+      },
+    });
+    async function record(session: string, start: number, opts: { rage?: boolean; href: string; extra?: string }) {
+      const events: Record<string, unknown>[] = [{ type: 4, timestamp: start, data: { href: opts.href, width: 1280, height: 800 } }, { ...button('Pay now'), timestamp: start }];
+      if (opts.rage) for (const dt of [1000, 1200, 1400]) events.push({ type: 3, timestamp: start + dt, data: { source: 2, type: 2, id: 3 } });
+      events.push({ type: 3, timestamp: start + 20_000, data: { source: 1, positions: [] } });
+      const q = `/r?project=acme&session=${session}&seq=0&page=p1&d=dev-${session}&start=${start}&end=${start + 20_000}&href=${encodeURIComponent(opts.href)}&enc=json${opts.extra ?? ''}`;
+      assert.equal((await t.call('POST', q, { key: null, body: JSON.stringify(events) })).status, 204);
+    }
+
+    beforeEach(async () => {
+      await record('rage', T, { rage: true, href: 'https://acme.com/checkout', extra: '&clicks=3&rage=1&errors=1&failed=1' });
+      await record('buyer', T + 60_000, { href: 'https://acme.com/checkout' });
+      await record('quiet', T + 120_000, { href: 'https://acme.com/blog' });
+      await t.ingest([
+        wire('$pageview', { session_id: 'rage', distinct_id: 'dev-rage', ts: T, path: '/checkout', url: 'https://acme.com/checkout' }),
+        wire('$exception', { session_id: 'rage', distinct_id: 'dev-rage', ts: T + 1500, props: { type: 'TypeError', message: 'card is undefined', stack: 'TypeError: card is undefined\n    at pay (checkout.js:12:3)' } }),
+        wire('$pageview', { session_id: 'buyer', distinct_id: 'dev-buyer', ts: T + 60_000, path: '/checkout', url: 'https://acme.com/checkout' }),
+        wire('purchase', { session_id: 'buyer', distinct_id: 'dev-buyer', ts: T + 70_000 }),
+        wire('$pageview', { session_id: 'quiet', distinct_id: 'dev-quiet', ts: T + 120_000, path: '/blog', url: 'https://acme.com/blog' }),
+      ]);
+    });
+
+    const sessions = async (query: string) => (await t.json<{ replays: { session: string }[]; total: number }>('GET', `/api/replays?${query}`)).replays.map((r) => r.session);
+
+    it('filters by signals, visited URL, events that did or did not happen, and sorts', async () => {
+      assert.deepEqual(await sessions('has=rage_clicks'), ['rage']);
+      assert.deepEqual(await sessions('has=failed_requests,errors'), ['rage']);
+      assert.deepEqual(await sessions('url=/checkout'), ['buyer', 'rage']);
+      assert.deepEqual(await sessions('url=/checkout&not_event=purchase'), ['rage']);
+      assert.deepEqual(await sessions('did_event=purchase'), ['buyer']);
+      assert.deepEqual(await sessions(`filters=${encodeURIComponent(JSON.stringify([{ property: 'path', value: '/blog' }]))}`), ['quiet']);
+      assert.deepEqual(await sessions('sort=most_frustrated&limit=1'), ['rage']);
+      assert.deepEqual(await sessions('sort=oldest'), ['rage', 'buyer', 'quiet']);
+      const page = await t.json<{ total: number; replays: unknown[]; summary: string }>('GET', '/api/replays?limit=2&offset=2');
+      assert.equal(page.total, 3);
+      assert.equal(page.replays.length, 1);
+    });
+
+    it('returns a structured timeline with links to each moment', async () => {
+      const s = await t.json<{ transcript: string; timeline: { kind: string; selector?: string }[]; highlights: { at: string; link: string }[] }>(
+        'GET',
+        '/api/replays/rage/summary?format=json',
+      );
+      assert.match(s.transcript, /Rage-clicked "Pay now" \(button\) ×3 · #pay \[dead click: nothing changed; an error followed\]/);
+      assert.match(s.transcript, /at pay \(checkout.js:12:3\)/);
+      assert.ok(s.timeline.some((i) => i.kind === 'click' && i.selector === '#pay'));
+      assert.match(s.highlights[0]!.link, /#\/replays\/rage\?project=acme&t=\d+/);
+    });
+
+    it('describes the screen at a moment', async () => {
+      const shot = await t.json<{ url: string; viewport: string; screen: string }>('GET', '/api/replays/rage/snapshot?at=00:01');
+      assert.equal(shot.url, 'https://acme.com/checkout');
+      assert.equal(shot.viewport, '1280×800');
+      assert.match(shot.screen, /\[button: Pay now\]/);
+      assert.equal((await t.call('GET', '/api/replays/rage/snapshot?at=soon')).status, 400);
+    });
+
+    it('keeps notes on the timeline, writable only with the admin key', async () => {
+      const added = await t.json<{ note: { id: string; at: string } }>('POST', '/api/replays/rage/notes', { body: { at: '00:01', text: 'Pay throws when the card form is empty' } });
+      assert.equal(added.note.at, '00:01');
+      assert.equal((await t.call('POST', '/api/replays/rage/notes', { key: READ, body: { at: '00:01', text: 'x' } })).status, 403);
+      const s = await t.json<{ transcript: string; notes: { id: string }[] }>('GET', '/api/replays/rage/summary');
+      assert.match(s.transcript, /00:01 Note \(agent\): Pay throws when the card form is empty/);
+      await t.json('DELETE', `/api/replays/rage/notes/${s.notes[0]!.id}`);
+      assert.doesNotMatch((await t.json<{ transcript: string }>('GET', '/api/replays/rage/summary')).transcript, /Note/);
+    });
+
+    it('summarises finished sessions hourly so they can be searched and analysed', async () => {
+      await t.app.scheduled({}, t.env);
+      assert.equal(rows('SELECT * FROM replays WHERE summary_chunks IS NULL').length, 0);
+      assert.deepEqual(await sessions('search=pay now'), ['rage']);
+      assert.deepEqual(await sessions('search=card is undefined'), ['rage']);
+      const a = await t.json<{ analysed: number; rageClicks: { what: string; examples: { link: string }[] }[]; errors: { what: string }[]; exitPages: { what: string }[] }>(
+        'GET',
+        '/api/replays/analyse',
+      );
+      assert.equal(a.analysed, 3);
+      assert.equal(a.rageClicks[0]!.what, '"Pay now" (button) · #pay');
+      assert.match(a.rageClicks[0]!.examples[0]!.link, /replays\/rage/);
+      assert.deepEqual(a.errors.map((e) => e.what), ['TypeError: card is undefined']);
+      assert.deepEqual(a.exitPages.map((e) => e.what), ['https://acme.com/checkout']);
+    });
+
+    it('re-summarises a session when new chunks arrive', async () => {
+      await t.app.scheduled({}, t.env);
+      await t.call('POST', `/r?project=acme&session=quiet&seq=1&page=p1&start=${T + 121_000}&end=${T + 125_000}&enc=json`, { key: null, body: '[]' });
+      const row = rows("SELECT chunks, summary_chunks FROM replays WHERE session_id = 'quiet'")[0]!;
+      assert.notEqual(row.chunks, row.summary_chunks);
+    });
+
+    it('erases notes and cached summaries with the session', async () => {
+      await t.json('POST', '/api/replays/rage/notes', { body: { at: 1000, text: 'n' } });
+      await t.app.scheduled({}, t.env);
+      await t.json('DELETE', '/api/persons/dev-rage');
+      assert.equal(rows("SELECT * FROM replay_notes WHERE session_id = 'rage'").length, 0);
+      assert.equal((await t.call('GET', '/api/replays/rage/summary')).status, 404);
+    });
+  });
+
   it('explains when replay is disabled', async () => {
     t = testApp({ REPLAYS: undefined });
     await t.json('POST', '/api/projects', { body: { id: 'acme' } });
@@ -562,7 +674,7 @@ describe('MCP server', () => {
       result: { tools: { name: string; inputSchema: { type: string; properties: Record<string, unknown> }; annotations: { readOnlyHint: boolean } }[] };
     };
     const names = list.result.tools.map((x) => x.name);
-    for (const expected of ['overview', 'query_funnel', 'query_retention', 'sql', 'summarise_replay', 'create_experiment']) {
+    for (const expected of ['overview', 'query_funnel', 'query_retention', 'sql', 'summarise_replay', 'replay_snapshot', 'analyse_replays', 'annotate_replay', 'create_experiment']) {
       assert.ok(names.includes(expected), expected);
     }
     const funnel = list.result.tools.find((x) => x.name === 'query_funnel')!;

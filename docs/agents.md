@@ -35,7 +35,11 @@ Use the read-only key (`npx @glassanalytics/cli key --read`) for agents that sho
 | `search_persons`, `get_person` | Identified people plus anonymous device counts; one person's properties, devices, events and replays |
 | `property_values`, `list_person_properties` | Top values of a property (with event and people counts) and the person property names, so filters use values that exist |
 | `list_cohorts`, `save_cohort`, `count_cohort`, `delete_cohort` | Saved person filters (and optional did-event) with live membership counts. Filter any query to a cohort with `{"property":"cohort","value":"<key>"}` |
-| `list_replays`, `summarise_replay` | Recorded sessions; a session as a text transcript |
+| `list_replays` | Find recorded sessions: by person, signals (`errors`, `rage_clicks`, `dead_clicks`, `console_errors`, `failed_requests`), visited `url`, `did_event` / `not_event`, event or cohort `filters`, text `search`; sort by `most_frustrated` and more |
+| `summarise_replay` | A session as a transcript: pages, clicks with labels and CSS selectors, rage and dead clicks, errors with stack frames, failed requests, console errors, notes. Highlights link to each moment |
+| `replay_snapshot` | What was on screen at a moment (`at: "01:24"`), as text: headings, links, buttons (and whether disabled), masked form fields, dialogs |
+| `analyse_replays` | Patterns across sessions: most rage- and dead-clicked elements, common errors, failing requests, where frustrated sessions end; each with example links |
+| `annotate_replay`, `delete_replay_note` | Pin a finding to a moment of a session; it shows on the player timeline and in the transcript |
 | `list_flags`, `save_flag`, `delete_flag` | Feature flags |
 | `list_experiments`, `create_experiment`, `experiment_results`, `update_experiment` | A/B tests: create, start, read, stop, ship |
 | `list_projects`, `create_project` | Projects |
@@ -45,7 +49,8 @@ Every result includes a `summary` sentence, the `sql` that ran, and a `dashboard
 ### Recipes
 
 - **"First look at this project."** `overview` → `list_events`. If `upgradeAvailable` is set (also on `/health` and in MCP initialize instructions), tell the user. With their go-ahead, run `npx @glassanalytics/cli@latest upgrade`, which stages `.glass/` when `.github/workflows/glass.yml` exists, then commit and push so CI deploys it. Don't deploy Glass from a laptop. For every name in `undocumented`, find the capture site in code (or ask), then `define_event` with a how/when description and property meanings before building queries on those events.
-- **"Why did X drop?"** `overview` → `query_funnel` with `breakdown: "browser"` (or `utm_source`, `device`) → `list_replays` with `with_errors: true` → `summarise_replay`.
+- **"Why did X drop?"** `overview` → `query_funnel` with `breakdown: "browser"` (or `utm_source`, `device`) → `list_replays` with `did_event` (the step before) and `not_event` (the step after), `sort: "most_frustrated"` → `summarise_replay` → `replay_snapshot` at the moment it goes wrong → grep the selector in the code → `annotate_replay` with what you found.
+- **"What's annoying users?"** `analyse_replays` for the period → open the top findings' example links with `summarise_replay`.
 - **"Add tracking for Y."** `instrument` with the event name → add the code → deploy → `describe_event` to confirm it arrives → `define_event` with how/when it fires and what each property means.
 - **"Test Z."** `create_experiment` with a goal → branch on `glass.flag(key)` in code → `update_experiment` with `start` → later `experiment_results` → `update_experiment` with `ship`.
 
@@ -61,8 +66,10 @@ npx @glassanalytics/cli query retention --cohort signup_completed --return '$pag
 npx @glassanalytics/cli query funnel --spec '{"steps":[{"event":"a"},{"event":"b"}],"from":"-90d"}' --sql
 npx @glassanalytics/cli sql "SELECT path, COUNT(*) AS n FROM events WHERE event = '\$pageview' GROUP BY path ORDER BY n DESC LIMIT 10"
 npx @glassanalytics/cli events signup_completed
-npx @glassanalytics/cli replays --errors
+npx @glassanalytics/cli replays --errors --url /checkout --not purchase
 npx @glassanalytics/cli replays summary <session-id>
+npx @glassanalytics/cli replays snapshot <session-id> --at 01:24
+npx @glassanalytics/cli replays analyse --from -7d
 npx @glassanalytics/cli flags set new-checkout --variants control:50,test:50
 npx @glassanalytics/cli experiments create checkout-v2 --goal purchase_completed
 ```

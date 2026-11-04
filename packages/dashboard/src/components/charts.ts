@@ -7,6 +7,8 @@
 import { addMonths } from '@glassanalytics/core/time';
 import { type Child, h, mount, s } from '../dom.ts';
 import { bucketLabel, count, duration, percent } from '../format.ts';
+import { href } from '../state.ts';
+import { icon } from './icons.ts';
 
 export const SERIES = ['var(--glass-green)', 'var(--glass-cobalt)', 'var(--glass-amber)', 'var(--glass-ruby)', 'var(--glass-teal)', 'var(--smoke)'];
 
@@ -308,6 +310,8 @@ export function barList(rows: BarRow[], headers: [string, string, string?], opti
 
 export interface FunnelStepView {
   label: string;
+  /** The step's event, for linking to replays of people who dropped off. */
+  event?: string;
   count: number;
   conversionFromStart: number;
   conversionFromPrevious: number;
@@ -369,6 +373,9 @@ export function funnelChart(steps: FunnelStepView[], options: { windowSeconds?: 
                 h('span', { class: 'funnel-bridge-convert' }, `${percent(step.conversionFromPrevious, 1)} converted`),
                 h('span', { class: 'funnel-bridge-drop' }, `${count(dropped)} dropped`),
                 step.avgSecondsFromPrevious !== null ? h('span', { class: 'muted' }, `avg ${duration(step.avgSecondsFromPrevious)}`) : null,
+                dropped > 0 && prev.event && step.event
+                  ? h('a', { class: 'funnel-replays', href: href('replays', { did: prev.event, not: step.event }), title: `Recorded sessions with ${prev.event} but no ${step.event}` }, icon('replay', 12), 'Watch drop-offs')
+                  : null,
               )
             : h('div', { class: 'funnel-col-rates' }, h('span', { class: 'muted' }, 'Entered the funnel')),
         ),

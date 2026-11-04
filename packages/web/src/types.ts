@@ -40,9 +40,24 @@ export interface ReplayOptions {
   onErrorSampleRate?: number;
   /** Mask all text, not just inputs. Default false (inputs are always masked). */
   maskAllText?: boolean;
+  /** CSS selector of elements whose text is masked. Default `[data-glass-mask]`. */
+  maskTextSelector?: string;
   /** CSS selector of elements to leave out of recordings entirely. Default `[data-glass-block]`. */
   blockSelector?: string;
+  /**
+   * Console messages to record: `true` for every level, `false` for none, or a
+   * list of levels. Default `['warn', 'error']`. Messages can contain personal
+   * data your code logs, so leave routine levels off unless you need them.
+   */
+  console?: boolean | ConsoleLevel[];
+  /**
+   * Record fetch/XHR requests: method, URL without query string, status and
+   * timing. Never headers or bodies. Default true.
+   */
+  network?: boolean;
 }
+
+export type ConsoleLevel = 'log' | 'info' | 'warn' | 'error' | 'debug';
 
 export interface GlassOptions {
   /** Base URL of your Glass Worker, e.g. "https://glass.acme.workers.dev" or "/_glass". */
@@ -84,7 +99,11 @@ export interface ReplayStartOptions {
   /** "record" uploads continuously; "buffer" keeps the last ~60s in memory until `flushBuffer()`. */
   mode: 'record' | 'buffer';
   maskAllText: boolean;
+  maskTextSelector: string;
   blockSelector: string;
+  /** Console levels to record; empty for none. */
+  console: ConsoleLevel[];
+  network: boolean;
 }
 
 export interface ReplayController {

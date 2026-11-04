@@ -7,9 +7,9 @@ What Glass does today, and what's next. Items marked *good first issue* are self
 - `glass init` / `upgrade` / `status`, with agent files (AGENTS.md, skill, `.mcp.json`)
 - Browser SDK: autocapture (pageviews incl. SPA navigation, clicks, errors, web vitals), custom events, identify, person properties, cookieless mode, consent
 - Web analytics, trends, funnels, retention, raw SQL; filters and breakdowns on any event or person property
-- Session replay with sampling, error-triggered buffering and text transcripts
+- Session replay with sampling, error-triggered buffering, console and network capture, frustration signals (rage, dead and error clicks), search, cross-session patterns, notes and text transcripts with what-was-on-screen snapshots
 - Feature flags with targeting; experiments with Bayesian readout and SRM checks
-- MCP server (27 tools), CLI, HTTP API, `llms.txt`
+- MCP server (37 tools), CLI, HTTP API, `llms.txt`
 - D1 event store (default) and the lake store (beta)
 
 ## Next

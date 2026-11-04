@@ -93,8 +93,12 @@ Glass is deployed at ${o.host} (project \`${o.project}\`). Prefer the \`glass\` 
 ## Debug a user problem
 
 1. \`query_funnel\` with a breakdown (browser, device, utm_source) to find where people drop.
-2. \`list_replays\` with \`with_errors: true\` (or a \`person\`) to find affected sessions.
-3. \`summarise_replay\` to read what happened: pages, labelled clicks, rage clicks, errors.
+2. \`list_replays\` to find affected sessions: \`has: ["errors"]\` or \`["rage_clicks"]\`, a \`person\`, or \`did_event\` (the step before the drop) with \`not_event\` (the step after).
+3. \`summarise_replay\` to read what happened: pages, clicks with CSS selectors, rage and dead clicks, errors with stack frames, failed requests, console errors.
+4. \`replay_snapshot\` at the moment it goes wrong to see what was on screen; search the code for the clicked element's selector.
+5. \`annotate_replay\` with the cause, so the next person watching the session sees it.
+
+For "what's frustrating users?", start with \`analyse_replays\` for the period.
 
 ## Upgrade Glass
 

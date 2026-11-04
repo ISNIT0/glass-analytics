@@ -56,8 +56,12 @@ ${color.bold('Ask questions')}
   glass events [name]            Tracked events, or one event's properties
     --describe "<text>"            How/when the event fires (document custom events)
   glass person <id> [--delete]   One person's properties and events (or erase them)
-  glass replays [--errors]       Recorded sessions
-  glass replays summary <id>     A session as a text transcript
+  glass replays [--errors] [--rage] [--url /checkout] [--not purchase] [--search text] [--sort most_frustrated]
+                                 Find recorded sessions
+  glass replays summary <id> [--full]   A session as a text transcript
+  glass replays snapshot <id> --at 01:24   What was on screen at a moment
+  glass replays note <id> --at 00:14 --text "…"   Pin a finding to a moment
+  glass replays analyse [--from -7d]   Patterns: rage/dead clicks, errors, failing requests
 
 ${color.bold('Flags and experiments')}
   glass flags [list]

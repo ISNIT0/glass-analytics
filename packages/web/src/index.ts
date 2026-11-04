@@ -19,6 +19,7 @@ import { Glass } from './client.ts';
 export { Glass };
 export type {
   AutocaptureOptions,
+  ConsoleLevel,
   GlassOptions,
   Persistence,
   ReplayOptions,

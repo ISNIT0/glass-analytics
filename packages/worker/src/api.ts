@@ -64,9 +64,13 @@ export function apiRouter(service: GlassService, env: Env, request: Request): Ro
         'GET /api/insights/:key': 'One saved analysis',
         'POST /api/insights': 'Create or update a saved analysis (admin)',
         'DELETE /api/insights/:key': 'Delete a saved analysis (admin)',
-        'GET /api/replays?with_errors=true': 'Recorded sessions',
-        'GET /api/replays/:session/summary': 'Text transcript of a session',
+        'GET /api/replays?has=rage_clicks&url=/checkout&not_event=purchase&sort=most_frustrated': 'Find recorded sessions',
+        'GET /api/replays/analyse?from=-7d': 'Patterns across sessions: rage/dead clicks, errors, failing requests',
+        'GET /api/replays/:session/summary?format=json': 'Transcript of a session (json adds the structured timeline)',
+        'GET /api/replays/:session/snapshot?at=01:24': 'What was on screen at a moment, as text',
         'GET /api/replays/:session/events': 'Raw rrweb events',
+        'POST /api/replays/:session/notes': 'Leave a note at a moment: { "at": "00:14", "text": "…" } (admin)',
+        'DELETE /api/replays/:session/notes/:id': 'Delete a note (admin)',
         'GET /api/flags': 'Feature flags',
         'PUT /api/flags/:key': 'Create/update a flag (admin)',
         'DELETE /api/flags/:key': 'Delete a flag (admin)',
@@ -151,8 +155,18 @@ export function apiRouter(service: GlassService, env: Env, request: Request): Ro
   });
 
   r.get('/api/replays', async ({ url }) => json(await service.listReplays(params(url))));
+  r.get('/api/replays/analyse', async ({ url }) => json(await service.analyseReplays(params(url))));
   r.get('/api/replays/:id/summary', async ({ url, params: p }) => json(await service.summariseReplay({ ...params(url), session_id: p.id })));
   r.get('/api/replays/:id/events', async ({ url, params: p }) => json(await service.replayEvents({ ...params(url), session_id: p.id })));
+  r.get('/api/replays/:id/snapshot', async ({ url, params: p }) => json(await service.replaySnapshot({ ...params(url), session_id: p.id })));
+  r.post('/api/replays/:id/notes', async ({ url, params: p }) => {
+    admin();
+    return json(await service.annotateReplay({ ...params(url), ...(await body()), session_id: p.id }), { status: 201 });
+  });
+  r.delete('/api/replays/:id/notes/:note', async ({ url, params: p }) => {
+    admin();
+    return json(await service.deleteReplayNote({ ...params(url), session_id: p.id, id: p.note }));
+  });
 
   r.get('/api/flags', async ({ url }) => json(await service.listFlags(params(url))));
   r.get('/api/flags/:key', async ({ url, params: p }) => json(await service.getFlag({ ...params(url), key: p.key })));

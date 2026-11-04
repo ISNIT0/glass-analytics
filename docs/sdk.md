@@ -15,13 +15,13 @@ The SDK is about 4 KB gzipped and has no dependencies. Session replay loads a se
 | `project` | required | Project id |
 | `persistence` | `'localStorage'` | `'cookieless'` stores nothing on the device (see [privacy.md](privacy.md)) |
 | `autocapture` | `true` | `false`, or `{ pageviews, clicks, errors, webVitals }` to pick |
-| `replay` | off | `{ sampleRate: 0.1, onErrorSampleRate: 1, maskAllText: false, blockSelector: '[data-glass-block]' }` |
+| `replay` | off | `{ sampleRate: 0.1, onErrorSampleRate: 1, maskAllText: false, maskTextSelector: '[data-glass-mask]', blockSelector: '[data-glass-block]', console: ['warn', 'error'], network: true }` |
 | `flags` | `true` | Load feature flags on init |
 | `beforeSend` | | `(event) => event | null` to edit or drop events |
 | `flushIntervalMs` | `5000` | How often queued events are sent |
 | `debug` | `false` | Log events to the console |
 
-Script tag equivalents: `data-project`, `data-host`, `data-persistence="cookieless"`, `data-autocapture="false"`, `data-replay-sample-rate="0.1"`, `data-replay-on-error-sample-rate="1"`, `data-debug="true"`.
+Script tag equivalents: `data-project`, `data-host`, `data-persistence="cookieless"`, `data-autocapture="false"`, `data-replay-sample-rate="0.1"`, `data-replay-on-error-sample-rate="1"`, `data-replay-console="false"` (or `"all"`), `data-replay-network="false"`, `data-replay-mask-all-text="true"`, `data-debug="true"`.
 
 ## Events
 
@@ -78,6 +78,16 @@ glass.stopReplay();
 ```
 
 `onErrorSampleRate` keeps the last minute in memory and uploads it only if an error happens, so you get the run-up to every error without recording everything.
+
+Besides the page, recordings carry what developers need to debug:
+
+- **Console messages**: `warn` and `error` by default. `console: true` records every level, `console: false` none. Your code's log messages can contain personal data, so only turn on routine levels if you need them.
+- **Network requests**: method, URL (without the query string), status and timing of `fetch` and `XMLHttpRequest` calls. Never headers or bodies. `network: false` turns it off.
+- **Client-side navigation**, so single-page apps show the right URL in the player.
+
+Mark elements whose text should be masked with `data-glass-mask`, and elements to leave out entirely with `data-glass-block`.
+
+Each session gets a timeline: labelled clicks (with a CSS selector you can search your code for), rage clicks, dead clicks (a click on a control after which nothing changed), clicks followed by an error, errors with stack frames, failed and slow requests, and console errors. The dashboard player shows it beside the recording, and agents read it with `summarise_replay`.
 
 ## Consent
 

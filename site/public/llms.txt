@@ -22,7 +22,7 @@
 
 ## Query
 
-- MCP tools: overview, query_web, query_trends, query_funnel, query_retention, sql, list_events, describe_event, define_event, property_values, list_person_properties, instrument, search_persons, get_person, list_cohorts, save_cohort, count_cohort, delete_cohort, list_replays, summarise_replay, list_flags, save_flag, delete_flag, list_experiments, create_experiment, experiment_results, update_experiment, list_projects, create_project.
+- MCP tools: overview, query_web, query_trends, query_funnel, query_retention, sql, list_events, describe_event, define_event, property_values, list_person_properties, instrument, search_persons, get_person, list_cohorts, save_cohort, count_cohort, delete_cohort, list_replays, summarise_replay, replay_snapshot, analyse_replays, annotate_replay, delete_replay_note, list_flags, save_flag, delete_flag, list_experiments, create_experiment, experiment_results, update_experiment, list_projects, create_project.
 - CLI: `npx @glassanalytics/cli query web --from -7d`, `npx @glassanalytics/cli query funnel --steps '$pageview,signup_completed'`, `npx @glassanalytics/cli sql "SELECT …"`, `npx @glassanalytics/cli --help`.
 - HTTP: `GET <worker>/api` lists every endpoint; `GET <worker>/llms.txt` on a deployment has its real URLs.
 - Upgrades: `GET <worker>/health` (and `overview`) report `upgradeAvailable` when a newer release exists. Tell the user to run `npx @glassanalytics/cli@latest upgrade`; do not upgrade yourself.

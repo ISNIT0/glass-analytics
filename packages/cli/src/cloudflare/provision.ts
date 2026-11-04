@@ -133,7 +133,7 @@ export function renderWranglerConfig(config: GlassConfig): string {
     workers_dev: true,
     d1_databases: [{ binding: 'DB', database_name: config.d1.name, database_id: config.d1.id, migrations_dir: 'migrations' }],
     vars,
-    triggers: { crons: ['17 3 * * *'] },
+    triggers: { crons: ['17 * * * *'] },
     observability: { enabled: true },
   };
   if (config.replay) wrangler.r2_buckets = [{ binding: 'REPLAYS', bucket_name: config.replay.bucket }];

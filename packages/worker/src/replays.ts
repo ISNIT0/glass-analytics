@@ -14,6 +14,13 @@
  * A session spans page loads, and rrweb numbers DOM nodes per page load, so
  * readers that resolve node ids (the transcript) need the chunks grouped by
  * page: see `loadReplayPages`.
+ *
+ * Once a session has ended, its summary (timeline and stats) is cached as
+ *
+ *   summaries/<project>/<session>.json
+ *
+ * and its counts and a searchable digest are copied onto the index row, so
+ * search, sorting and cross-session analysis don't re-read every chunk.
  */
 
 import type { RrwebEvent } from '@glassanalytics/core/replay-summary';
@@ -25,6 +32,7 @@ import { getProject } from './projects.ts';
 
 const SAFE_ID = /^[A-Za-z0-9_.:-]{1,100}$/;
 const MAX_CHUNK_BYTES = 5_000_000;
+const CHUNK_CONCURRENCY = 6;
 
 export function replaysEnabled(env: Env): env is Env & { REPLAYS: R2Bucket } {
   return Boolean(env.REPLAYS);
@@ -78,9 +86,14 @@ export async function handleReplayChunk(request: Request, env: Env, url: URL): P
   };
   const start = n('start') || Date.now();
   await env.DB.prepare(
-    `INSERT INTO replays (project, session_id, distinct_id, user_id, started_at, ended_at, chunks, bytes, clicks, errors, start_url, device, browser, country)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+    `INSERT INTO replays (project, session_id, distinct_id, user_id, started_at, ended_at, chunks, bytes, clicks, errors, start_url, device, browser, country,
+       pages, rage_clicks, console_errors, failed_requests)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
      ON CONFLICT (project, session_id) DO UPDATE SET
+       pages = replays.pages + excluded.pages,
+       rage_clicks = replays.rage_clicks + excluded.rage_clicks,
+       console_errors = replays.console_errors + excluded.console_errors,
+       failed_requests = replays.failed_requests + excluded.failed_requests,
        started_at = MIN(replays.started_at, excluded.started_at),
        ended_at = MAX(replays.ended_at, excluded.ended_at),
        chunks = replays.chunks + 1,
@@ -104,6 +117,11 @@ export async function handleReplayChunk(request: Request, env: Env, url: URL): P
       ua.device,
       ua.browser,
       info.country,
+      // Every page load starts its chunks at seq 0.
+      seq === 0 ? 1 : 0,
+      n('rage'),
+      n('console'),
+      n('failed'),
     )
     .run();
 }
@@ -122,34 +140,185 @@ export interface ReplayRow {
   device: string;
   browser: string;
   country: string;
+  pages: number;
+  rage_clicks: number;
+  dead_clicks: number;
+  console_errors: number;
+  failed_requests: number;
+  active_ms: number | null;
+  digest: string;
+  summary_chunks: number | null;
 }
 
-export async function listReplays(
-  db: D1Database,
-  project: string,
-  options: { person?: string; withErrors?: boolean; from?: number; limit?: number } = {},
-): Promise<ReplayRow[]> {
+/** Signals a session can be filtered on, and the column that counts each. */
+export const SIGNALS = {
+  errors: 'errors',
+  rage_clicks: 'rage_clicks',
+  dead_clicks: 'dead_clicks',
+  console_errors: 'console_errors',
+  failed_requests: 'failed_requests',
+} as const;
+export type Signal = keyof typeof SIGNALS | 'frustration';
+
+const SORTS = {
+  newest: 'started_at DESC',
+  oldest: 'started_at ASC',
+  longest: '(ended_at - started_at) DESC',
+  most_active: 'COALESCE(active_ms, ended_at - started_at) DESC',
+  most_errors: '(errors + console_errors + failed_requests) DESC, started_at DESC',
+  most_frustrated: '(rage_clicks * 3 + dead_clicks * 2 + errors * 2 + console_errors + failed_requests) DESC, started_at DESC',
+} as const;
+export type ReplaySort = keyof typeof SORTS;
+
+export interface ReplayQuery {
+  person?: string;
+  /** Sessions that have every one of these signals. "frustration" is any rage click, dead click or error. */
+  has?: Signal[];
+  from?: number;
+  to?: number;
+  minDurationMs?: number;
+  /** Matches session id, person, first page and (once summarised) pages, clicked elements and errors. */
+  search?: string;
+  /** Only these sessions (from an events-store filter). */
+  sessions?: string[];
+  /** Never these sessions (e.g. ones where a goal event happened). */
+  excludeSessions?: string[];
+  /** Or-ed with `sessions`: also sessions whose first page contains this. */
+  startUrl?: string;
+  sort?: ReplaySort;
+  limit?: number;
+  offset?: number;
+}
+
+const like = (text: string) => `%${text.toLowerCase().replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+
+export async function listReplays(db: D1Database, project: string, options: ReplayQuery = {}): Promise<{ rows: ReplayRow[]; total: number }> {
   const where = ['project = ?'];
   const args: unknown[] = [project];
   if (options.person) {
     where.push('(user_id = ? OR distinct_id = ? OR distinct_id IN (SELECT distinct_id FROM identities WHERE project = ? AND person_id = ?))');
     args.push(options.person, options.person, project, options.person);
   }
-  if (options.withErrors) where.push('errors > 0');
+  for (const signal of options.has ?? []) {
+    if (signal === 'frustration') where.push('(rage_clicks > 0 OR dead_clicks > 0 OR errors > 0 OR console_errors > 0 OR failed_requests > 0)');
+    else if (signal in SIGNALS) where.push(`${SIGNALS[signal]} > 0`);
+  }
   if (options.from) {
     where.push('started_at >= ?');
     args.push(options.from);
   }
-  const { results } = await db
-    .prepare(`SELECT session_id, distinct_id, user_id, started_at, ended_at, chunks, bytes, clicks, errors, start_url, device, browser, country
-      FROM replays WHERE ${where.join(' AND ')} ORDER BY started_at DESC LIMIT ?`)
-    .bind(...args, Math.min(options.limit ?? 50, 500))
-    .all<ReplayRow>();
-  return results;
+  if (options.to) {
+    where.push('started_at < ?');
+    args.push(options.to);
+  }
+  if (options.minDurationMs) {
+    where.push('ended_at - started_at >= ?');
+    args.push(options.minDurationMs);
+  }
+  if (options.search) {
+    where.push(`(session_id = ? OR user_id = ? OR distinct_id = ? OR LOWER(start_url) LIKE ? ESCAPE '\\' OR LOWER(digest) LIKE ? ESCAPE '\\')`);
+    args.push(options.search, options.search, options.search, like(options.search), like(options.search));
+  }
+  // Session lists are inlined: D1 allows 100 bound parameters, and these come from our own query (escaped anyway).
+  const inline = (ids: string[]) => ids.map((s) => `'${s.replace(/'/g, "''")}'`).join(',') || "''";
+  if (options.excludeSessions?.length) where.push(`session_id NOT IN (${inline(options.excludeSessions)})`);
+  if (options.sessions) {
+    const list = inline(options.sessions);
+    if (options.startUrl) {
+      where.push(`(session_id IN (${list}) OR LOWER(start_url) LIKE ? ESCAPE '\\')`);
+      args.push(like(options.startUrl));
+    } else {
+      where.push(`session_id IN (${list})`);
+    }
+  } else if (options.startUrl) {
+    where.push(`LOWER(start_url) LIKE ? ESCAPE '\\'`);
+    args.push(like(options.startUrl));
+  }
+  const clause = where.join(' AND ');
+  const limit = Math.min(options.limit ?? 50, 500);
+  const [page, count] = await Promise.all([
+    db
+      .prepare(`SELECT * FROM replays WHERE ${clause} ORDER BY ${SORTS[options.sort ?? 'newest']} LIMIT ? OFFSET ?`)
+      .bind(...args, limit, Math.max(0, options.offset ?? 0))
+      .all<ReplayRow>(),
+    db.prepare(`SELECT COUNT(*) AS n FROM replays WHERE ${clause}`).bind(...args).first<{ n: number }>(),
+  ]);
+  return { rows: page.results, total: Number(count?.n ?? 0) };
 }
 
 export async function getReplay(db: D1Database, project: string, session: string): Promise<ReplayRow | null> {
   return db.prepare('SELECT * FROM replays WHERE project = ? AND session_id = ?').bind(project, session).first<ReplayRow>();
+}
+
+// ── Cached summaries ──────────────────────────────────────────────────────
+
+export const summaryKey = (project: string, session: string) => `summaries/${project}/${session}.json`;
+
+/** The cached summary of a session, if it still covers every chunk. */
+export async function readCachedSummary<T>(env: Env, project: string, row: ReplayRow): Promise<T | null> {
+  if (!env.REPLAYS || row.summary_chunks == null || row.summary_chunks !== row.chunks) return null;
+  const object = await env.REPLAYS.get(summaryKey(project, row.session_id));
+  if (!object) return null;
+  try {
+    return JSON.parse(new TextDecoder().decode(await object.arrayBuffer())) as T;
+  } catch {
+    return null;
+  }
+}
+
+export interface SummaryIndex {
+  deadClicks: number;
+  activeMs: number;
+  digest: string;
+}
+
+export async function writeCachedSummary(env: Env, project: string, row: ReplayRow, summary: unknown, index: SummaryIndex): Promise<void> {
+  const bucket = requireBucket(env);
+  await bucket.put(summaryKey(project, row.session_id), JSON.stringify(summary), { httpMetadata: { contentType: 'application/json' } });
+  await env.DB.prepare('UPDATE replays SET dead_clicks = ?, active_ms = ?, digest = ?, summary_chunks = ? WHERE project = ? AND session_id = ? AND chunks = ?')
+    .bind(index.deadClicks, index.activeMs, index.digest.slice(0, 4000), row.chunks, project, row.session_id, row.chunks)
+    .run();
+}
+
+/** Sessions that ended a while ago and have no up-to-date cached summary. */
+export async function sessionsToSummarise(db: D1Database, endedBefore: number, limit: number): Promise<(ReplayRow & { project: string })[]> {
+  const { results } = await db
+    .prepare('SELECT * FROM replays WHERE ended_at < ? AND (summary_chunks IS NULL OR summary_chunks <> chunks) ORDER BY ended_at DESC LIMIT ?')
+    .bind(endedBefore, limit)
+    .all<ReplayRow & { project: string }>();
+  return results;
+}
+
+// ── Notes ─────────────────────────────────────────────────────────────────
+
+export interface NoteRow {
+  id: string;
+  ts_ms: number;
+  text: string;
+  author: string;
+  created_at: number;
+}
+
+export async function listNotes(db: D1Database, project: string, session: string): Promise<NoteRow[]> {
+  const { results } = await db
+    .prepare('SELECT id, ts_ms, text, author, created_at FROM replay_notes WHERE project = ? AND session_id = ? ORDER BY ts_ms')
+    .bind(project, session)
+    .all<NoteRow>();
+  return results;
+}
+
+export async function addNote(db: D1Database, project: string, session: string, note: Omit<NoteRow, 'id' | 'created_at'>): Promise<NoteRow> {
+  const row = { ...note, id: crypto.randomUUID().slice(0, 8), created_at: Date.now() };
+  await db
+    .prepare('INSERT INTO replay_notes (project, session_id, id, ts_ms, text, author, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .bind(project, session, row.id, row.ts_ms, row.text, row.author, row.created_at)
+    .run();
+  return row;
+}
+
+export async function deleteNote(db: D1Database, project: string, session: string, id: string): Promise<boolean> {
+  const res = await db.prepare('DELETE FROM replay_notes WHERE project = ? AND session_id = ? AND id = ?').bind(project, session, id).run();
+  return (res.meta.changes ?? 0) > 0;
 }
 
 /** One page load's part of a recording. Node ids are only meaningful within it. */
@@ -174,22 +343,36 @@ export async function loadReplayPages(env: Env, project: string, session: string
   } while (cursor);
   keys.sort();
 
-  const pages = new Map<string, RrwebEvent[]>();
-  for (const key of keys) {
-    const object = await bucket.get(key);
-    if (!object) continue;
-    const page = key.slice(prefix.length).split('-')[1] ?? 'p';
-    try {
-      const chunk: unknown = JSON.parse(await gunzip(await object.arrayBuffer()));
-      if (!Array.isArray(chunk)) throw new Error('chunk is not an array of rrweb events');
-      const list = pages.get(page) ?? [];
-      // A loop rather than push(...chunk): a big chunk has more events than a call can take arguments.
-      for (const event of chunk as RrwebEvent[]) list.push(event);
-      pages.set(page, list);
-    } catch (err) {
-      console.warn('[glass] skipping unreadable replay chunk', key, err);
+  // Fetch a few chunks at a time: one by one is slow for long sessions, all at once can exhaust memory.
+  const chunks: (RrwebEvent[] | null)[] = new Array(keys.length).fill(null);
+  let next = 0;
+  const worker = async () => {
+    while (next < keys.length) {
+      const i = next++;
+      const key = keys[i]!;
+      try {
+        const object = await bucket.get(key);
+        if (!object) continue;
+        const chunk: unknown = JSON.parse(await gunzip(await object.arrayBuffer()));
+        if (!Array.isArray(chunk)) throw new Error('chunk is not an array of rrweb events');
+        chunks[i] = chunk as RrwebEvent[];
+      } catch (err) {
+        console.warn('[glass] skipping unreadable replay chunk', key, err);
+      }
     }
-  }
+  };
+  await Promise.all(Array.from({ length: Math.min(CHUNK_CONCURRENCY, keys.length) }, worker));
+
+  const pages = new Map<string, RrwebEvent[]>();
+  keys.forEach((key, i) => {
+    const chunk = chunks[i];
+    if (!chunk) return;
+    const page = key.slice(prefix.length).split('-')[1] ?? 'p';
+    const list = pages.get(page) ?? [];
+    // A loop rather than push(...chunk): a big chunk has more events than a call can take arguments.
+    for (const event of chunk) list.push(event);
+    pages.set(page, list);
+  });
   return [...pages]
     .map(([page, events]) => ({ page, events: events.sort(byTime) }))
     .sort((a, b) => (a.events[0]?.timestamp ?? 0) - (b.events[0]?.timestamp ?? 0));
@@ -207,10 +390,16 @@ export async function deleteReplays(env: Env, project: string, where: string, ar
     .all<{ session_id: string }>();
   for (const { session_id } of results) {
     if (env.REPLAYS) {
-      const page = await env.REPLAYS.list({ prefix: chunkPrefix(project, session_id), limit: 1000 });
-      if (page.objects.length) await env.REPLAYS.delete(page.objects.map((o) => o.key));
+      let cursor: string | undefined;
+      do {
+        const page = await env.REPLAYS.list({ prefix: chunkPrefix(project, session_id), limit: 1000, cursor });
+        if (page.objects.length) await env.REPLAYS.delete(page.objects.map((o) => o.key));
+        cursor = page.truncated ? page.cursor : undefined;
+      } while (cursor);
+      await env.REPLAYS.delete(summaryKey(project, session_id));
     }
     await env.DB.prepare('DELETE FROM replays WHERE project = ? AND session_id = ?').bind(project, session_id).run();
+    await env.DB.prepare('DELETE FROM replay_notes WHERE project = ? AND session_id = ?').bind(project, session_id).run();
   }
   return results.length;
 }

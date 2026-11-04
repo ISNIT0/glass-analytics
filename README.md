@@ -45,9 +45,9 @@ Run `npx @glassanalytics/cli status` any time to check everything end to end. Se
 | **Web analytics** | Visitors, pageviews, sessions, bounce rate, top/entry/exit pages, referrers, UTMs, countries, devices, errors, Core Web Vitals. Cookieless mode available. |
 | **Product analytics** | Trends, funnels and retention on any event, with filters and breakdowns on any event or person property. Read-only SQL for everything else. |
 | **People** | `identify()` links anonymous visits to users, so funnels span the moment of signup. Person properties are snapshotted on every event. |
-| **Session replay** | rrweb recording with inputs masked, sampling and "record when an error happens". Each session has a text transcript: pages, labelled clicks, rage clicks, errors. |
+| **Session replay** | rrweb recording with inputs masked, sampling and "record when an error happens", plus console messages and network requests. A player with a timeline of clicks, errors and notes; search by what went wrong; patterns across sessions. Each session has a transcript agents read: pages, clicks with selectors, rage and dead clicks, errors with stacks, failed requests. |
 | **Flags and experiments** | Flags evaluated server-side in your Worker, with targeting rules. Experiments report exposures, conversion, Bayesian probability to beat control, lift intervals and sample-ratio mismatch. |
-| **Agent interface** | An MCP server with 27 tools, a CLI with `--json` everywhere, an HTTP API, and `llms.txt`. |
+| **Agent interface** | An MCP server with 37 tools, a CLI with `--json` everywhere, an HTTP API, and `llms.txt`. |
 
 ## How it works
 

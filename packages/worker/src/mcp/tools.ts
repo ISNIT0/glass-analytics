@@ -193,8 +193,9 @@ export const TOOLS: ToolDefinition[] = [
   },
   {
     name: 'list_replays',
-    title: 'List session replays',
-    description: 'Recorded sessions, newest first. Filter by person or to sessions with errors.',
+    title: 'Find session replays',
+    description:
+      'Find recorded sessions. Filter by person, signals (errors, rage_clicks, dead_clicks, console_errors, failed_requests, frustration), visited URL, events that did or did not happen (did_event / not_event: "reached checkout but never purchased"), event or cohort filters, length or text (clicked element, error message). Sort by newest, longest, most_errors or most_frustrated.',
     input: inputs.listReplays,
     scope: 'read',
     run: (s, a) => s.listReplays(a),
@@ -203,10 +204,45 @@ export const TOOLS: ToolDefinition[] = [
     name: 'summarise_replay',
     title: 'Read a session replay',
     description:
-      'A text transcript of a recorded session: pages viewed, labelled clicks, rage clicks, inputs, custom events, errors and idle gaps. Use it to "watch" a broken session.',
+      'A transcript of a recorded session: pages, clicks with element labels and CSS selectors (grep them in the code), rage and dead clicks, inputs, custom events, errors with stack frames, failed or slow requests, console errors, idle gaps and notes. Highlights link to each moment in the player. Use it to "watch" a broken session.',
     input: inputs.replay,
     scope: 'read',
     run: (s, a) => s.summariseReplay(a),
+  },
+  {
+    name: 'replay_snapshot',
+    title: 'What was on screen',
+    description:
+      'The page as the user saw it at one moment of a session, as text: URL, viewport, headings, links, buttons (and whether disabled), form fields with masked values, dialogs and alerts. Use a time from the summarise_replay transcript, e.g. the second before an error or a rage click.',
+    input: inputs.replaySnapshot,
+    scope: 'read',
+    run: (s, a) => s.replaySnapshot(a),
+  },
+  {
+    name: 'analyse_replays',
+    title: 'Patterns across replays',
+    description:
+      'What is frustrating users across many sessions: the most rage-clicked and dead-clicked elements (with selectors), the most common errors, failing requests and console errors, and the last page of sessions that hit problems. Each finding has example sessions with links. Takes the same filters as list_replays.',
+    input: inputs.analyseReplays,
+    scope: 'read',
+    run: (s, a) => s.analyseReplays(a),
+  },
+  {
+    name: 'annotate_replay',
+    title: 'Leave a note on a replay',
+    description:
+      'Pin a finding to a moment of a session ("00:14 Pay stays disabled: email validation fails silently"). Notes show on the player timeline for people and in the transcript for agents.',
+    input: inputs.annotateReplay,
+    scope: 'admin',
+    run: (s, a) => s.annotateReplay(a),
+  },
+  {
+    name: 'delete_replay_note',
+    title: 'Delete a replay note',
+    description: 'Remove a note from a session, by the id summarise_replay lists.',
+    input: inputs.deleteReplayNote,
+    scope: 'admin',
+    run: (s, a) => s.deleteReplayNote(a),
   },
   {
     name: 'list_flags',

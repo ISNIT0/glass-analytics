@@ -10,7 +10,8 @@ import { type InsightKind, INSIGHTS, experimentSpec, filterSchema, isInsightKind
 import type { QueryContext, ResultBase } from '@glassanalytics/core/insights/types';
 import { runWeb } from '@glassanalytics/core/insights/web';
 import { EVENT_DOCUMENTATION_GUIDE, EVENT_NAMING_GUIDE, FRAMEWORKS, type Framework } from '@glassanalytics/core/instrument';
-import { summariseReplay } from '@glassanalytics/core/replay-summary';
+import { analyseReplays } from '@glassanalytics/core/replay-analysis';
+import { type ReplaySummary, type TimelineItem, clock, parseOffset, renderSummary, snapshotAt, summariseReplay } from '@glassanalytics/core/replay-summary';
 import { assertReadOnlySql } from '@glassanalytics/core/sql/guard';
 import { propertyText } from '@glassanalytics/core/sql/filters';
 import { eventsCte, num, text } from '@glassanalytics/core/sql/source';
@@ -32,11 +33,66 @@ import { HttpError } from './http.ts';
 import { upsertPerson } from './ingest.ts';
 import { DEFAULT_INSIGHTS } from './insight-defaults.ts';
 import { createProject, listProjects, resolveProject } from './projects.ts';
-import { deleteReplays, getReplay, listReplays, loadReplayEvents, loadReplayPages, replaysEnabled } from './replays.ts';
+import {
+  type ReplayQuery,
+  type ReplayRow,
+  addNote,
+  deleteNote,
+  deleteReplays,
+  getReplay,
+  listNotes,
+  listReplays,
+  loadReplayEvents,
+  loadReplayPages,
+  readCachedSummary,
+  replaysEnabled,
+  writeCachedSummary,
+} from './replays.ts';
 import type { EventStore } from './stores/types.ts';
 
 const project = z.string().optional();
+/** Event-store matches feeding a replay search are capped (they are inlined into a D1 query). */
+const SESSION_MATCH_LIMIT = 1000;
+/** A session that hasn't uploaded anything for this long is finished, and its summary can be cached. */
+const SETTLED_MS = 30 * 60_000;
+/** analyse_replays computes at most this many missing summaries per call (each reads every chunk of a session). */
+const FRESH_SUMMARIES_PER_CALL = 3;
 const insightKind = z.enum(['trends', 'funnel', 'retention']);
+
+const csv = (v: unknown) => (typeof v === 'string' ? v.split(',').map((x) => x.trim()).filter(Boolean) : v);
+const jsonValue = (v: unknown) => {
+  if (typeof v !== 'string') return v;
+  try {
+    return JSON.parse(v);
+  } catch {
+    return v;
+  }
+};
+
+/** Ways to narrow down recorded sessions, shared by list_replays and analyse_replays. */
+const replayFilters = {
+  project,
+  person: z.string().optional().describe('Only sessions of this person (user id or device id).'),
+  with_errors: z.boolean().optional().describe('Only sessions with JavaScript errors. Same as has: ["errors"].'),
+  has: z
+    .preprocess(csv, z.array(z.enum(['errors', 'rage_clicks', 'dead_clicks', 'console_errors', 'failed_requests', 'frustration'])))
+    .optional()
+    .describe('Only sessions with all of these signals. "frustration" is any of them. Dead clicks are known once a session is summarised (~30 min after it ends).'),
+  from: z.union([z.string(), z.number()]).optional().describe('Start of the window, e.g. "-7d". Default: all retained sessions.'),
+  to: z.union([z.string(), z.number()]).optional(),
+  min_duration: z.coerce.number().min(0).optional().describe('Only sessions at least this many seconds long.'),
+  search: z
+    .string()
+    .optional()
+    .describe('Text to find: a session or person id, a URL, or (in summarised sessions) a clicked element\'s label or selector or an error message.'),
+  url: z.string().optional().describe('Only sessions that visited a URL containing this text, e.g. "/checkout".'),
+  did_event: z.string().optional().describe('Only sessions where this event happened, e.g. "plan_selected". With url: on that URL.'),
+  not_event: z.string().optional().describe('Exclude sessions where this event happened, e.g. "signup_completed" to watch people who dropped off.'),
+  filters: z
+    .preprocess(jsonValue, z.array(filterSchema))
+    .optional()
+    .describe('Event or person filters any event in the session must match, e.g. [{"property":"utm_source","value":"google"}] or a cohort.'),
+};
 
 export const inputs = {
   overview: z.object({ project, from: z.union([z.string(), z.number()]).optional(), to: z.union([z.string(), z.number()]).optional() }),
@@ -104,13 +160,38 @@ export const inputs = {
     from: z.union([z.string(), z.number()]).optional(),
   }),
   listReplays: z.object({
-    project,
-    person: z.string().optional().describe('Only sessions of this person (user id or device id).'),
-    with_errors: z.boolean().optional().describe('Only sessions with JavaScript errors.'),
-    from: z.union([z.string(), z.number()]).optional(),
-    limit: z.number().int().min(1).max(200).optional(),
+    ...replayFilters,
+    sort: z
+      .enum(['newest', 'oldest', 'longest', 'most_active', 'most_errors', 'most_frustrated'])
+      .optional()
+      .describe('Default "newest". "most_frustrated" weighs rage clicks, dead clicks and errors.'),
+    limit: z.number().int().min(1).max(200).optional().describe('Default 50.'),
+    offset: z.coerce.number().int().min(0).optional().describe('For paging: skip this many sessions.'),
   }),
-  replay: z.object({ project, session_id: z.string() }),
+  replay: z.object({
+    project,
+    session_id: z.string(),
+    format: z.enum(['text', 'json']).optional().describe('"json" adds the structured timeline (one item per click, page, error, request, note).'),
+    detail: z.enum(['normal', 'full']).optional().describe('"full" also lists routine console logs and successful network requests.'),
+  }),
+  replayEvents: z.object({ project, session_id: z.string() }),
+  replaySnapshot: z.object({
+    project,
+    session_id: z.string(),
+    at: z.union([z.string(), z.number()]).describe('Moment to describe: "mm:ss" from the start of the transcript (e.g. "01:24"), a string of seconds ("84"), or a number of ms.'),
+  }),
+  analyseReplays: z.object({
+    ...replayFilters,
+    limit: z.number().int().min(1).max(100).optional().describe('Most recent matching sessions to analyse. Default 30.'),
+  }),
+  annotateReplay: z.object({
+    project,
+    session_id: z.string(),
+    at: z.union([z.string(), z.number()]).describe('Moment the note is about: "mm:ss" from the start of the transcript (e.g. "00:14"), a string of seconds, or a number of ms.'),
+    text: z.string().min(1).max(2000).describe('What happened or why, e.g. "Pay is disabled because email validation failed silently".'),
+    author: z.string().max(60).optional().describe('Shown next to the note. Default "agent".'),
+  }),
+  deleteReplayNote: z.object({ project, session_id: z.string(), id: z.string() }),
   flagKey: z.object({ project, key: z.string() }),
   saveFlag: z.object({
     project,
@@ -592,7 +673,7 @@ ORDER BY ts_ms DESC LIMIT 100`;
       session: text(r.session_id),
       properties: safeParse(text(r.props)),
     }));
-    const replays = replaysEnabled(this.env) ? await listReplays(this.env.DB, ctx.project, { person: id, limit: 20 }) : [];
+    const replays = replaysEnabled(this.env) ? (await listReplays(this.env.DB, ctx.project, { person: id, limit: 20 })).rows : [];
     if (!person && events.length === 0) throw new HttpError(404, `No person or device "${id}" in project "${ctx.project}"`);
     return {
       project: ctx.project,
@@ -815,74 +896,312 @@ SELECT COUNT(DISTINCT pid) AS n FROM ev`;
 
   // ── Replays ──────────────────────────────────────────────────────────────
 
+  private replayLink(project: string, session: string, t?: number): string {
+    return this.link(`replays/${session}`, { project, t: t === undefined ? undefined : String(Math.round(t)) });
+  }
+
+  private replayItem(project: string, r: ReplayRow) {
+    const summarised = r.summary_chunks != null;
+    return {
+      session: r.session_id,
+      person: r.user_id ?? r.distinct_id,
+      started: new Date(r.started_at).toISOString(),
+      durationSeconds: Math.round((r.ended_at - r.started_at) / 1000),
+      activeSeconds: r.active_ms == null ? null : Math.round(r.active_ms / 1000),
+      pages: r.pages,
+      clicks: r.clicks,
+      rageClicks: r.rage_clicks,
+      deadClicks: summarised ? r.dead_clicks : null,
+      errors: r.errors,
+      consoleErrors: r.console_errors,
+      failedRequests: r.failed_requests,
+      url: r.start_url,
+      device: [r.device, r.browser, r.country].filter(Boolean).join(', '),
+      summarised,
+      dashboard: this.replayLink(project, r.session_id),
+    };
+  }
+
+  /** Session ids (most recent first) with an event matching the conditions, from the event store. */
+  private async sessionsWithEvents(
+    project: string,
+    range: { from: number; to: number },
+    where: { event?: string; filters?: Filter[]; url?: string },
+  ): Promise<string[]> {
+    const d = this.store.dialect;
+    const { filters } = await this.resolveCohorts(project, { filters: where.filters ?? [] });
+    const url = where.url ? `\n  AND LOWER(url) LIKE ${d.str(`%${where.url.toLowerCase()}%`)}` : '';
+    const sql = `WITH ${eventsCte(d, { project, from: range.from, to: range.to, events: where.event ? [where.event] : undefined, filters: filters as Filter[] })}
+SELECT session_id, MAX(ts_ms) AS last_ms FROM ev
+WHERE session_id IS NOT NULL AND session_id <> ''${url}
+GROUP BY session_id ORDER BY last_ms DESC LIMIT ${SESSION_MATCH_LIMIT}`;
+    return (await this.store.query(sql)).map((r) => text(r.session_id));
+  }
+
+  /** Turn list/analyse filters into a query on the replays index (resolving event conditions through the event store). */
+  private async replayQuery(projectId: string, spec: z.infer<z.ZodObject<typeof replayFilters>>): Promise<ReplayQuery & { capped: boolean }> {
+    const explicit = spec.from !== undefined || spec.to !== undefined;
+    const range = explicit ? resolveRange(spec.from ?? '-30d', spec.to) : undefined;
+    const has = [...(spec.has ?? []), ...(spec.with_errors ? (['errors'] as const) : [])];
+    const q: ReplayQuery & { capped: boolean } = {
+      person: spec.person,
+      has: [...new Set(has)],
+      from: range?.from,
+      to: range?.to,
+      minDurationMs: spec.min_duration ? spec.min_duration * 1000 : undefined,
+      search: spec.search?.trim() || undefined,
+      capped: false,
+    };
+    // Event conditions look a little past the window: a session's events can trail its start.
+    const window = range ?? resolveRange('-90d', undefined);
+    const eventRange = { from: window.from, to: window.to + DAY_MS };
+    if (spec.did_event || spec.filters?.length || spec.url) {
+      const sessions = await this.sessionsWithEvents(projectId, eventRange, { event: spec.did_event, filters: spec.filters as Filter[] | undefined, url: spec.url });
+      q.sessions = sessions;
+      q.capped = sessions.length >= SESSION_MATCH_LIMIT;
+      // Recordings can start before the SDK's first pageview arrives: also match on the recorded first page.
+      if (spec.url && !spec.did_event && !spec.filters?.length) q.startUrl = spec.url;
+    }
+    if (spec.not_event) {
+      q.excludeSessions = await this.sessionsWithEvents(projectId, eventRange, { event: spec.not_event });
+    }
+    return q;
+  }
+
   async listReplays(input: unknown) {
     const spec = inputs.listReplays.parse(input);
     const ctx = await this.context(spec.project);
-    if (!replaysEnabled(this.env)) return { project: ctx.project, enabled: false, replays: [], summary: 'Session replay is not enabled on this deployment.' };
-    const rows = await listReplays(this.env.DB, ctx.project, {
-      person: spec.person,
-      withErrors: spec.with_errors,
-      from: spec.from === undefined ? undefined : resolveRange(spec.from, undefined).from,
-      limit: spec.limit,
-    });
+    if (!replaysEnabled(this.env)) return { project: ctx.project, enabled: false, total: 0, replays: [], summary: 'Session replay is not enabled on this deployment.' };
+    const q = await this.replayQuery(ctx.project, spec);
+    const { rows, total } = await listReplays(this.env.DB, ctx.project, { ...q, sort: spec.sort, limit: spec.limit, offset: spec.offset });
+    const offset = spec.offset ?? 0;
+    const more = offset + rows.length < total;
     return {
       project: ctx.project,
       enabled: true,
-      replays: rows.map((r) => ({
-        session: r.session_id,
-        person: r.user_id ?? r.distinct_id,
-        started: new Date(r.started_at).toISOString(),
-        durationSeconds: Math.round((r.ended_at - r.started_at) / 1000),
-        clicks: r.clicks,
-        errors: r.errors,
-        url: r.start_url,
-        device: [r.device, r.browser, r.country].filter(Boolean).join(', '),
-        dashboard: this.link(`replays/${r.session_id}`, { project: ctx.project }),
-      })),
-      summary: `${rows.length} recorded session${rows.length === 1 ? '' : 's'}${spec.with_errors ? ' with errors' : ''}. Use summarise_replay to read one.`,
+      total,
+      offset,
+      replays: rows.map((r) => this.replayItem(ctx.project, r)),
+      summary: `${total} recorded session${total === 1 ? '' : 's'} match${total === 1 ? 'es' : ''}${rows.length < total ? `; showing ${offset + 1}–${offset + rows.length}` : ''}.${more ? ` Pass offset: ${offset + rows.length} for more.` : ''}${q.capped ? ` Event conditions matched the most recent ${SESSION_MATCH_LIMIT} sessions only; narrow the window with from/to.` : ''} Use summarise_replay to read one, analyse_replays for patterns across them.`,
     };
   }
 
   async replayEvents(input: unknown) {
-    const spec = inputs.replay.parse(input);
+    const spec = inputs.replayEvents.parse(input);
     const ctx = await this.context(spec.project);
-    const meta = await getReplay(this.env.DB, ctx.project, spec.session_id);
-    if (!meta) throw new HttpError(404, `No replay for session "${spec.session_id}"`);
+    const meta = await this.replayRow(ctx.project, spec.session_id);
     return { meta, events: await loadReplayEvents(this.env, ctx.project, spec.session_id) };
   }
 
-  /** A text transcript of a session: what the user saw, clicked, typed into, and what broke. */
-  async summariseReplay(input: unknown) {
-    const spec = inputs.replay.parse(input);
-    const ctx = await this.context(spec.project);
-    const meta = await getReplay(this.env.DB, ctx.project, spec.session_id);
-    if (!meta) throw new HttpError(404, `No replay for session "${spec.session_id}"`);
-    const pages = await loadReplayPages(this.env, ctx.project, spec.session_id);
+  private async replayRow(project: string, session: string): Promise<ReplayRow> {
+    if (!replaysEnabled(this.env)) throw new HttpError(501, 'Session replay is not enabled on this deployment', 'Enable R2 on your Cloudflare account, then run `glass upgrade`.');
+    const row = await getReplay(this.env.DB, project, session);
+    if (!row) throw new HttpError(404, `No replay for session "${session}"`, 'Find sessions with list_replays (GET /api/replays).');
+    return row;
+  }
+
+  /** Glass events recorded in the same session (pageviews, custom events, errors). */
+  private async sessionEvents(project: string, row: ReplayRow) {
     const d = this.store.dialect;
-    const sql = `SELECT event, ts_ms, path, title, props FROM ${d.table('events')}
-WHERE project = ${d.str(ctx.project)} AND session_id = ${d.str(spec.session_id)}
-  AND ts_ms >= ${meta.started_at - 60_000} AND ts_ms <= ${meta.ended_at + 60_000}
+    const sql = `SELECT event, ts_ms, path, url, title, props FROM ${d.table('events')}
+WHERE project = ${d.str(project)} AND session_id = ${d.str(row.session_id)}
+  AND ts_ms >= ${row.started_at - 60_000} AND ts_ms <= ${row.ended_at + 60_000}
 ORDER BY ts_ms LIMIT 2000`;
-    const glassEvents = (await this.store.query(sql)).map((r) => ({
+    return (await this.store.query(sql)).map((r) => ({
       event: text(r.event),
       ts_ms: num(r.ts_ms),
       path: text(r.path),
+      url: text(r.url),
       title: text(r.title),
       props: safeParse(text(r.props)),
     }));
-    const summary = summariseReplay(pages.map((p) => p.events), glassEvents, {
-      sessionId: spec.session_id,
-      person: meta.user_id ?? meta.distinct_id,
-      device: [meta.device, meta.browser, meta.country].filter(Boolean).join(', '),
+  }
+
+  /**
+   * A session's summary without notes: from the cache when it covers every
+   * chunk, otherwise computed (and cached once the session has settled).
+   */
+  private async replaySummary(project: string, row: ReplayRow): Promise<Omit<ReplaySummary, 'text'>> {
+    const cached = await readCachedSummary<Omit<ReplaySummary, 'text'>>(this.env, project, row);
+    if (cached) return cached;
+    const [pages, events] = await Promise.all([loadReplayPages(this.env, project, row.session_id), this.sessionEvents(project, row)]);
+    const { text: _text, ...base } = summariseReplay(
+      pages.map((p) => p.events),
+      events,
+    );
+    if (row.ended_at < Date.now() - SETTLED_MS) await this.cacheSummary(project, row, base);
+    return base;
+  }
+
+  private async cacheSummary(project: string, row: ReplayRow, base: Omit<ReplaySummary, 'text'>): Promise<void> {
+    const parts = new Set<string>();
+    for (const item of base.timeline) {
+      if (item.kind === 'page' && item.url) parts.add(item.url);
+      if (item.label) parts.add(item.label);
+      if (item.selector) parts.add(item.selector);
+      if (item.kind === 'error' || item.kind === 'event' || item.level === 'error') parts.add(item.text);
+    }
+    await writeCachedSummary(this.env, project, row, base, {
+      deadClicks: base.stats.deadClicks,
+      activeMs: base.stats.activeSeconds * 1000,
+      digest: [...parts].join(' | '),
     });
+  }
+
+  /** Summarise sessions that ended a while ago, so search and analysis can read them cheaply. Called by the cron. */
+  async summariseSettled(rows: (ReplayRow & { project: string })[]): Promise<number> {
+    let done = 0;
+    for (const row of rows) {
+      try {
+        await this.replaySummary(row.project, row);
+        done++;
+      } catch (err) {
+        console.warn('[glass] could not summarise replay', row.session_id, err);
+      }
+    }
+    return done;
+  }
+
+  /** Epoch ms that transcript times count from: the first recorded or Glass event of the session. */
+  private async sessionStart(project: string, row: ReplayRow): Promise<number> {
+    const d = this.store.dialect;
+    const first = await this.store.query(`SELECT MIN(ts_ms) AS first_ms FROM ${d.table('events')}
+WHERE project = ${d.str(project)} AND session_id = ${d.str(row.session_id)} AND ts_ms >= ${row.started_at - 60_000} AND ts_ms <= ${row.ended_at + 60_000}`);
+    const ts = num(first[0]?.first_ms);
+    return ts > 0 ? Math.min(ts, row.started_at) : row.started_at;
+  }
+
+  private offset(at: string | number): number {
+    try {
+      return parseOffset(at);
+    } catch (err) {
+      throw new HttpError(400, (err as Error).message);
+    }
+  }
+
+  /** A transcript of a session: what the user saw, clicked, typed into, and what broke. */
+  async summariseReplay(input: unknown) {
+    const spec = inputs.replay.parse(input);
+    const ctx = await this.context(spec.project);
+    const row = await this.replayRow(ctx.project, spec.session_id);
+    const [base, notes] = await Promise.all([this.replaySummary(ctx.project, row), listNotes(this.env.DB, ctx.project, row.session_id)]);
+    const person = row.user_id ?? row.distinct_id;
+    const device = [row.device, row.browser, row.country].filter(Boolean).join(', ');
+    const full = renderSummary(base, {
+      sessionId: row.session_id,
+      person,
+      device,
+      detail: spec.detail,
+      notes: notes.map((n) => ({ id: n.id, ts: n.ts_ms, text: n.text, author: n.author })),
+    });
+    const important = (i: TimelineItem) => i.level === 'error' || Boolean(i.signals?.length) || i.kind === 'note';
     return {
       project: ctx.project,
-      session: spec.session_id,
-      transcript: summary.text,
-      stats: summary.stats,
-      summary: summary.text.split('\n').slice(0, 4).join(' '),
-      dashboard: this.link(`replays/${spec.session_id}`, { project: ctx.project }),
+      session: row.session_id,
+      person,
+      device,
+      started: new Date(row.started_at).toISOString(),
+      transcript: full.text,
+      stats: full.stats,
+      highlights: full.timeline
+        .filter(important)
+        .slice(0, 25)
+        .map((i) => ({ at: clock(i.t), what: i.text, link: this.replayLink(ctx.project, row.session_id, i.t) })),
+      notes: notes.map((n) => ({ id: n.id, at: clock(n.ts_ms - full.startedAt), text: n.text, author: n.author })),
+      ...(spec.format === 'json' ? { startedAt: full.startedAt, endedAt: full.endedAt, timeline: full.timeline } : {}),
+      summary: full.text.split('\n').slice(0, 4).join(' '),
+      hint: 'Use replay_snapshot with a time from the transcript to read what was on screen; annotate_replay to leave a finding on the timeline.',
+      dashboard: this.replayLink(ctx.project, row.session_id),
     };
+  }
+
+  /** What was on screen at one moment of a session, as text. */
+  async replaySnapshot(input: unknown) {
+    const spec = inputs.replaySnapshot.parse(input);
+    const ctx = await this.context(spec.project);
+    const row = await this.replayRow(ctx.project, spec.session_id);
+    const t = this.offset(spec.at);
+    const [pages, start] = await Promise.all([loadReplayPages(this.env, ctx.project, row.session_id), this.sessionStart(ctx.project, row)]);
+    const shot = snapshotAt(
+      pages.map((p) => p.events),
+      start + t,
+    );
+    return {
+      project: ctx.project,
+      session: row.session_id,
+      at: clock(t),
+      url: shot.url,
+      viewport: shot.viewport,
+      scrollY: shot.scrollY,
+      screen: shot.text,
+      summary: `Screen at ${clock(t)}${shot.url ? ` on ${shot.url}` : ''}${shot.viewport ? ` (${shot.viewport}, scrolled ${shot.scrollY}px)` : ''}. Inputs are masked by the recorder.`,
+      dashboard: this.replayLink(ctx.project, row.session_id, t),
+    };
+  }
+
+  /** Patterns across many sessions: rage- and dead-clicked elements, errors, failing requests, exit pages. */
+  async analyseReplays(input: unknown) {
+    const spec = inputs.analyseReplays.parse(input);
+    const ctx = await this.context(spec.project);
+    if (!replaysEnabled(this.env)) return { project: ctx.project, enabled: false, summary: 'Session replay is not enabled on this deployment.' };
+    const q = await this.replayQuery(ctx.project, spec);
+    const { rows, total } = await listReplays(this.env.DB, ctx.project, { ...q, limit: spec.limit ?? 30 });
+    // Cached summaries are cheap; computing one reads every chunk, so only a few are computed per call.
+    const cached = await Promise.all(rows.map((r) => readCachedSummary<Omit<ReplaySummary, 'text'>>(this.env, ctx.project, r)));
+    const sessions: { session: string; stats: ReplaySummary['stats']; timeline: TimelineItem[] }[] = [];
+    let fresh = 0;
+    let skipped = 0;
+    for (const [i, row] of rows.entries()) {
+      let s = cached[i];
+      if (!s && fresh < FRESH_SUMMARIES_PER_CALL) {
+        fresh++;
+        s = await this.replaySummary(ctx.project, row);
+      }
+      if (s) sessions.push({ session: row.session_id, stats: s.stats, timeline: s.timeline });
+      else skipped++;
+    }
+    const a = analyseReplays(sessions);
+    const withLinks = (findings: typeof a.rageClicks) =>
+      findings.map((f) => ({ ...f, examples: f.examples.map((e) => ({ ...e, at: clock(e.t), link: this.replayLink(ctx.project, e.session, e.t) })) }));
+    return {
+      project: ctx.project,
+      enabled: true,
+      matching: total,
+      analysed: sessions.length,
+      skipped,
+      totals: a.totals,
+      rageClicks: withLinks(a.rageClicks),
+      deadClicks: withLinks(a.deadClicks),
+      errors: withLinks(a.errors),
+      failedRequests: withLinks(a.failedRequests),
+      consoleErrors: withLinks(a.consoleErrors),
+      exitPages: withLinks(a.exitPages),
+      summary: `${a.text}${skipped ? `\n\n${skipped} recent sessions were left out because they are not summarised yet (that happens about 30 minutes after a session ends, hourly). Run again later for full coverage.` : ''}${total > rows.length ? `\n\nAnalysed the ${rows.length} most recent of ${total} matching sessions.` : ''}`,
+    };
+  }
+
+  async annotateReplay(input: unknown) {
+    const spec = inputs.annotateReplay.parse(input);
+    const ctx = await this.context(spec.project);
+    const row = await this.replayRow(ctx.project, spec.session_id);
+    const t = this.offset(spec.at);
+    const start = await this.sessionStart(ctx.project, row);
+    const note = await addNote(this.env.DB, ctx.project, row.session_id, { ts_ms: start + t, text: spec.text.trim(), author: spec.author?.trim() || 'agent' });
+    return {
+      project: ctx.project,
+      session: row.session_id,
+      note: { id: note.id, at: clock(t), text: note.text, author: note.author },
+      summary: `Note added at ${clock(t)}. It shows on the session's timeline and in its transcript.`,
+      dashboard: this.replayLink(ctx.project, row.session_id, t),
+    };
+  }
+
+  async deleteReplayNote(input: unknown) {
+    const spec = inputs.deleteReplayNote.parse(input);
+    const ctx = await this.context(spec.project);
+    const deleted = await deleteNote(this.env.DB, ctx.project, spec.session_id, spec.id);
+    if (!deleted) throw new HttpError(404, `No note "${spec.id}" on session "${spec.session_id}"`);
+    return { project: ctx.project, deleted: true, summary: 'Note deleted.' };
   }
 
   // ── Flags ────────────────────────────────────────────────────────────────
