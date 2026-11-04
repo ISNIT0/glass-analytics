@@ -21,6 +21,20 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const pkg = (name: string, ...parts: string[]) => join(root, 'packages', name, ...parts);
 const sizes: [string, number, number][] = [];
 
+// The dashboard upgrade banner compares Worker /health.version to the latest
+// @glassanalytics/cli on npm. Those must stay in lockstep or upgrades look stuck.
+{
+  const cliVersion = JSON.parse(readFileSync(pkg('cli', 'package.json'), 'utf8')).version as string;
+  const versionSrc = readFileSync(pkg('core', 'src', 'version.ts'), 'utf8');
+  const match = /export const GLASS_VERSION = '([^']+)'/.exec(versionSrc);
+  if (!match || match[1] !== cliVersion) {
+    throw new Error(
+      `GLASS_VERSION (${match?.[1] ?? 'missing'}) must equal packages/cli version (${cliVersion}). ` +
+        'Update packages/core/src/version.ts before building.',
+    );
+  }
+}
+
 function record(file: string): void {
   const bytes = readFileSync(file);
   sizes.push([file.replace(`${root}/`, ''), bytes.length, gzipSync(bytes).length]);
@@ -101,16 +115,8 @@ await bundle({
   format: 'esm',
   target: 'node20',
   platform: 'node',
-  packages: 'external',
-  // @glassanalytics/* are workspace packages bundled into the CLI; wrangler stays a real dependency.
-  plugins: [
-    {
-      name: 'bundle-workspace',
-      setup(build) {
-        build.onResolve({ filter: /^@glass\// }, () => undefined);
-      },
-    },
-  ],
+  // Bundle @glassanalytics/* into the CLI so `npx @glassanalytics/cli` works
+  // without installing workspace packages. Wrangler stays a real dependency.
   external: ['wrangler'],
   banner: { js: '#!/usr/bin/env node' },
 });

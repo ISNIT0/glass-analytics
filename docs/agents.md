@@ -28,11 +28,13 @@ Use the read-only key (`npx @glassanalytics/cli key --read`) for agents that sho
 | `query_funnel` | Conversion through ordered steps within a window, with breakdowns |
 | `query_retention` | Cohort retention by day, week or month |
 | `sql` | One read-only SELECT against the event store |
-| `list_events` | Event names, counts and documentation status |
+| `list_events` | Event names, counts and documentation status (`undocumented` lists custom events still missing a description) |
 | `describe_event` | Properties sent with an event: types, coverage, examples |
-| `define_event` | Document an event and its properties |
+| `define_event` | Document how/when an event fires and what each property means |
 | `instrument` | The exact code to track an event in a framework |
-| `search_persons`, `get_person` | Identified people; one person's properties, devices, events and replays |
+| `search_persons`, `get_person` | Identified people plus anonymous device counts; one person's properties, devices, events and replays |
+| `property_values`, `list_person_properties` | Top values of a property (with event and people counts) and the person property names, so filters use values that exist |
+| `list_cohorts`, `save_cohort`, `count_cohort`, `delete_cohort` | Saved person filters (and optional did-event) with live membership counts. Filter any query to a cohort with `{"property":"cohort","value":"<key>"}` |
 | `list_replays`, `summarise_replay` | Recorded sessions; a session as a text transcript |
 | `list_flags`, `save_flag`, `delete_flag` | Feature flags |
 | `list_experiments`, `create_experiment`, `experiment_results`, `update_experiment` | A/B tests: create, start, read, stop, ship |
@@ -42,8 +44,9 @@ Every result includes a `summary` sentence, the `sql` that ran, and a `dashboard
 
 ### Recipes
 
+- **"First look at this project."** `overview` → `list_events`. If `upgradeAvailable` is set (also on `/health` and in MCP initialize instructions), tell the user to run `npx @glassanalytics/cli@latest upgrade`. For every name in `undocumented`, find the capture site in code (or ask), then `define_event` with a how/when description and property meanings before building queries on those events.
 - **"Why did X drop?"** `overview` → `query_funnel` with `breakdown: "browser"` (or `utm_source`, `device`) → `list_replays` with `with_errors: true` → `summarise_replay`.
-- **"Add tracking for Y."** `instrument` with the event name → add the code → deploy → `describe_event` to confirm it arrives → `define_event` to document it.
+- **"Add tracking for Y."** `instrument` with the event name → add the code → deploy → `describe_event` to confirm it arrives → `define_event` with how/when it fires and what each property means.
 - **"Test Z."** `create_experiment` with a goal → branch on `glass.flag(key)` in code → `update_experiment` with `start` → later `experiment_results` → `update_experiment` with `ship`.
 
 ## CLI

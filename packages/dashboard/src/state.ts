@@ -50,7 +50,7 @@ export const prefs = {
 };
 
 export interface Route {
-  /** e.g. "web", "insights", "replays" */
+  /** e.g. "reports", "insights", "replays" */
   page: string;
   /** Path segments after the page, e.g. ["funnel"] or ["session-id"] */
   rest: string[];
@@ -60,7 +60,7 @@ export interface Route {
 export function currentRoute(): Route {
   const hash = location.hash.replace(/^#\/?/, '');
   const [path = '', query = ''] = hash.split('?');
-  const [page = 'web', ...rest] = path.split('/').filter(Boolean).map(decodeURIComponent);
+  const [page = 'reports', ...rest] = path.split('/').filter(Boolean).map(decodeURIComponent);
   return { page, rest, params: new URLSearchParams(query) };
 }
 

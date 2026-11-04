@@ -5,15 +5,18 @@
  * gets the same answer whichever way it asks.
  */
 
+import { COHORT_PROPERTY, type CohortMembers, type Filter, toList } from '@glassanalytics/core/filters';
 import { type InsightKind, INSIGHTS, experimentSpec, filterSchema, isInsightKind, sqlSpec, webSpec } from '@glassanalytics/core/insights';
 import type { QueryContext, ResultBase } from '@glassanalytics/core/insights/types';
 import { runWeb } from '@glassanalytics/core/insights/web';
-import { EVENT_NAMING_GUIDE, FRAMEWORKS, type Framework } from '@glassanalytics/core/instrument';
+import { EVENT_DOCUMENTATION_GUIDE, EVENT_NAMING_GUIDE, FRAMEWORKS, type Framework } from '@glassanalytics/core/instrument';
 import { summariseReplay } from '@glassanalytics/core/replay-summary';
 import { assertReadOnlySql } from '@glassanalytics/core/sql/guard';
+import { propertyText } from '@glassanalytics/core/sql/filters';
 import { eventsCte, num, text } from '@glassanalytics/core/sql/source';
 import { DAY_MS, resolveRange } from '@glassanalytics/core/time';
-import { GLASS_VERSION } from '@glassanalytics/core/version';
+import { GLASS_VERSION, UPGRADE_COMMAND, isNewerThan, upgradeMessage } from '@glassanalytics/core/version';
+import { fetchLatestVersion } from './latest.ts';
 import { runExperiment } from '@glassanalytics/core/insights/experiment';
 import { z } from 'zod/v4';
 import type { Env } from './env.ts';
@@ -27,11 +30,13 @@ import {
 import { deleteFlag, getFlag, listFlags, saveFlag } from './flags.ts';
 import { HttpError } from './http.ts';
 import { upsertPerson } from './ingest.ts';
+import { DEFAULT_INSIGHTS } from './insight-defaults.ts';
 import { createProject, listProjects, resolveProject } from './projects.ts';
 import { deleteReplays, getReplay, listReplays, loadReplayEvents, loadReplayPages, replaysEnabled } from './replays.ts';
 import type { EventStore } from './stores/types.ts';
 
 const project = z.string().optional();
+const insightKind = z.enum(['trends', 'funnel', 'retention']);
 
 export const inputs = {
   overview: z.object({ project, from: z.union([z.string(), z.number()]).optional(), to: z.union([z.string(), z.number()]).optional() }),
@@ -39,20 +44,65 @@ export const inputs = {
   describeEvent: z.object({ project, event: z.string().describe('Event name, e.g. "signup_completed".') }),
   defineEvent: z.object({
     project,
-    event: z.string(),
-    description: z.string().optional(),
-    owner: z.string().optional(),
-    properties: z.record(z.string(), z.string()).optional().describe('Property name → what it means.'),
+    event: z.string().describe('Event name, e.g. "signup_completed".'),
+    description: z
+      .string()
+      .optional()
+      .describe(
+        'How and when this event is fired: the user action or code path that triggers capture. Example: "Fired when payment succeeds and the account is marked active."',
+      ),
+    owner: z.string().optional().describe('Team or person responsible for this event.'),
+    properties: z
+      .record(z.string(), z.string())
+      .optional()
+      .describe(
+        'Property name → what it means and which values to expect. Example: { "plan": "Chosen plan id (free|pro|enterprise)", "amount": "Charge in the account currency" }.',
+      ),
   }),
+  propertyValues: z.object({
+    project,
+    property: z.string().describe('Property to list values of: a column ("utm_source"), event property ("plan") or person property ("person.plan"). "cohort" lists saved cohorts.'),
+    event: z.string().optional().describe('Only values seen on this event.'),
+    query: z.string().optional().describe('Only values containing this text (case-insensitive).'),
+    days: z.number().int().min(1).max(365).optional().describe('Look-back window in days. Default 30.'),
+    limit: z.number().int().min(1).max(200).optional().describe('Default 50.'),
+  }),
+  listPersonProperties: z.object({ project }),
   instrument: z.object({
     event: z.string().describe('Event name to track, snake_case past tense, e.g. "checkout_started".'),
     properties: z.record(z.string(), z.unknown()).optional().describe('Example properties to send with it.'),
     framework: z.enum(Object.keys(FRAMEWORKS) as [Framework, ...Framework[]]).optional().describe('Defaults to plain HTML / script tag.'),
     project,
   }),
-  searchPersons: z.object({ project, query: z.string().optional().describe('Matches person id or any property value.'), limit: z.number().int().min(1).max(200).optional() }),
+  searchPersons: z.object({
+    project,
+    query: z.string().optional().describe('Matches person id or any property value.'),
+    limit: z.number().int().min(1).max(200).optional(),
+    days: z.number().int().min(1).max(365).optional().describe('Window for the anonymous-device count. Default 30.'),
+  }),
   getPerson: z.object({ project, person_id: z.string().describe('Your user id, or an anonymous device id.') }),
   setPersonProperties: z.object({ project, person_id: z.string(), properties: z.record(z.string(), z.unknown()) }),
+  cohortDefinition: z.object({
+    filters: z.array(filterSchema).default([]).describe('Person/event filters, e.g. [{"property":"person.plan","value":"pro"}].'),
+    didEvent: z.string().optional().describe('Only people who did this event in the look-back window.'),
+    from: z.union([z.string(), z.number()]).optional().describe('Look-back for membership. Default -90d.'),
+  }),
+  listCohorts: z.object({ project }),
+  saveCohort: z.object({
+    project,
+    key: z.string().optional().describe('Stable id. Defaults to a slug of the name.'),
+    name: z.string().min(1).describe('Human label, e.g. "Pro plan".'),
+    filters: z.array(filterSchema).default([]),
+    didEvent: z.string().optional(),
+    from: z.union([z.string(), z.number()]).optional(),
+  }),
+  deleteCohort: z.object({ project, key: z.string() }),
+  countCohort: z.object({
+    project,
+    filters: z.array(filterSchema).default([]),
+    didEvent: z.string().optional(),
+    from: z.union([z.string(), z.number()]).optional(),
+  }),
   listReplays: z.object({
     project,
     person: z.string().optional().describe('Only sessions of this person (user id or device id).'),
@@ -98,6 +148,17 @@ export const inputs = {
     name: z.string().optional(),
     allowed_origins: z.array(z.string()).optional().describe('Restrict browser ingest to these origins.'),
   }),
+  listInsights: z.object({ project }),
+  getInsight: z.object({ project, key: z.string() }),
+  saveInsight: z.object({
+    project,
+    key: z.string().optional().describe('Stable id. Defaults to a slug of the name.'),
+    name: z.string().min(1).describe('Title shown in the Insights list.'),
+    description: z.string().optional().describe('Short explanation of what this analysis answers.'),
+    kind: insightKind,
+    spec: z.record(z.string(), z.unknown()).describe('Query spec without kind/project (series, steps, cohortEvent, …).'),
+  }),
+  deleteInsight: z.object({ project, key: z.string() }),
 };
 
 export class GlassService {
@@ -126,13 +187,19 @@ export class GlassService {
     return `${this.baseUrl}/app#/${route}${q ? `?${q}` : ''}`;
   }
 
-  health() {
+  async health() {
+    const latest = await fetchLatestVersion();
+    const upgradeAvailable = latest != null && isNewerThan(latest, GLASS_VERSION);
     return {
       ok: true,
       version: GLASS_VERSION,
+      latest,
+      upgradeAvailable,
+      upgradeCommand: UPGRADE_COMMAND,
       store: this.store.kind,
       freshnessSeconds: this.store.freshnessSeconds,
       replay: replaysEnabled(this.env),
+      ...(upgradeAvailable && latest ? { summary: upgradeMessage(GLASS_VERSION, latest) } : {}),
     };
   }
 
@@ -146,8 +213,10 @@ export class GlassService {
     const spec = def.schema.parse(input) as { project?: string };
     const ctx = await this.context(spec.project);
     const run = def.run as unknown as (s: unknown, c: QueryContext) => Promise<ResultBase>;
-    const result = await run(spec, ctx);
-    return { ...result, project: ctx.project, dashboard: this.link(`insights/${kind}`, { project: ctx.project, spec: { ...spec, project: undefined } }) };
+    const result = await run(await this.resolveCohorts(ctx.project, spec), ctx);
+    // Web lives under Reports; trends/funnel/retention stay as ephemeral Insights links.
+    const route = kind === 'web' ? 'reports' : `insights/${kind}`;
+    return { ...result, project: ctx.project, dashboard: this.link(route, { project: ctx.project, spec: { ...spec, project: undefined } }) };
   }
 
   async sql(input: unknown) {
@@ -167,7 +236,7 @@ export class GlassService {
       tables:
         this.store.kind === 'lake'
           ? `${this.store.dialect.table('events')}, ${this.store.dialect.table('identities')}`
-          : 'events, identities, persons, flags, experiments, replays, event_definitions',
+          : 'events, identities, persons, cohorts, insights, flags, experiments, replays, event_definitions',
       dashboard: this.link('sql', { project: ctx.project, query: spec.query }),
     };
   }
@@ -197,6 +266,12 @@ GROUP BY event ORDER BY cur DESC LIMIT 50`;
       .sort((a, b) => Math.abs(b.change!) - Math.abs(a.change!))
       .slice(0, 5);
     const top = (k: keyof typeof web.breakdowns) => web.breakdowns[k].slice(0, 5);
+    const health = await this.health();
+    const baseSummary =
+      `${web.summary} ` +
+      (movers.length
+        ? `Biggest movers: ${movers.map((m) => `${m.event} ${m.change! > 0 ? '+' : ''}${Math.round(m.change! * 100)}%`).join(', ')}.`
+        : 'No events moved more than 20% vs the previous period.');
     return {
       project: ctx.project,
       range: web.range,
@@ -206,13 +281,13 @@ GROUP BY event ORDER BY cur DESC LIMIT 50`;
       topErrors: top('errors'),
       events: events.slice(0, 15),
       movers,
-      summary:
-        `${web.summary} ` +
-        (movers.length
-          ? `Biggest movers: ${movers.map((m) => `${m.event} ${m.change! > 0 ? '+' : ''}${Math.round(m.change! * 100)}%`).join(', ')}.`
-          : 'No events moved more than 20% vs the previous period.'),
+      upgradeAvailable: health.upgradeAvailable,
+      ...(health.upgradeAvailable
+        ? { upgrade: { version: health.version, latest: health.latest, command: health.upgradeCommand } }
+        : {}),
+      summary: health.upgradeAvailable && health.latest ? `${baseSummary} ${upgradeMessage(health.version, health.latest)}` : baseSummary,
       sql: [...web.sql, sql],
-      dashboard: this.link('web', { project: ctx.project, from: spec.from, to: spec.to }),
+      dashboard: this.link('reports', { project: ctx.project, from: spec.from, to: spec.to }),
     };
   }
 
@@ -246,6 +321,7 @@ GROUP BY event ORDER BY n DESC LIMIT 500`;
       undocumented,
       summary: `${events.length} distinct events in the last ${spec.days ?? 30} days${undocumented.length ? `; ${undocumented.length} custom events have no description (use define_event)` : ''}.`,
       namingGuide: EVENT_NAMING_GUIDE,
+      documentationGuide: EVENT_DOCUMENTATION_GUIDE,
       sql: [sql],
       dashboard: this.link('events', { project: ctx.project }),
     };
@@ -304,6 +380,46 @@ ORDER BY ts_ms DESC LIMIT 500`;
     };
   }
 
+  /** Most common values of a property, for filter typeahead. Counts come from events, so they match what a filter would select. */
+  async propertyValues(input: unknown) {
+    const spec = inputs.propertyValues.parse(input);
+    const ctx = await this.context(spec.project);
+    const limit = spec.limit ?? 50;
+    const q = spec.query?.trim().toLowerCase() ?? '';
+    if (spec.property.trim() === COHORT_PROPERTY) {
+      const cohorts = await this.env.DB.prepare('SELECT key, name FROM cohorts WHERE project = ? ORDER BY name COLLATE NOCASE')
+        .bind(ctx.project)
+        .all<{ key: string; name: string }>();
+      const values = cohorts.results
+        .filter((c) => !q || c.key.toLowerCase().includes(q) || c.name.toLowerCase().includes(q))
+        .slice(0, limit)
+        .map((c) => ({ value: c.key, label: c.name, count: null, people: null }));
+      return { project: ctx.project, property: COHORT_PROPERTY, values, summary: `${values.length} saved cohort${values.length === 1 ? '' : 's'}.`, sql: [] };
+    }
+    const d = this.store.dialect;
+    const now = Date.now();
+    let expr: string;
+    try {
+      expr = propertyText(spec.property, d);
+    } catch (err) {
+      throw new HttpError(400, err instanceof Error ? err.message : `Invalid property "${spec.property}"`, 'Use a column name, an event property, or person.<name>.');
+    }
+    const sql = `WITH ${eventsCte(d, { project: ctx.project, from: now - (spec.days ?? 30) * DAY_MS, to: now + 60_000, events: spec.event ? [spec.event] : undefined })}
+SELECT v, COUNT(*) AS n, COUNT(DISTINCT pid) AS people FROM (SELECT ${expr} AS v, pid FROM ev) pv
+WHERE v IS NOT NULL AND v <> ''${q ? ` AND ${d.containsIgnoreCase('v', q)}` : ''}
+GROUP BY v ORDER BY n DESC LIMIT ${d.num(limit)}`;
+    const values = (await this.store.query(sql)).map((r) => ({ value: text(r.v), label: text(r.v), count: num(r.n), people: num(r.people) }));
+    return {
+      project: ctx.project,
+      property: spec.property,
+      values,
+      summary: values.length
+        ? `Top ${values.length} values of "${spec.property}"${spec.event ? ` on "${spec.event}"` : ''}: ${values.slice(0, 5).map((v) => v.value).join(', ')}${values.length > 5 ? ', …' : ''}.`
+        : `No values of "${spec.property}"${spec.event ? ` on "${spec.event}"` : ''} in the last ${spec.days ?? 30} days.`,
+      sql: [sql],
+    };
+  }
+
   async defineEvent(input: unknown) {
     const spec = inputs.defineEvent.parse(input);
     const ctx = await this.context(spec.project);
@@ -313,7 +429,19 @@ ORDER BY ts_ms DESC LIMIT 500`;
     )
       .bind(ctx.project, spec.event, spec.description ?? '', spec.owner ?? '', JSON.stringify(spec.properties ?? {}), Date.now())
       .run();
-    return { project: ctx.project, event: spec.event, saved: true, summary: `Saved the definition of "${spec.event}".` };
+    const hasDescription = Boolean(spec.description?.trim());
+    const propCount = Object.keys(spec.properties ?? {}).length;
+    return {
+      project: ctx.project,
+      event: spec.event,
+      saved: true,
+      summary: `Saved the definition of "${spec.event}".`,
+      hint: !hasDescription
+        ? 'Add a how/when description (which user action or code path fires this event).'
+        : propCount === 0
+          ? 'If this event has properties, call define_event again with property meanings.'
+          : EVENT_DOCUMENTATION_GUIDE,
+    };
   }
 
   instrument(input: unknown) {
@@ -331,7 +459,7 @@ ORDER BY ts_ms DESC LIMIT 500`;
         .map(([k, v]) => ` data-glass-prop-${k.replace(/_/g, '-')}="${String(v)}"`)
         .join('')}>…</button>`,
       warnings,
-      summary: `Add the install snippet once, then call capture where "${spec.event}" happens. After deploying, check with describe_event.`,
+      summary: `Add the install snippet once, then call capture where "${spec.event}" happens. After deploying, check with describe_event, then define_event with how/when it fires and property meanings.`,
     };
   }
 
@@ -341,13 +469,17 @@ ORDER BY ts_ms DESC LIMIT 500`;
     const spec = inputs.searchPersons.parse(input);
     const ctx = await this.context(spec.project);
     const q = spec.query?.trim();
-    const { results } = await this.env.DB.prepare(
-      `SELECT person_id, props, first_seen, last_seen FROM persons WHERE project = ?
-       ${q ? 'AND (instr(lower(person_id), lower(?)) > 0 OR instr(lower(props), lower(?)) > 0)' : ''}
-       ORDER BY last_seen DESC LIMIT ?`,
-    )
-      .bind(ctx.project, ...(q ? [q, q] : []), spec.limit ?? 50)
-      .all<{ person_id: string; props: string; first_seen: number; last_seen: number }>();
+    const days = spec.days ?? 30;
+    const [{ results }, stats] = await Promise.all([
+      this.env.DB.prepare(
+        `SELECT person_id, props, first_seen, last_seen FROM persons WHERE project = ?
+         ${q ? 'AND (instr(lower(person_id), lower(?)) > 0 OR instr(lower(props), lower(?)) > 0)' : ''}
+         ORDER BY last_seen DESC LIMIT ?`,
+      )
+        .bind(ctx.project, ...(q ? [q, q] : []), spec.limit ?? 50)
+        .all<{ person_id: string; props: string; first_seen: number; last_seen: number }>(),
+      this.peopleStats(ctx.project, days),
+    ]);
     return {
       project: ctx.project,
       persons: results.map((r) => ({
@@ -356,8 +488,85 @@ ORDER BY ts_ms DESC LIMIT 500`;
         firstSeen: new Date(r.first_seen).toISOString(),
         lastSeen: new Date(r.last_seen).toISOString(),
       })),
-      summary: `${results.length} identified ${results.length === 1 ? 'person' : 'people'}${q ? ` matching "${q}"` : ''}.`,
+      stats,
+      summary:
+        `${stats.identified} identified ${stats.identified === 1 ? 'person' : 'people'}, ` +
+        `${stats.anonymousDevices} anonymous device${stats.anonymousDevices === 1 ? '' : 's'} active in the last ${days} days` +
+        (q ? `; showing ${results.length} matching "${q}"` : results.length < stats.identified ? `; showing the ${results.length} most recently active` : '') +
+        '.',
+      sql: stats.sql,
       dashboard: this.link('users', { project: ctx.project, q }),
+    };
+  }
+
+  /** Identified people (persons table) plus anonymous devices active in the window. */
+  private async peopleStats(project: string, days: number): Promise<{
+    identified: number;
+    anonymousDevices: number;
+    days: number;
+    sql: string[];
+  }> {
+    const from = Date.now() - days * DAY_MS;
+    const identifiedRow = await this.env.DB.prepare('SELECT COUNT(*) AS n FROM persons WHERE project = ?').bind(project).first<{ n: number }>();
+    const identified = Number(identifiedRow?.n ?? 0);
+    const d = this.store.dialect;
+    let anonymousDevices: number;
+    let sql: string;
+    if (this.store.kind === 'd1') {
+      // Same SQLite DB holds events, persons and identities.
+      sql = `SELECT COUNT(DISTINCT e.distinct_id) AS n
+FROM ${d.table('events')} e
+WHERE e.project = ${d.str(project)} AND e.ts_ms >= ${d.num(from)}
+  AND e.distinct_id NOT IN (SELECT distinct_id FROM identities WHERE project = ${d.str(project)})
+  AND e.distinct_id NOT IN (SELECT person_id FROM persons WHERE project = ${d.str(project)})`;
+      anonymousDevices = num((await this.store.query(sql))[0]?.n);
+    } else {
+      sql = `SELECT DISTINCT distinct_id AS d FROM ${d.table('events')}
+WHERE project = ${d.str(project)} AND ts_ms >= ${d.num(from)}`;
+      const [devices, linked, people] = await Promise.all([
+        this.store.query(sql),
+        this.env.DB.prepare('SELECT distinct_id FROM identities WHERE project = ?').bind(project).all<{ distinct_id: string }>(),
+        this.env.DB.prepare('SELECT person_id FROM persons WHERE project = ?').bind(project).all<{ person_id: string }>(),
+      ]);
+      const skip = new Set<string>([...linked.results.map((r) => r.distinct_id), ...people.results.map((r) => r.person_id)]);
+      anonymousDevices = devices.reduce((n, r) => n + (skip.has(text(r.d)) ? 0 : 1), 0);
+    }
+    return { identified, anonymousDevices, days, sql: [sql] };
+  }
+
+  /** Person property keys (sampled from the most recently active people), for filter pickers. */
+  async listPersonProperties(input: unknown) {
+    const spec = inputs.listPersonProperties.parse(input);
+    const ctx = await this.context(spec.project);
+    const { results } = await this.env.DB.prepare('SELECT props FROM persons WHERE project = ? ORDER BY last_seen DESC LIMIT 1000')
+      .bind(ctx.project)
+      .all<{ props: string }>();
+    const props = new Map<string, { types: Set<string>; examples: Set<string>; seen: number }>();
+    for (const row of results) {
+      for (const [key, value] of Object.entries(safeParse(row.props))) {
+        const p = props.get(key) ?? { types: new Set(), examples: new Set(), seen: 0 };
+        p.seen++;
+        p.types.add(value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value);
+        if (p.examples.size < 5 && value !== null && typeof value !== 'object') p.examples.add(String(value).slice(0, 80));
+        props.set(key, p);
+      }
+    }
+    const properties = [...props.entries()]
+      .sort((a, b) => b[1].seen - a[1].seen)
+      .map(([name, p]) => ({
+        name: `person.${name}`,
+        types: [...p.types],
+        coverage: results.length ? p.seen / results.length : 0,
+        examples: [...p.examples],
+        description: '',
+      }));
+    return {
+      project: ctx.project,
+      sampled: results.length,
+      properties,
+      summary: properties.length
+        ? `${properties.length} person properties across the ${results.length} most recently active people. Filter on them as "person.<name>".`
+        : 'No person properties yet. Send them with glass.identify(userId, { plan: "pro" }).',
     };
   }
 
@@ -433,6 +642,175 @@ ORDER BY ts_ms DESC LIMIT 100`;
         ? `Deleted person "${spec.person_id}", ${devices.length} device links, their events and ${replays} replays.`
         : `Deleted person "${spec.person_id}", device links and ${replays} replays. Events in the lake must be removed separately (see docs/privacy.md).`,
     };
+  }
+
+  // ── Cohorts ──────────────────────────────────────────────────────────────
+
+  /** How many distinct people match a cohort definition in its look-back window. */
+  async countCohort(input: unknown) {
+    const spec = inputs.countCohort.parse(input);
+    const ctx = await this.context(spec.project);
+    const { count, sql, range } = await this.cohortMembership(ctx.project, {
+      filters: spec.filters,
+      didEvent: spec.didEvent,
+      from: spec.from,
+    });
+    return {
+      project: ctx.project,
+      count,
+      range,
+      summary: `${count} ${count === 1 ? 'person' : 'people'} match this cohort in the selected window.`,
+      sql: [sql],
+    };
+  }
+
+  async listCohorts(input: unknown) {
+    const spec = inputs.listCohorts.parse(input);
+    const ctx = await this.context(spec.project);
+    const { results } = await this.env.DB.prepare(
+      'SELECT key, name, definition, created_at, updated_at FROM cohorts WHERE project = ? ORDER BY name COLLATE NOCASE',
+    )
+      .bind(ctx.project)
+      .all<{ key: string; name: string; definition: string; created_at: number; updated_at: number }>();
+    const cohorts = [];
+    for (const row of results) {
+      const definition = safeParse(row.definition) as { filters?: unknown; didEvent?: string; from?: string | number };
+      const filters = Array.isArray(definition.filters) ? definition.filters : [];
+      const parsed = inputs.cohortDefinition.parse({
+        filters,
+        didEvent: definition.didEvent,
+        from: definition.from,
+      });
+      const { count, sql } = await this.cohortMembership(ctx.project, parsed);
+      cohorts.push({
+        key: row.key,
+        name: row.name,
+        filters: parsed.filters,
+        didEvent: parsed.didEvent ?? null,
+        from: parsed.from ?? '-90d',
+        count,
+        updatedAt: new Date(row.updated_at).toISOString(),
+        sql: [sql],
+        retention: this.link('insights/retention', {
+          project: ctx.project,
+          spec: {
+            cohortEvent: { event: parsed.didEvent || '$pageview', filters: parsed.filters },
+            returnEvent: { event: '$pageview' },
+            period: 'week',
+            periods: 8,
+            filters: parsed.filters,
+          },
+        }),
+      });
+    }
+    return {
+      project: ctx.project,
+      cohorts,
+      summary: cohorts.length
+        ? `${cohorts.length} cohort${cohorts.length === 1 ? '' : 's'}: ${cohorts.map((c) => `${c.name} (${c.count})`).join(', ')}.`
+        : 'No cohorts yet. Save a person filter from the People tab.',
+      dashboard: this.link('users', { project: ctx.project }),
+    };
+  }
+
+  async saveCohort(input: unknown) {
+    const spec = inputs.saveCohort.parse(input);
+    if (spec.filters.some((f) => f.property === COHORT_PROPERTY)) {
+      throw new HttpError(400, 'A cohort cannot filter on another cohort', 'Copy the other cohort\'s person filters into this one instead.');
+    }
+    const ctx = await this.context(spec.project);
+    const key = (spec.key?.trim() || slugKey(spec.name)).slice(0, 64);
+    if (!/^[a-z0-9][a-z0-9_-]*$/.test(key)) {
+      throw new HttpError(400, `Invalid cohort key "${key}"`, 'Use lowercase letters, numbers, hyphens or underscores.');
+    }
+    const definition = { filters: spec.filters, didEvent: spec.didEvent, from: spec.from ?? '-90d' };
+    const now = Date.now();
+    const existing = await this.env.DB.prepare('SELECT key FROM cohorts WHERE project = ? AND key = ?').bind(ctx.project, key).first();
+    await this.env.DB.prepare(
+      existing
+        ? 'UPDATE cohorts SET name = ?, definition = ?, updated_at = ? WHERE project = ? AND key = ?'
+        : 'INSERT INTO cohorts (project, key, name, definition, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+    )
+      .bind(
+        ...(existing
+          ? [spec.name, JSON.stringify(definition), now, ctx.project, key]
+          : [ctx.project, key, spec.name, JSON.stringify(definition), now, now]),
+      )
+      .run();
+    const { count, sql } = await this.cohortMembership(ctx.project, definition);
+    return {
+      project: ctx.project,
+      key,
+      name: spec.name,
+      created: !existing,
+      count,
+      summary: `${existing ? 'Updated' : 'Created'} cohort "${spec.name}" (${count} people).`,
+      sql: [sql],
+      dashboard: this.link('users', { project: ctx.project }),
+    };
+  }
+
+  async deleteCohort(input: unknown) {
+    const spec = inputs.deleteCohort.parse(input);
+    const ctx = await this.context(spec.project);
+    const result = await this.env.DB.prepare('DELETE FROM cohorts WHERE project = ? AND key = ?').bind(ctx.project, spec.key).run();
+    if (!result.meta.changes) throw new HttpError(404, `No cohort "${spec.key}"`);
+    return { project: ctx.project, deleted: spec.key, summary: `Deleted cohort "${spec.key}".` };
+  }
+
+  /**
+   * Attach saved definitions to every `cohort` filter in a query spec, so core
+   * can compile membership without reading the cohorts table. Returns a copy.
+   */
+  private async resolveCohorts<T>(project: string, spec: T): Promise<T> {
+    const refs: Filter[] = [];
+    const copy = structuredClone(spec);
+    const walk = (v: unknown): void => {
+      if (Array.isArray(v)) v.forEach(walk);
+      else if (v && typeof v === 'object') {
+        const o = v as Record<string, unknown>;
+        if (o.property === COHORT_PROPERTY) refs.push(o as unknown as Filter);
+        else Object.values(o).forEach(walk);
+      }
+    };
+    walk(copy);
+    if (refs.length === 0) return copy;
+    const { results } = await this.env.DB.prepare('SELECT key, definition FROM cohorts WHERE project = ?').bind(project).all<{ key: string; definition: string }>();
+    const saved = new Map(results.map((r) => [r.key, r.definition]));
+    const now = Date.now();
+    for (const f of refs) {
+      f.cohorts = {};
+      for (const key of toList(f.value)) {
+        const raw = saved.get(key);
+        if (raw === undefined) {
+          throw new HttpError(400, `No cohort "${key}" in project "${project}"`, saved.size ? `Saved cohorts: ${[...saved.keys()].join(', ')}.` : 'Save one with save_cohort or from the People tab first.');
+        }
+        const def = inputs.cohortDefinition.parse(safeParse(raw));
+        const range = resolveRange(def.from ?? '-90d', undefined, now);
+        const members: CohortMembers = { project, from: range.from, to: range.to, filters: def.filters as Filter[] };
+        if (def.didEvent) members.events = [def.didEvent];
+        f.cohorts[key] = members;
+      }
+    }
+    return copy;
+  }
+
+  private async cohortMembership(
+    project: string,
+    definition: { filters?: Filter[]; didEvent?: string; from?: string | number },
+  ): Promise<{ count: number; sql: string; range: { from: number; to: number } }> {
+    const range = resolveRange(definition.from ?? '-90d', undefined);
+    const d = this.store.dialect;
+    const sql = `WITH ${eventsCte(d, {
+      project,
+      from: range.from,
+      to: range.to,
+      events: definition.didEvent ? [definition.didEvent] : undefined,
+      filters: definition.filters,
+    })}
+SELECT COUNT(DISTINCT pid) AS n FROM ev`;
+    const count = num((await this.store.query(sql))[0]?.n);
+    return { count, sql, range };
   }
 
   // ── Replays ──────────────────────────────────────────────────────────────
@@ -620,7 +998,119 @@ ORDER BY ts_ms LIMIT 2000`;
   async createProject(input: unknown) {
     const spec = inputs.createProject.parse(input);
     const created = await createProject(this.env.DB, { id: spec.id, name: spec.name, allowedOrigins: spec.allowed_origins });
+    await this.seedDefaultInsights(created.id);
     return { project: created, summary: `Project "${created.id}" is ready. Use data-project="${created.id}" in the snippet.` };
+  }
+
+  // ── Saved insights ───────────────────────────────────────────────────────
+
+  async listInsights(input: unknown) {
+    const spec = inputs.listInsights.parse(input);
+    const ctx = await this.context(spec.project);
+    await this.seedDefaultInsights(ctx.project);
+    const { results } = await this.env.DB.prepare(
+      'SELECT key, name, description, kind, spec, created_at, updated_at FROM insights WHERE project = ? ORDER BY name COLLATE NOCASE',
+    )
+      .bind(ctx.project)
+      .all<{ key: string; name: string; description: string; kind: string; spec: string; created_at: number; updated_at: number }>();
+    const insights = results.map((r) => ({
+      key: r.key,
+      name: r.name,
+      description: r.description,
+      kind: r.kind as 'trends' | 'funnel' | 'retention',
+      spec: safeParse(r.spec),
+      updatedAt: new Date(r.updated_at).toISOString(),
+      dashboard: this.link(`insights/${r.key}`, { project: ctx.project }),
+    }));
+    return {
+      project: ctx.project,
+      insights,
+      summary: insights.length
+        ? `${insights.length} saved analysis${insights.length === 1 ? '' : 'es'}.`
+        : 'No saved analyses yet.',
+      dashboard: this.link('insights', { project: ctx.project }),
+    };
+  }
+
+  async getInsight(input: unknown) {
+    const spec = inputs.getInsight.parse(input);
+    const ctx = await this.context(spec.project);
+    await this.seedDefaultInsights(ctx.project);
+    const row = await this.env.DB.prepare(
+      'SELECT key, name, description, kind, spec, created_at, updated_at FROM insights WHERE project = ? AND key = ?',
+    )
+      .bind(ctx.project, spec.key)
+      .first<{ key: string; name: string; description: string; kind: string; spec: string; created_at: number; updated_at: number }>();
+    if (!row) throw new HttpError(404, `No saved analysis "${spec.key}"`);
+    return {
+      project: ctx.project,
+      key: row.key,
+      name: row.name,
+      description: row.description,
+      kind: row.kind as 'trends' | 'funnel' | 'retention',
+      spec: safeParse(row.spec),
+      updatedAt: new Date(row.updated_at).toISOString(),
+      dashboard: this.link(`insights/${row.key}`, { project: ctx.project }),
+    };
+  }
+
+  async saveInsight(input: unknown) {
+    const spec = inputs.saveInsight.parse(input);
+    const ctx = await this.context(spec.project);
+    const key = (spec.key?.trim() || slugKey(spec.name)).slice(0, 64);
+    if (!/^[a-z0-9][a-z0-9_-]*$/.test(key)) {
+      throw new HttpError(400, `Invalid insight key "${key}"`, 'Use lowercase letters, numbers, hyphens or underscores.');
+    }
+    if (key === 'new' || insightKind.safeParse(key).success) {
+      throw new HttpError(400, `Key "${key}" is reserved`, 'Pick another name; trends, funnel, retention and new are used by the UI.');
+    }
+    const now = Date.now();
+    const existing = await this.env.DB.prepare('SELECT key FROM insights WHERE project = ? AND key = ?').bind(ctx.project, key).first();
+    const description = spec.description ?? '';
+    const body = JSON.stringify(spec.spec);
+    await this.env.DB.prepare(
+      existing
+        ? 'UPDATE insights SET name = ?, description = ?, kind = ?, spec = ?, updated_at = ? WHERE project = ? AND key = ?'
+        : 'INSERT INTO insights (project, key, name, description, kind, spec, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    )
+      .bind(
+        ...(existing
+          ? [spec.name, description, spec.kind, body, now, ctx.project, key]
+          : [ctx.project, key, spec.name, description, spec.kind, body, now, now]),
+      )
+      .run();
+    return {
+      project: ctx.project,
+      key,
+      name: spec.name,
+      description,
+      kind: spec.kind,
+      created: !existing,
+      summary: `${existing ? 'Updated' : 'Saved'} analysis "${spec.name}".`,
+      dashboard: this.link(`insights/${key}`, { project: ctx.project }),
+    };
+  }
+
+  async deleteInsight(input: unknown) {
+    const spec = inputs.deleteInsight.parse(input);
+    const ctx = await this.context(spec.project);
+    const result = await this.env.DB.prepare('DELETE FROM insights WHERE project = ? AND key = ?').bind(ctx.project, spec.key).run();
+    if (!result.meta.changes) throw new HttpError(404, `No saved analysis "${spec.key}"`);
+    return { project: ctx.project, deleted: spec.key, summary: `Deleted analysis "${spec.key}".` };
+  }
+
+  /** Seed starter analyses once per project (new creates and empty existing projects). */
+  private async seedDefaultInsights(projectId: string): Promise<void> {
+    const row = await this.env.DB.prepare('SELECT COUNT(*) AS n FROM insights WHERE project = ?').bind(projectId).first<{ n: number }>();
+    if (Number(row?.n ?? 0) > 0) return;
+    const now = Date.now();
+    await this.env.DB.batch(
+      DEFAULT_INSIGHTS.map((insight) =>
+        this.env.DB.prepare(
+          'INSERT OR IGNORE INTO insights (project, key, name, description, kind, spec, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        ).bind(projectId, insight.key, insight.name, insight.description, insight.kind, JSON.stringify(insight.spec), now, now),
+      ),
+    );
   }
 }
 
@@ -630,5 +1120,13 @@ function safeParse(value: string): Record<string, unknown> {
   } catch {
     return {};
   }
+}
+
+function slugKey(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 64) || 'cohort';
 }
 

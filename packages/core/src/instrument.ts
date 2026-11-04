@@ -103,3 +103,15 @@ export function detectFramework(pkg: { dependencies?: Record<string, string>; de
 export const EVENT_NAMING_GUIDE =
   'Name events object_action in snake_case and past tense (signup_completed, plan_upgraded, invite_sent). ' +
   'Put variable details in properties ({ plan: "pro" }), never in the event name. Never send emails, names or other personal data as properties.';
+
+/**
+ * How to document custom events so later agents (and teammates) know when they
+ * fire and what each property means. Included in agent setup files and llms.txt.
+ */
+export const EVENT_DOCUMENTATION_GUIDE =
+  'After a custom event is shipping, call define_event (or `glass events <name> --describe "…"`). ' +
+  'The description must say how and when the event is fired (which user action or code path). ' +
+  'Document every property with what it means and which values to expect ' +
+  '(e.g. description: "Fired when the user finishes checkout after payment succeeds."; ' +
+  'properties: { plan: "Chosen plan id (free|pro|enterprise)", amount: "Charge in the account currency" }). ' +
+  'list_events returns undocumented custom events — document those before relying on them in funnels or trends.';

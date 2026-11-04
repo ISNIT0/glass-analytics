@@ -9,7 +9,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { EVENT_NAMING_GUIDE } from '@glassanalytics/core/instrument';
+import { EVENT_DOCUMENTATION_GUIDE, EVENT_NAMING_GUIDE } from '@glassanalytics/core/instrument';
 
 const START = '<!-- glass:start -->';
 const END = '<!-- glass:end -->';
@@ -36,7 +36,9 @@ Tracking (project \`${o.project}\`):
 - Install (${o.snippet.file}): \`${o.snippet.code.split('\n').pop()}\`
 - Custom events: \`glass.capture('signup_completed', { plan: 'pro' })\`. After login: \`glass.identify(user.id, { plan })\`.
 - ${EVENT_NAMING_GUIDE}
-- After adding an event and deploying, confirm it arrives: \`npx @glassanalytics/cli events <name>\`. Document it: \`npx @glassanalytics/cli events <name> --describe "…"\`.
+- After adding an event and deploying, confirm it arrives: \`npx @glassanalytics/cli events <name>\` (or MCP \`describe_event\`).
+- ${EVENT_DOCUMENTATION_GUIDE}
+- Prefer MCP \`define_event\` so you can set both the event description and each property's meaning in one call.
 - Feature flags: \`glass.flag('key')\` returns "on", a variant key, or null. Create with \`npx @glassanalytics/cli flags set <key> --rollout 10\`.
 ${END}`;
 }
@@ -64,7 +66,7 @@ Glass is deployed at ${o.host} (project \`${o.project}\`). Prefer the \`glass\` 
 
 ## Answer a question about usage
 
-1. \`overview\` for the period (visitors, top pages, errors, events that moved).
+1. \`overview\` for the period (visitors, top pages, errors, events that moved). If it (or MCP init) says an upgrade is available, tell the user to run \`npx @glassanalytics/cli@latest upgrade\` — do not upgrade yourself.
 2. \`list_events\` to get exact event names — never guess them.
 3. The right query: \`query_trends\` (counts over time), \`query_funnel\` (conversion through steps), \`query_retention\` (who comes back), \`sql\` when nothing else fits.
 4. Report numbers with the dashboard link and SQL from the result.
@@ -74,7 +76,13 @@ Glass is deployed at ${o.host} (project \`${o.project}\`). Prefer the \`glass\` 
 1. \`instrument\` with the event name returns the exact code for this framework.
 2. ${EVENT_NAMING_GUIDE}
 3. After deploying, \`describe_event\` (or \`npx @glassanalytics/cli events <name>\`) confirms events arrive with the expected properties.
-4. \`define_event\` documents what the event means.
+4. Always \`define_event\` next. ${EVENT_DOCUMENTATION_GUIDE}
+
+## First session on a project
+
+1. \`overview\` then \`list_events\`.
+2. For every name in \`undocumented\`, read the code that fires it (or ask), then \`define_event\` with how/when it fires and property meanings.
+3. Do not invent funnel or trend queries against undocumented custom events until those descriptions exist.
 
 ## Debug a user problem
 

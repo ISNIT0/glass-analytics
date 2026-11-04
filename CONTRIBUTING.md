@@ -86,7 +86,7 @@ We squash-merge, with the PR title as the commit message.
 
 ## Releasing (maintainers)
 
-Changesets collects changes. Merging the "Version packages" PR that the release workflow opens publishes `@glassanalytics/cli` and `@glassanalytics/web` to npm and tags the release. `GLASS_VERSION` in `packages/core/src/version.ts` must match the CLI version; `glass upgrade` compares the two.
+Changesets collects changes. Merging the "Version packages" PR that the release workflow opens publishes `@glassanalytics/cli` and `@glassanalytics/web` to npm and tags the release. `GLASS_VERSION` in `packages/core/src/version.ts` must match the CLI version (`pnpm build` fails if they drift); the dashboard and `glass status` compare the deployed Worker to the latest CLI on npm.
 
 ## Getting help
 

@@ -47,7 +47,7 @@ Run `npx @glassanalytics/cli status` any time to check everything end to end. Se
 | **People** | `identify()` links anonymous visits to users, so funnels span the moment of signup. Person properties are snapshotted on every event. |
 | **Session replay** | rrweb recording with inputs masked, sampling and "record when an error happens". Each session has a text transcript: pages, labelled clicks, rage clicks, errors. |
 | **Flags and experiments** | Flags evaluated server-side in your Worker, with targeting rules. Experiments report exposures, conversion, Bayesian probability to beat control, lift intervals and sample-ratio mismatch. |
-| **Agent interface** | An MCP server with 23 tools, a CLI with `--json` everywhere, an HTTP API, and `llms.txt`. |
+| **Agent interface** | An MCP server with 27 tools, a CLI with `--json` everywhere, an HTTP API, and `llms.txt`. |
 
 ## How it works
 

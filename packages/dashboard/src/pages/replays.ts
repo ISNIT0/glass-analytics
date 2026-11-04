@@ -2,11 +2,11 @@
  * Session replays: a list, and a player beside the text transcript agents read.
  */
 
-import { Replayer } from 'rrweb';
+import { Replayer, type eventWithTime } from 'rrweb';
 import 'rrweb/dist/style.css';
 import { api } from '../api.ts';
-import { copyButton, empty, later, pageHeader, panel, table } from '../components/ui.ts';
-import { h } from '../dom.ts';
+import { copyButton, empty, errorState, later, loading, pageHeader, panel, table } from '../components/ui.ts';
+import { h, mount } from '../dom.ts';
 import { dateTime, duration } from '../format.ts';
 import { type Route, go, href, scope } from '../state.ts';
 
@@ -51,34 +51,69 @@ function list(route: Route): Node[] {
   ];
 }
 
+/** rrweb needs the player root in the document before it builds its sandboxed iframe. */
+async function whenConnected(el: Element): Promise<void> {
+  if (el.isConnected) return;
+  await new Promise<void>((resolve) => {
+    const tick = () => {
+      if (el.isConnected) resolve();
+      else requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+}
+
 function detail(session: string): Node[] {
   const project = scope().project;
+  // Mount the stage up front so Replayer can create its sandboxed iframe.
   const stage = h('div', { class: 'replay-stage' });
+  const controls = h('div', { class: 'player-bar' }, loading('Loading recording'));
+  let replayer: Replayer | null = null;
+
+  void (async () => {
+    try {
+      const r = await api.get<{ events: eventWithTime[] }>(`/api/replays/${encodeURIComponent(session)}/events`, { project });
+      if (r.events.length < 2) {
+        mount(controls, empty('This recording has no playable events yet.'));
+        return;
+      }
+      await whenConnected(stage);
+      stage.replaceChildren();
+      replayer = new Replayer(r.events, { root: stage, skipInactive: true, showWarning: false });
+      const meta = replayer.getMetaData();
+      let playing = false;
+      const button = h('button', { type: 'button', class: 'primary' }, 'Play');
+      button.addEventListener('click', () => {
+        if (!replayer) return;
+        if (playing) replayer.pause();
+        else replayer.play();
+        playing = !playing;
+        button.textContent = playing ? 'Pause' : 'Play';
+      });
+      mount(controls, button, h('span', { class: 'muted' }, duration(meta.totalTime / 1000)));
+    } catch (err) {
+      mount(controls, errorState(err));
+    }
+  })();
+
+  // Tear down the player if the user navigates away before it finishes.
+  const cleanup = () => {
+    window.removeEventListener('hashchange', cleanup);
+    try {
+      replayer?.pause();
+    } catch {
+      // ignore
+    }
+    replayer = null;
+  };
+  window.addEventListener('hashchange', cleanup, { once: true });
+
   return [
     pageHeader('Replay', `Session ${session}`, copyButton(`Using the Glass MCP tool summarise_replay, read session ${session} and tell me what went wrong.`, 'Copy as agent prompt')),
     h(
       'div',
       { class: 'replay-layout' },
-      panel(
-        'Recording',
-        later(async () => {
-          const r = await api.get<{ events: { type: number; timestamp: number }[] }>(`/api/replays/${encodeURIComponent(session)}/events`, { project });
-          if (r.events.length < 2) return empty('This recording has no playable events yet.');
-          stage.replaceChildren();
-          const replayer = new Replayer(r.events, { root: stage, skipInactive: true, showWarning: false });
-          const meta = replayer.getMetaData();
-          let playing = false;
-          const button = h('button', { type: 'button', class: 'primary' }, 'Play');
-          button.addEventListener('click', () => {
-            if (playing) replayer.pause();
-            else replayer.play();
-            playing = !playing;
-            button.textContent = playing ? 'Pause' : 'Play';
-          });
-          return [stage, h('div', { class: 'player-bar' }, button, h('span', { class: 'muted' }, duration(meta.totalTime / 1000)))];
-        }, 'Loading recording'),
-        { class: 'player' },
-      ),
+      panel('Recording', [stage, controls], { class: 'player' }),
       panel(
         'Transcript',
         later(async () => {

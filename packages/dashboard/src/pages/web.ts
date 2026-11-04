@@ -1,5 +1,8 @@
 /**
- * Web analytics: the Plausible-style default view.
+ * Reports: Web (default), Marketing, and Health.
+ *
+ * One `/api/query` kind=web fetch powers all three tabs; the tabs only change
+ * which panels are shown so switching is instant after the first load.
  */
 
 import type { BreakdownRow, WebBreakdown, WebResult } from '@glassanalytics/core/insights/web';
@@ -9,9 +12,10 @@ import { empty, later, pageHeader, panel, tabs } from '../components/ui.ts';
 import { h, mount } from '../dom.ts';
 import { apiFilters, filterChips, filterHref } from '../filters.ts';
 import { change, count, decimal, duration, percent } from '../format.ts';
-import { scope } from '../state.ts';
+import { type Route, go, scope } from '../state.ts';
 
 type Result = WebResult & { project: string };
+type ReportTab = 'web' | 'marketing' | 'health';
 
 /** Which filter property each breakdown row applies when clicked. */
 const FILTER_FOR: Partial<Record<WebBreakdown, string>> = {
@@ -61,10 +65,16 @@ function breakdownPanel(r: Result, title: string, options: { key: WebBreakdown; 
     const filter = FILTER_FOR[selected];
     mount(
       body,
-      options.length > 1 ? tabs(options.map((o) => ({ value: o.key, label: o.label })), selected, (v) => {
-        selected = v;
-        render();
-      }) : null,
+      options.length > 1
+        ? tabs(
+            options.map((o) => ({ value: o.key, label: o.label })),
+            selected,
+            (v) => {
+              selected = v;
+              render();
+            },
+          )
+        : null,
       rows.length
         ? barList(
             rows.map((row) => ({
@@ -108,46 +118,93 @@ function vitalsPanel(r: Result): HTMLElement {
   );
 }
 
-export function webPage(): Node[] {
+function webReport(r: Result): Node[] {
+  return [
+    kpis(r),
+    panel(
+      'Visitors and pageviews',
+      lineChart(r.timeseries.buckets, [{ label: 'Visitors', values: r.timeseries.visitors }, { label: 'Pageviews', values: r.timeseries.pageviews }], r.interval),
+      { sql: [r.sql[0]!, r.sql[r.previous ? 2 : 1]!], class: 'wide' },
+    ),
+    h(
+      'div',
+      { class: 'grid-2' },
+      breakdownPanel(r, 'Pages', [
+        { key: 'pages', label: 'Top' },
+        { key: 'entry_pages', label: 'Entry' },
+        { key: 'exit_pages', label: 'Exit' },
+      ], ['Page', 'Visitors', 'Views']),
+      breakdownPanel(r, 'Locations', [{ key: 'countries', label: 'Countries' }], ['Country', 'Visitors', 'Views']),
+      breakdownPanel(r, 'Devices', [
+        { key: 'devices', label: 'Device' },
+        { key: 'browsers', label: 'Browser' },
+        { key: 'os', label: 'OS' },
+      ], ['Device', 'Visitors', 'Views']),
+    ),
+  ];
+}
+
+function marketingReport(r: Result): Node[] {
+  return [
+    kpis(r),
+    h(
+      'div',
+      { class: 'grid-2' },
+      breakdownPanel(r, 'Referrers', [{ key: 'referrers', label: 'Referrers' }], ['Referrer', 'Visitors', 'Visits']),
+      breakdownPanel(r, 'Campaigns', [
+        { key: 'utm_source', label: 'Source' },
+        { key: 'utm_medium', label: 'Medium' },
+        { key: 'utm_campaign', label: 'Campaign' },
+      ], ['Value', 'Visitors', 'Visits']),
+    ),
+  ];
+}
+
+function healthReport(r: Result): Node[] {
+  return [
+    h(
+      'div',
+      { class: 'grid-2' },
+      breakdownPanel(r, 'JavaScript errors', [{ key: 'errors', label: 'Errors' }], ['Message', 'Times', 'Visitors']),
+      vitalsPanel(r),
+    ),
+  ];
+}
+
+const TAB_COPY: Record<ReportTab, string> = {
+  web: 'Traffic, pages, locations and devices. Click any row to filter.',
+  marketing: 'How people found you: referrers and UTM campaigns.',
+  health: 'Whether the site is broken or slow: JavaScript errors and Core Web Vitals.',
+};
+
+function parseTab(rest: string[]): ReportTab {
+  const raw = rest[0] ?? 'web';
+  return raw === 'marketing' || raw === 'health' || raw === 'web' ? raw : 'web';
+}
+
+export function webPage(route: Route): Node[] {
+  const tab = parseTab(route.rest);
   const sc = scope();
   return [
-    pageHeader('Web', 'Visitors, pages and sources. Click any row to filter.'),
+    pageHeader('Reports', TAB_COPY[tab]),
+    tabs(
+      [
+        { value: 'web', label: 'Web' },
+        { value: 'marketing', label: 'Marketing' },
+        { value: 'health', label: 'Health' },
+      ],
+      tab,
+      (next) => go(next === 'web' ? 'reports' : `reports/${next}`),
+    ),
     filterChips() ?? h('span', {}),
     later(async () => {
       const r = await api.post<Result>('/api/query', { kind: 'web', ...sc, filters: apiFilters() });
       if (r.totals.pageviews === 0 && !r.previous?.pageviews) {
         return empty('No pageviews yet. Add the script tag to your site, then visit a page.', h('a', { class: 'button', href: '#/settings' }, 'Show the install snippet'));
       }
-      return [
-        kpis(r),
-        panel('Visitors and pageviews', lineChart(r.timeseries.buckets, [{ label: 'Visitors', values: r.timeseries.visitors }, { label: 'Pageviews', values: r.timeseries.pageviews }], r.interval), {
-          sql: [r.sql[0]!, r.sql[r.previous ? 2 : 1]!],
-          class: 'wide',
-        }),
-        h(
-          'div',
-          { class: 'grid-2' },
-          breakdownPanel(r, 'Pages', [
-            { key: 'pages', label: 'Top' },
-            { key: 'entry_pages', label: 'Entry' },
-            { key: 'exit_pages', label: 'Exit' },
-          ], ['Page', 'Visitors', 'Views']),
-          breakdownPanel(r, 'Sources', [
-            { key: 'referrers', label: 'Referrers' },
-            { key: 'utm_source', label: 'Source' },
-            { key: 'utm_medium', label: 'Medium' },
-            { key: 'utm_campaign', label: 'Campaign' },
-          ], ['Source', 'Visitors', 'Visits']),
-          breakdownPanel(r, 'Locations', [{ key: 'countries', label: 'Countries' }], ['Country', 'Visitors', 'Views']),
-          breakdownPanel(r, 'Devices', [
-            { key: 'devices', label: 'Device' },
-            { key: 'browsers', label: 'Browser' },
-            { key: 'os', label: 'OS' },
-          ], ['Device', 'Visitors', 'Views']),
-          breakdownPanel(r, 'Errors', [{ key: 'errors', label: 'Errors' }], ['Message', 'Times', 'Visitors']),
-          vitalsPanel(r),
-        ),
-      ];
+      if (tab === 'marketing') return marketingReport(r);
+      if (tab === 'health') return healthReport(r);
+      return webReport(r);
     }),
   ];
 }

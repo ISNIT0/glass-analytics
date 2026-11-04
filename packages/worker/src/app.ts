@@ -92,7 +92,7 @@ export function createApp(options: AppOptions) {
         case '/':
           return Response.redirect(`${url.origin}${prefix}/app`, 302);
         case '/health':
-          return withCors(json(service.health()));
+          return withCors(json(await service.health()));
         case '/e':
           if (request.method !== 'POST') break;
           await handleIngest(request, env, store, now);

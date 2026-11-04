@@ -17,7 +17,9 @@ import { webPage } from './pages/web.ts';
 import { type Route, currentRoute, go, prefs } from './state.ts';
 
 const PAGES: Record<string, { label: string; render: (route: Route) => Node[] }> = {
-  web: { label: 'Web', render: webPage },
+  reports: { label: 'Reports', render: webPage },
+  // Old #/web bookmarks land on Reports.
+  web: { label: 'Reports', render: webPage },
   insights: { label: 'Insights', render: insightsPage },
   users: { label: 'People', render: peoplePage },
   replays: { label: 'Replays', render: replaysPage },
@@ -50,6 +52,7 @@ function rangeLabel(from: string): string {
 
 const root = document.getElementById('app')!;
 let projects: string[] = [];
+let upgradeBanner: { version: string; latest: string; command: string } | null = null;
 
 function topBar(route: Route): HTMLElement {
   const project = route.params.get('project') ?? prefs.project ?? projects[0] ?? '';
@@ -79,22 +82,64 @@ function sidebar(route: Route): HTMLElement {
   return h(
     'nav',
     { class: 'sidebar', 'aria-label': 'Sections' },
-    h('a', { class: 'brand', href: '#/web' }, h('span', { class: 'mark', 'aria-hidden': 'true' }), 'Glass'),
+    h('a', { class: 'brand', href: '#/reports' }, h('span', { class: 'mark', 'aria-hidden': 'true' }), 'Glass'),
     h(
       'ul',
       {},
-      Object.entries(PAGES).map(([key, page]) =>
-        h('li', {}, h('a', { href: `#/${key}`, class: key === route.page ? 'active' : '', 'aria-current': key === route.page ? 'page' : null }, page.label)),
-      ),
+      Object.entries(PAGES)
+        .filter(([key]) => key !== 'web')
+        .map(([key, page]) => {
+          const active = key === route.page || (key === 'reports' && route.page === 'web');
+          return h('li', {}, h('a', { href: `#/${key}`, class: active ? 'active' : '', 'aria-current': active ? 'page' : null }, page.label));
+        }),
+    ),
+  );
+}
+
+function upgradeNotice(): HTMLElement | null {
+  if (!upgradeBanner) return null;
+  const dismissedKey = `upgrade-dismissed:${upgradeBanner.latest}`;
+  try {
+    if (localStorage.getItem(`glass:${dismissedKey}`) === '1') return null;
+  } catch {
+    // ignore
+  }
+  const info = upgradeBanner;
+  return h(
+    'div',
+    { class: 'upgrade-banner', role: 'status' },
+    h(
+      'p',
+      {},
+      `Glass ${info.latest} is available (this deployment is ${info.version}). Run `,
+      h('code', {}, info.command),
+      ` in your project to upgrade.`,
+    ),
+    h(
+      'button',
+      {
+        type: 'button',
+        class: 'ghost small',
+        onclick: () => {
+          try {
+            localStorage.setItem(`glass:${dismissedKey}`, '1');
+          } catch {
+            // ignore
+          }
+          upgradeBanner = null;
+          render();
+        },
+      },
+      'Dismiss',
     ),
   );
 }
 
 function render(): void {
   const route = currentRoute();
-  const page = PAGES[route.page] ?? PAGES.web!;
+  const page = PAGES[route.page] ?? PAGES.reports!;
   const content = h('main', { class: 'content', id: 'content' });
-  mount(root, h('div', { class: 'shell' }, sidebar(route), h('div', { class: 'main' }, topBar(route), content)));
+  mount(root, h('div', { class: 'shell' }, sidebar(route), h('div', { class: 'main' }, upgradeNotice(), topBar(route), content)));
   mount(content, page.render(route));
   document.title = `Glass: ${page.label}`;
 }
@@ -106,8 +151,15 @@ async function start(): Promise<void> {
     return;
   }
   try {
-    const r = await api.get<{ projects: { id: string }[] }>('/api/projects');
+    const [r, health] = await Promise.all([
+      api.get<{ projects: { id: string }[] }>('/api/projects'),
+      api.get<{ version: string; latest?: string | null; upgradeAvailable?: boolean; upgradeCommand?: string }>('/health'),
+    ]);
     projects = r.projects.map((p) => p.id);
+    upgradeBanner =
+      health.upgradeAvailable && health.latest
+        ? { version: health.version, latest: health.latest, command: health.upgradeCommand ?? 'npx @glassanalytics/cli@latest upgrade' }
+        : null;
   } catch {
     if (!prefs.key) return;
   }

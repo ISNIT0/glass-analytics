@@ -6,7 +6,7 @@ import { api } from '../api.ts';
 import { copyButton, empty, errorState, later, loading, pageHeader, panel, table, toast } from '../components/ui.ts';
 import { h, mount } from '../dom.ts';
 import { ago, count, percent } from '../format.ts';
-import { type Route, go, href, scope } from '../state.ts';
+import { type Route, href, scope } from '../state.ts';
 
 interface EventRow {
   event: string;
@@ -32,9 +32,23 @@ function eventDetail(name: string): Node[] {
   return [
     later(async () => {
       const e = await api.get<EventDetail>(`/api/events/${encodeURIComponent(name)}`, { project });
-      const description = h('input', { type: 'text', value: e.description, placeholder: 'What does this event mean?' });
+      const description = h('input', {
+        type: 'text',
+        value: e.description,
+        placeholder: 'How and when this fires, e.g. Fired when payment succeeds after checkout',
+      });
       const owner = h('input', { type: 'text', value: e.owner, placeholder: 'team or person' });
-      const propInputs = new Map(e.properties.map((p) => [p.name, h('input', { type: 'text', value: p.description, placeholder: 'meaning', 'aria-label': `Description of ${p.name}` })]));
+      const propInputs = new Map(
+        e.properties.map((p) => [
+          p.name,
+          h('input', {
+            type: 'text',
+            value: p.description,
+            placeholder: 'What this property means and which values to expect',
+            'aria-label': `Description of ${p.name}`,
+          }),
+        ]),
+      );
       const form = h(
         'form',
         { class: 'stack' },
@@ -82,12 +96,21 @@ export function eventsPage(route: Route): Node[] {
   if (route.rest[0]) return eventDetail(route.rest[0]);
   const project = scope().project;
   return [
-    pageHeader('Events', 'Everything tracked in the last 30 days. Describe custom events so people and agents know what they mean.'),
+    pageHeader(
+      'Events',
+      'Everything tracked in the last 30 days. Document custom events with how/when they fire and what each property means — agents need that before querying them.',
+    ),
     later(async () => {
       const r = await api.get<{ events: EventRow[]; undocumented: string[] }>('/api/events', { project });
       if (r.events.length === 0) return empty('No events yet.');
       return [
-        r.undocumented.length ? h('p', { class: 'notice' }, `${r.undocumented.length} custom event${r.undocumented.length === 1 ? ' has' : 's have'} no description yet.`) : null,
+        r.undocumented.length
+          ? h(
+              'p',
+              { class: 'notice' },
+              `${r.undocumented.length} custom event${r.undocumented.length === 1 ? ' has' : 's have'} no description yet. Open each and add how/when it fires plus property meanings.`,
+            )
+          : null,
         table(
           ['Event', 'Count', 'Last seen', 'Description'],
           r.events.map((e) => [
@@ -127,7 +150,10 @@ export function sqlPage(route: Route): Node[] {
           { actions: h('span', { class: 'muted' }, r.summary) },
         ),
       );
-      go('sql', { query: editor.value });
+      // replaceState (not go()) so the shareable URL updates without a hashchange remount that would wipe these results.
+      const params = new URLSearchParams(route.params);
+      params.set('query', editor.value);
+      history.replaceState(null, '', `#/sql?${params}`);
     } catch (err) {
       mount(output, errorState(err));
     }

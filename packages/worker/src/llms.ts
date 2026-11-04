@@ -4,7 +4,7 @@
  */
 
 import { INSIGHTS } from '@glassanalytics/core/insights';
-import { EVENT_NAMING_GUIDE } from '@glassanalytics/core/instrument';
+import { EVENT_DOCUMENTATION_GUIDE, EVENT_NAMING_GUIDE } from '@glassanalytics/core/instrument';
 import { GLASS_VERSION } from '@glassanalytics/core/version';
 import { TOOLS } from './mcp/tools.ts';
 
@@ -29,6 +29,10 @@ Pageviews, clicks, errors and web vitals are captured automatically.
 Without JavaScript: \`<button data-glass-event="cta_clicked" data-glass-prop-plan="pro">\`.
 ${EVENT_NAMING_GUIDE}
 
+## Document custom events
+
+${EVENT_DOCUMENTATION_GUIDE}
+
 ## Query (MCP)
 
 MCP endpoint: ${base}/mcp (Streamable HTTP, header "Authorization: Bearer <key>").
@@ -36,6 +40,10 @@ stdio clients: \`npx @glassanalytics/cli mcp\` in a project set up with \`glass 
 
 Tools:
 ${TOOLS.map((t) => `- ${t.name}: ${t.description}`).join('\n')}
+
+## Keep Glass up to date
+
+\`GET ${base}/health\` reports \`version\`, \`latest\` and \`upgradeAvailable\`. When \`upgradeAvailable\` is true (also surfaced on \`overview\` and in MCP initialize instructions), tell the user to run \`npx @glassanalytics/cli@latest upgrade\` — do not upgrade yourself.
 
 ## Query (HTTP)
 
@@ -50,7 +58,7 @@ Insight kinds: ${Object.entries(INSIGHTS)
 
 ## Properties and filters
 
-Filters are { "property", "op", "value" }. Properties: built-in columns (path, url, host, referrer_host, utm_source, utm_medium, utm_campaign, country, device, browser, os, session_id, user_id), event properties ("plan" or "props.plan"), person properties at event time ("person.plan").
+Filters are { "property", "op", "value" }. Properties: built-in columns (path, url, host, referrer_host, utm_source, utm_medium, utm_campaign, country, device, browser, os, session_id, user_id), event properties ("plan" or "props.plan"), person properties at event time ("person.plan"), and saved-cohort membership ("cohort" with a cohort key as value, op "eq"/"in" or "neq"/"not_in"). GET /api/properties/values?property=… lists the values that exist.
 Ops: eq, neq, contains, not_contains, in, not_in, gt, gte, lt, lte, is_set, is_not_set.
 Times: ISO dates, "today", "yesterday", or relative like "-30d", "-12h", "-3mo".
 `;

@@ -17,6 +17,7 @@ import { mcpBridge } from './commands/mcp.ts';
 import { key, status, upgrade } from './commands/upgrade.ts';
 import { UsageError } from './config.ts';
 import { color, fail, line } from './output.ts';
+import { warnIfOutdated } from './upgrade-check.ts';
 
 const HELP = `${color.bold('glass')} ${GLASS_VERSION}: agent-first analytics in your own Cloudflare account
 
@@ -45,7 +46,7 @@ ${color.bold('Ask questions')}
     common: --from, --to, --where prop=value[,…], --project, --sql (print SQL)
   glass sql "SELECT …"           Read-only SQL against your events
   glass events [name]            Tracked events, or one event's properties
-    --describe "<text>"            Document an event
+    --describe "<text>"            How/when the event fires (document custom events)
   glass person <id> [--delete]   One person's properties and events (or erase them)
   glass replays [--errors]       Recorded sessions
   glass replays summary <id>     A session as a text transcript
@@ -92,6 +93,12 @@ export async function main(argv: string[]): Promise<void> {
 
   if (flags.version) return line(GLASS_VERSION);
   if (!command || command === 'help' || (flags.help && !command)) return line(HELP);
+
+  // Surface an outdated Worker before the real command (skip setup/status/mcp noise).
+  const skipUpgradeWarn = new Set(['init', 'upgrade', 'deploy', 'status', 'doctor', 'mcp', 'key']);
+  if (command && !skipUpgradeWarn.has(command)) {
+    await warnIfOutdated({ json: Boolean(flags.json) });
+  }
 
   switch (command) {
     case 'init':

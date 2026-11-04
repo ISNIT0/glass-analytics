@@ -4,7 +4,7 @@
  */
 
 import { h, s } from '../dom.ts';
-import { bucketLabel, count, percent } from '../format.ts';
+import { bucketLabel, count, duration, percent } from '../format.ts';
 
 export const SERIES = ['var(--glass-green)', 'var(--glass-cobalt)', 'var(--glass-amber)', 'var(--glass-ruby)', 'var(--smoke)', 'var(--glass-teal)'];
 
@@ -126,27 +126,162 @@ export interface FunnelStepView {
   avgSecondsFromPrevious: number | null;
 }
 
-export function funnelChart(steps: FunnelStepView[]): HTMLElement {
-  const first = Math.max(1, steps[0]?.count ?? 1);
+export interface FunnelBreakdownView {
+  value: string;
+  steps: FunnelStepView[];
+}
+
+function funnelKpi(label: string, value: string, hint?: string): HTMLElement {
   return h(
+    'div',
+    { class: 'funnel-kpi' },
+    h('div', { class: 'funnel-kpi-value' }, value),
+    h('div', { class: 'funnel-kpi-label' }, label),
+    hint ? h('div', { class: 'funnel-kpi-hint muted' }, hint) : null,
+  );
+}
+
+/**
+ * Amplitude-style funnel: headline conversion KPIs, stepped bars scaled to the
+ * first step, and bridges that show convert vs drop-off between steps.
+ */
+export function funnelChart(
+  steps: FunnelStepView[],
+  options: { windowSeconds?: number; breakdowns?: FunnelBreakdownView[] } = {},
+): HTMLElement {
+  const first = steps[0]!;
+  const last = steps[steps.length - 1]!;
+  const base = Math.max(1, first.count);
+  const overall = first.count ? last.count / first.count : 0;
+  const totalDrop = Math.max(0, first.count - last.count);
+  const avgThrough =
+    steps.length > 1
+      ? steps.slice(1).reduce((sum, step) => sum + (step.avgSecondsFromPrevious ?? 0), 0)
+      : null;
+
+  const stepsList = h(
     'ol',
-    { class: 'funnel' },
-    steps.map((step, i) =>
-      h(
+    { class: 'funnel-steps' },
+    steps.map((step, i) => {
+      const prev = i > 0 ? steps[i - 1]! : null;
+      const dropped = prev ? Math.max(0, prev.count - step.count) : 0;
+      const dropRate = prev && prev.count ? dropped / prev.count : 0;
+      const bridge =
+        prev &&
+        h(
+          'li',
+          { class: 'funnel-bridge', 'aria-hidden': 'true' },
+          h(
+            'div',
+            { class: 'funnel-bridge-rail' },
+            h('span', { class: 'funnel-bridge-convert' }, `${percent(step.conversionFromPrevious, 1)} converted`),
+            h('span', { class: 'funnel-bridge-drop' }, `${percent(dropRate, 1)} dropped · ${count(dropped)}`),
+            step.avgSecondsFromPrevious !== null
+              ? h('span', { class: 'funnel-bridge-time muted' }, `avg ${duration(step.avgSecondsFromPrevious)}`)
+              : null,
+          ),
+        );
+
+      const stepRow = h(
         'li',
-        {},
-        h('div', { class: 'funnel-label' }, h('span', { class: 'step-name' }, step.label), h('span', { class: 'num' }, `${count(step.count)} (${percent(step.conversionFromStart)})`)),
-        h('div', { class: 'funnel-track' }, h('div', { class: 'funnel-bar', style: `width:${(step.count / first) * 100}%` })),
-        i > 0
-          ? h(
+        { class: 'funnel-step' },
+        h('div', { class: 'funnel-step-index', 'aria-hidden': 'true' }, String(i + 1)),
+        h(
+          'div',
+          { class: 'funnel-step-main' },
+          h(
+            'div',
+            { class: 'funnel-step-head' },
+            h('div', { class: 'funnel-step-title' }, h('span', { class: 'step-name' }, step.label), h('span', { class: 'funnel-step-count' }, count(step.count))),
+            h(
               'div',
-              { class: 'funnel-drop muted' },
-              `${percent(step.conversionFromPrevious)} of the previous step`,
-              step.avgSecondsFromPrevious !== null ? `, after ${Math.round(step.avgSecondsFromPrevious)}s on average` : '',
-            )
-          : null,
-      ),
+              { class: 'funnel-step-rates' },
+              h('span', { class: 'funnel-rate-primary' }, percent(step.conversionFromStart, 1)),
+              h('span', { class: 'muted' }, 'of start'),
+              i > 0 ? h('span', { class: 'funnel-rate-prev muted' }, `${percent(step.conversionFromPrevious, 1)} of previous`) : null,
+            ),
+          ),
+          h(
+            'div',
+            { class: 'funnel-track', title: `${count(step.count)} people` },
+            h('div', { class: 'funnel-bar', style: `width:${Math.max(step.count ? 2 : 0, (step.count / base) * 100)}%` }),
+          ),
+        ),
+      );
+
+      return bridge ? [bridge, stepRow] : stepRow;
+    }),
+  );
+
+  const breakdowns =
+    options.breakdowns && options.breakdowns.length
+      ? h(
+          'div',
+          { class: 'funnel-breakdowns' },
+          h('h3', { class: 'funnel-breakdowns-title' }, 'Breakdown'),
+          h(
+            'div',
+            { class: 'table-wrap' },
+            h(
+              'table',
+              { class: 'funnel-breakdown-table' },
+              h(
+                'thead',
+                {},
+                h(
+                  'tr',
+                  {},
+                  h('th', {}, 'Segment'),
+                  ...steps.map((s) => h('th', { class: 'num' }, s.label)),
+                  h('th', { class: 'num' }, 'Conversion'),
+                ),
+              ),
+              h(
+                'tbody',
+                {},
+                options.breakdowns.map((b) => {
+                  const bFirst = b.steps[0]?.count ?? 0;
+                  const bLast = b.steps[b.steps.length - 1]?.count ?? 0;
+                  const conv = bFirst ? bLast / bFirst : 0;
+                  return h(
+                    'tr',
+                    {},
+                    h('td', {}, h('code', {}, b.value)),
+                    ...b.steps.map((s) =>
+                      h(
+                        'td',
+                        { class: 'num' },
+                        h('div', { class: 'funnel-bd-count' }, count(s.count)),
+                        h('div', { class: 'muted small' }, percent(s.conversionFromStart, 0)),
+                      ),
+                    ),
+                    h(
+                      'td',
+                      { class: 'num' },
+                      h('div', { class: 'funnel-bd-conv' }, h('span', { class: 'funnel-bd-conv-bar', style: `width:${conv * 100}%` }), h('span', {}, percent(conv, 1))),
+                    ),
+                  );
+                }),
+              ),
+            ),
+          ),
+        )
+      : null;
+
+  return h(
+    'div',
+    { class: 'funnel-view' },
+    h(
+      'div',
+      { class: 'funnel-kpis' },
+      funnelKpi('Conversion', percent(overall, 1), `${count(last.count)} of ${count(first.count)}`),
+      funnelKpi('Completed', count(last.count), last.label),
+      funnelKpi('Drop-off', count(totalDrop), first.count ? percent(totalDrop / first.count, 1) : undefined),
+      avgThrough !== null && avgThrough > 0 ? funnelKpi('Avg. time', duration(avgThrough), 'start → finish') : null,
+      options.windowSeconds ? funnelKpi('Window', duration(options.windowSeconds), 'to complete') : null,
     ),
+    stepsList,
+    breakdowns,
   );
 }
 

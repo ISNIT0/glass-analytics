@@ -41,17 +41,29 @@ export function apiRouter(service: GlassService, env: Env, request: Request): Ro
       docs: `${service.baseUrl}/llms.txt`,
       schemas: `${service.baseUrl}/api/schema`,
       mcp: `${service.baseUrl}/mcp`,
+      health: `${service.baseUrl}/health`,
       endpoints: {
-        'GET /api/overview?from=-30d': 'Headline stats and movers',
+        'GET /health': 'Deployment version, latest release, upgradeAvailable',
+        'GET /api/overview?from=-30d': 'Headline stats and movers (includes upgrade notice when outdated)',
         'POST /api/query': `Run an insight: { "kind": ${Object.keys(INSIGHTS).map((k) => `"${k}"`).join(' | ')}, ...spec }`,
         'POST /api/sql': 'Read-only SQL: { "query": "SELECT ..." }',
         'GET /api/events': 'Tracked events',
         'GET /api/events/:name': 'Properties of an event',
         'PUT /api/events/:name': 'Document an event (admin)',
-        'GET /api/persons?query=': 'Search identified people',
+        'GET /api/properties/values?property=&event=&query=': 'Most common values of a property (filter typeahead)',
+        'GET /api/person-properties': 'Person property names with types and examples',
+        'GET /api/persons?query=': 'Search identified people (includes anonymous device count)',
         'GET /api/persons/:id': 'One person with events and replays',
         'PATCH /api/persons/:id': 'Set person properties (admin)',
         'DELETE /api/persons/:id': 'Erase a person (admin)',
+        'GET /api/cohorts': 'Saved person cohorts with live counts',
+        'POST /api/cohorts': 'Create or update a cohort (admin)',
+        'POST /api/cohorts/count': 'Count people matching a cohort definition',
+        'DELETE /api/cohorts/:key': 'Delete a cohort (admin)',
+        'GET /api/insights': 'Saved analyses (seeded with DAU/WAU/retention defaults)',
+        'GET /api/insights/:key': 'One saved analysis',
+        'POST /api/insights': 'Create or update a saved analysis (admin)',
+        'DELETE /api/insights/:key': 'Delete a saved analysis (admin)',
         'GET /api/replays?with_errors=true': 'Recorded sessions',
         'GET /api/replays/:session/summary': 'Text transcript of a session',
         'GET /api/replays/:session/events': 'Raw rrweb events',
@@ -101,6 +113,9 @@ export function apiRouter(service: GlassService, env: Env, request: Request): Ro
     return json(await service.defineEvent({ ...(await body()), event: p.name }));
   });
 
+  r.get('/api/properties/values', async ({ url }) => json(await service.propertyValues(params(url))));
+  r.get('/api/person-properties', async ({ url }) => json(await service.listPersonProperties(params(url))));
+
   r.get('/api/persons', async ({ url }) => json(await service.searchPersons(params(url))));
   r.get('/api/persons/:id', async ({ url, params: p }) => json(await service.getPerson({ ...params(url), person_id: p.id })));
   r.patch('/api/persons/:id', async ({ params: p }) => {
@@ -111,6 +126,28 @@ export function apiRouter(service: GlassService, env: Env, request: Request): Ro
   r.delete('/api/persons/:id', async ({ url, params: p }) => {
     admin();
     return json(await service.deletePerson({ ...params(url), person_id: p.id }));
+  });
+
+  r.get('/api/cohorts', async ({ url }) => json(await service.listCohorts(params(url))));
+  r.post('/api/cohorts/count', async () => json(await service.countCohort(await body())));
+  r.post('/api/cohorts', async () => {
+    admin();
+    return json(await service.saveCohort(await body()), { status: 201 });
+  });
+  r.delete('/api/cohorts/:key', async ({ url, params: p }) => {
+    admin();
+    return json(await service.deleteCohort({ ...params(url), key: p.key }));
+  });
+
+  r.get('/api/insights', async ({ url }) => json(await service.listInsights(params(url))));
+  r.get('/api/insights/:key', async ({ url, params: p }) => json(await service.getInsight({ ...params(url), key: p.key })));
+  r.post('/api/insights', async () => {
+    admin();
+    return json(await service.saveInsight(await body()), { status: 201 });
+  });
+  r.delete('/api/insights/:key', async ({ url, params: p }) => {
+    admin();
+    return json(await service.deleteInsight({ ...params(url), key: p.key }));
   });
 
   r.get('/api/replays', async ({ url }) => json(await service.listReplays(params(url))));

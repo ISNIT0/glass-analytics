@@ -2,7 +2,7 @@
  * Building blocks shared by all insight compilers.
  */
 
-import type { Filter } from '../filters.ts';
+import { COHORT_PROPERTY, type CohortMembers, type Filter } from '../filters.ts';
 import { DAY_MS, HOUR_MS, type Interval, WEEK_MS } from '../time.ts';
 import type { Dialect } from './dialect.ts';
 import { filtersSql } from './filters.ts';
@@ -33,6 +33,20 @@ export interface SourceOptions {
  * connect the anonymous pricing visit to the person who later signed up.
  */
 export function eventsCte(d: Dialect, o: SourceOptions): string {
+  // Cohort filters test the resolved person id, which only exists after the identity join.
+  const cohort = (o.filters ?? []).filter((f) => f.property === COHORT_PROPERTY);
+  const rows = resolvedEvents(d, { ...o, filters: (o.filters ?? []).filter((f) => f.property !== COHORT_PROPERTY) });
+  if (cohort.length === 0) return `ev AS (\n  ${rows}\n)`;
+  return `ev AS (\n  SELECT * FROM (\n  ${rows}\n  ) ev_all\n  WHERE ${filtersSql(cohort, d)}\n)`;
+}
+
+/** Distinct person ids in a cohort, as a subquery for `pid IN (…)`. */
+export function cohortMembersSql(d: Dialect, c: CohortMembers): string {
+  const filters = c.filters.filter((f) => f.property !== COHORT_PROPERTY);
+  return `SELECT DISTINCT cm.pid FROM (${resolvedEvents(d, { project: c.project, from: c.from, to: c.to, events: c.events, filters })}) cm`;
+}
+
+function resolvedEvents(d: Dialect, o: SourceOptions): string {
   const where = [
     `e.project = ${d.str(o.project)}`,
     `e.ts_ms >= ${d.num(Math.floor(o.from))}`,
@@ -43,8 +57,7 @@ export function eventsCte(d: Dialect, o: SourceOptions): string {
     where.push(`e.event IN (${unique.map((n) => d.str(n)).join(', ')})`);
   }
   if (o.filters && o.filters.length > 0) where.push(filtersSql(o.filters, d, 'e'));
-  return `ev AS (
-  SELECT e.*,
+  return `SELECT e.*,
     CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid
   FROM ${d.table('events')} e
   LEFT JOIN (
@@ -53,8 +66,7 @@ export function eventsCte(d: Dialect, o: SourceOptions): string {
     WHERE project = ${d.str(o.project)}
     GROUP BY distinct_id
   ) i ON i.distinct_id = e.distinct_id
-  WHERE ${where.join('\n    AND ')}
-)`;
+  WHERE ${where.join('\n    AND ')}`;
 }
 
 /**

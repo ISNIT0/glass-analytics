@@ -6,8 +6,9 @@
  * user input can never change the shape of a query.
  */
 
-import { type Filter, type PropertyRef, parseProperty, toList } from '../filters.ts';
+import { COHORT_PROPERTY, type Filter, type PropertyRef, parseProperty, toList } from '../filters.ts';
 import type { Dialect } from './dialect.ts';
+import { cohortMembersSql } from './source.ts';
 
 /** Prefix a column with a table alias when one is given. */
 const col = (name: string, alias?: string) => (alias ? `${alias}.${name}` : name);
@@ -28,12 +29,26 @@ export function propertyNumber(ref: PropertyRef | string, d: Dialect, alias?: st
   return d.jsonNumber(col(r.kind === 'person' ? 'person_props' : 'props', alias), r.path);
 }
 
-/** A breakdown expression: the property as text, with missing values shown as "(none)". */
-export function breakdownExpr(property: string, d: Dialect, alias?: string): string {
-  return `COALESCE(NULLIF(${propertyText(property, d, alias)}, ''), '(none)')`;
+/**
+ * A breakdown expression: one or more properties as text, missing values as
+ * "(none)". Multiple properties are joined with " · " (e.g. "Chrome · google").
+ */
+export function breakdownExpr(property: string | readonly string[], d: Dialect, alias?: string): string {
+  const props = (Array.isArray(property) ? property : [property]).map((p) => p.trim()).filter(Boolean);
+  if (props.length === 0) return `'(none)'`;
+  const parts = props.map((p) => `COALESCE(NULLIF(${propertyText(p, d, alias)}, ''), '(none)')`);
+  if (parts.length === 1) return parts[0]!;
+  return parts.join(` || ' · ' || `);
+}
+
+/** Normalize a single string or list of breakdown properties. */
+export function breakdownProperties(breakdown: string | readonly string[] | undefined | null): string[] {
+  if (!breakdown) return [];
+  return (Array.isArray(breakdown) ? [...breakdown] : [breakdown]).map((p) => p.trim()).filter(Boolean);
 }
 
 export function filterSql(filter: Filter, d: Dialect, alias?: string): string {
+  if (filter.property === COHORT_PROPERTY) return cohortFilterSql(filter, d, alias);
   const ref = parseProperty(filter.property);
   const op = filter.op ?? 'eq';
   const value = filter.value;
@@ -93,6 +108,23 @@ export function filterSql(filter: Filter, d: Dialect, alias?: string): string {
     default:
       throw new TypeError(`Unknown filter op "${String(op)}".`);
   }
+}
+
+/** Saved-cohort membership, tested on the resolved person id (`pid`, from `eventsCte`). */
+function cohortFilterSql(filter: Filter, d: Dialect, alias?: string): string {
+  const op = filter.op ?? 'eq';
+  if (op !== 'eq' && op !== 'in' && op !== 'neq' && op !== 'not_in') {
+    throw new TypeError(`Cohort filters use "eq"/"in" or "neq"/"not_in", not "${op}".`);
+  }
+  const keys = toList(filter.value);
+  if (keys.length === 0) throw new TypeError('A cohort filter needs a cohort key as its value.');
+  const members = keys.map((key) => {
+    const c = filter.cohorts?.[key];
+    if (!c) throw new TypeError(`Cohort "${key}" was not resolved. Run the query through the Glass API, which loads saved cohorts.`);
+    return `${col('pid', alias)} IN (${cohortMembersSql(d, c)})`;
+  });
+  const any = `(${members.join(' OR ')})`;
+  return op === 'eq' || op === 'in' ? any : `(NOT ${any})`;
 }
 
 /** AND together a list of filters. Returns `1 = 1` when empty so it can always be spliced into a WHERE. */

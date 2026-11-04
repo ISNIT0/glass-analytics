@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { beforeEach, describe, it } from 'node:test';
+import { GLASS_VERSION, UPGRADE_COMMAND } from '@glassanalytics/core/version';
+import { configureLatestCheck } from '../src/latest.ts';
 import { ArrayStream, READ, type TestApp, testApp, wire } from './harness.ts';
 
 let t: TestApp;
@@ -12,13 +14,43 @@ async function setup(extra: Parameters<typeof testApp>[0] = {}) {
 const rows = (sql: string, ...args: (string | number)[]) => t.db.sqlite.prepare(sql).all(...args) as Record<string, unknown>[];
 
 describe('health and routing', () => {
-  beforeEach(() => setup());
+  beforeEach(() => {
+    configureLatestCheck({
+      clearCache: true,
+      fetch: async () => new Response(JSON.stringify({ version: '9.9.9' }), { status: 200 }),
+    });
+    return setup();
+  });
 
-  it('reports status', async () => {
-    const health = await t.json('GET', '/health', { key: null });
+  it('reports status and when an upgrade is available', async () => {
+    const health = await t.json<{
+      ok: boolean;
+      store: string;
+      replay: boolean;
+      version: string;
+      latest: string;
+      upgradeAvailable: boolean;
+      upgradeCommand: string;
+      summary?: string;
+    }>('GET', '/health', { key: null });
     assert.equal(health.ok, true);
     assert.equal(health.store, 'd1');
     assert.equal(health.replay, true);
+    assert.equal(health.version, GLASS_VERSION);
+    assert.equal(health.latest, '9.9.9');
+    assert.equal(health.upgradeAvailable, true);
+    assert.equal(health.upgradeCommand, UPGRADE_COMMAND);
+    assert.match(health.summary ?? '', /9\.9\.9/);
+  });
+
+  it('stays quiet when the deployment matches the latest release', async () => {
+    configureLatestCheck({
+      clearCache: true,
+      fetch: async () => new Response(JSON.stringify({ version: GLASS_VERSION }), { status: 200 }),
+    });
+    const health = await t.json<{ upgradeAvailable: boolean; latest: string }>('GET', '/health', { key: null });
+    assert.equal(health.latest, GLASS_VERSION);
+    assert.equal(health.upgradeAvailable, false);
   });
 
   it('serves everything under the /_glass mount prefix too', async () => {
@@ -37,6 +69,8 @@ describe('health and routing', () => {
     const llms = await (await t.call('GET', '/llms.txt', { key: null })).text();
     assert.match(llms, /https:\/\/glass\.test\/s\.js/);
     assert.match(llms, /query_funnel/);
+    assert.match(llms, /Document custom events/);
+    assert.match(llms, /how and when the event is fired/);
   });
 });
 
@@ -168,6 +202,160 @@ describe('identity and persons', () => {
     assert.equal(rows('SELECT * FROM persons').length, 0);
     assert.equal(t.r2.objects.size, 0);
   });
+
+  it('counts identified people and anonymous devices without listing each device', async () => {
+    await t.ingest([wire('$pageview', { distinct_id: 'anon-1' })]);
+    await t.ingest([wire('$pageview', { distinct_id: 'anon-2' })]);
+    const now = Date.now();
+    t.db.sqlite.prepare(
+      'INSERT INTO persons (project, person_id, props, first_seen, last_seen) VALUES (?, ?, ?, ?, ?)',
+    ).run('acme', 'erin', '{"plan":"pro"}', now, now);
+    t.db.sqlite.prepare(
+      'INSERT INTO identities (project, distinct_id, person_id, created_at) VALUES (?, ?, ?, ?)',
+    ).run('acme', 'device-known', 'erin', now);
+    await t.ingest([wire('$pageview', { distinct_id: 'device-known', user_id: 'erin' })]);
+
+    const list = await t.json<{
+      persons: { id: string }[];
+      stats: { identified: number; anonymousDevices: number; days: number };
+    }>('GET', '/api/persons');
+    assert.equal(list.stats.identified, 1);
+    assert.equal(list.stats.anonymousDevices, 2);
+    assert.deepEqual(
+      list.persons.map((p) => p.id),
+      ['erin'],
+    );
+  });
+
+  it('saves cohorts and counts membership', async () => {
+    const now = Date.now();
+    for (const [id, plan, device] of [
+      ['a', 'pro', 'd1'],
+      ['b', 'free', 'd2'],
+    ] as const) {
+      t.db.sqlite.prepare(
+        'INSERT INTO persons (project, person_id, props, first_seen, last_seen) VALUES (?, ?, ?, ?, ?)',
+      ).run('acme', id, JSON.stringify({ plan }), now, now);
+      t.db.sqlite.prepare(
+        'INSERT INTO identities (project, distinct_id, person_id, created_at) VALUES (?, ?, ?, ?)',
+      ).run('acme', device, id, now);
+      await t.ingest([wire('signup_completed', { distinct_id: device, user_id: id })]);
+    }
+
+    const saved = await t.json<{ key: string; count: number; created: boolean }>('POST', '/api/cohorts', {
+      body: { name: 'Pro plan', filters: [{ property: 'person.plan', value: 'pro' }], didEvent: 'signup_completed' },
+    });
+    assert.equal(saved.created, true);
+    assert.equal(saved.key, 'pro-plan');
+    assert.equal(saved.count, 1);
+
+    const listed = await t.json<{ cohorts: { key: string; count: number }[] }>('GET', '/api/cohorts');
+    assert.equal(listed.cohorts.length, 1);
+    assert.equal(listed.cohorts[0]!.count, 1);
+
+    const counted = await t.json<{ count: number }>('POST', '/api/cohorts/count', {
+      body: { filters: [{ property: 'person.plan', value: 'free' }], didEvent: 'signup_completed' },
+    });
+    assert.equal(counted.count, 1);
+
+    await t.json('DELETE', '/api/cohorts/pro-plan');
+    assert.equal((await t.json<{ cohorts: unknown[] }>('GET', '/api/cohorts')).cohorts.length, 0);
+  });
+
+  it('filters insights to a saved cohort and suggests property values', async () => {
+    const now = Date.now();
+    for (const [id, plan] of [
+      ['a', 'pro'],
+      ['b', 'free'],
+      ['c', 'free'],
+    ] as const) {
+      t.db.sqlite.prepare(
+        'INSERT INTO persons (project, person_id, props, first_seen, last_seen) VALUES (?, ?, ?, ?, ?)',
+      ).run('acme', id, JSON.stringify({ plan }), now, now);
+      await t.ingest([wire('signup_completed', { distinct_id: id, user_id: id })]);
+    }
+    await t.json('POST', '/api/cohorts', { body: { name: 'Pro plan', filters: [{ property: 'person.plan', value: 'pro' }] } });
+
+    const inCohort = await t.json<{ series: { total: number }[]; dashboard: string }>('POST', '/api/query', {
+      body: { kind: 'trends', series: [{ event: 'signup_completed' }], from: '-1d', filters: [{ property: 'cohort', value: 'pro-plan' }] },
+    });
+    assert.equal(inCohort.series[0]!.total, 1);
+    assert.doesNotMatch(decodeURIComponent(inCohort.dashboard), /"cohorts"/);
+    const outside = await t.json<{ series: { total: number }[] }>('POST', '/api/query', {
+      body: { kind: 'trends', series: [{ event: 'signup_completed' }], from: '-1d', filters: [{ property: 'cohort', op: 'neq', value: 'pro-plan' }] },
+    });
+    assert.equal(outside.series[0]!.total, 2);
+    const missing = await t.call('POST', '/api/query', {
+      body: { kind: 'trends', series: [{ event: 'signup_completed' }], filters: [{ property: 'cohort', value: 'nope' }] },
+    });
+    assert.equal(missing.status, 400);
+    assert.match(((await missing.json()) as { hint: string }).hint, /pro-plan/);
+    const nested = await t.call('POST', '/api/cohorts', { body: { name: 'Nested', filters: [{ property: 'cohort', value: 'pro-plan' }] } });
+    assert.equal(nested.status, 400);
+
+    const values = await t.json<{ values: { value: string; count: number; people: number }[] }>('GET', '/api/properties/values?property=person.plan');
+    assert.deepEqual(
+      values.values.map((v) => [v.value, v.people]),
+      [
+        ['free', 2],
+        ['pro', 1],
+      ],
+    );
+    const searched = await t.json<{ values: { value: string }[] }>('GET', '/api/properties/values?property=person.plan&query=PR');
+    assert.deepEqual(searched.values.map((v) => v.value), ['pro']);
+    const cohorts = await t.json<{ values: { value: string; label: string }[] }>('GET', '/api/properties/values?property=cohort');
+    assert.deepEqual(cohorts.values, [{ value: 'pro-plan', label: 'Pro plan', count: null, people: null }]);
+    const personProps = await t.json<{ properties: { name: string; examples: string[] }[] }>('GET', '/api/person-properties');
+    assert.equal(personProps.properties[0]!.name, 'person.plan');
+  });
+});
+
+describe('saved insights', () => {
+  beforeEach(() => setup());
+
+  it('seeds DAU/WAU/retention defaults on a new project', async () => {
+    const listed = await t.json<{ insights: { key: string; name: string; kind: string }[] }>('GET', '/api/insights');
+    const keys = listed.insights.map((i) => i.key).sort();
+    assert.deepEqual(keys, ['daily-pageviews', 'daily-retention', 'dau', 'mau', 'wau', 'weekly-retention']);
+    const dau = listed.insights.find((i) => i.key === 'dau')!;
+    assert.equal(dau.name, 'Daily active users');
+    assert.equal(dau.kind, 'trends');
+
+    const one = await t.json<{ key: string; description: string }>('GET', '/api/insights/dau');
+    assert.equal(one.key, 'dau');
+    assert.match(one.description, /Unique people/);
+  });
+
+  it('saves, updates and deletes a custom analysis', async () => {
+    const saved = await t.json<{ key: string; created: boolean; name: string }>('POST', '/api/insights', {
+      body: {
+        name: 'Signups over time',
+        description: 'Daily signup count',
+        kind: 'trends',
+        spec: { series: [{ event: 'signup_completed', math: 'total' }], interval: 'day' },
+      },
+    });
+    assert.equal(saved.created, true);
+    assert.equal(saved.key, 'signups-over-time');
+
+    const updated = await t.json<{ created: boolean; description: string }>('POST', '/api/insights', {
+      body: {
+        key: 'signups-over-time',
+        name: 'Signups over time',
+        description: 'Updated blurb',
+        kind: 'trends',
+        spec: { series: [{ event: 'signup_completed', math: 'unique_persons' }], interval: 'day' },
+      },
+    });
+    assert.equal(updated.created, false);
+    assert.equal(updated.description, 'Updated blurb');
+
+    const reserved = await t.call('POST', '/api/insights', { body: { name: 'Trends', key: 'trends', kind: 'trends', spec: {} } });
+    assert.equal(reserved.status, 400);
+
+    await t.json('DELETE', '/api/insights/signups-over-time');
+    assert.equal((await t.call('GET', '/api/insights/signups-over-time')).status, 404);
+  });
 });
 
 describe('query API', () => {
@@ -188,7 +376,7 @@ describe('query API', () => {
     assert.equal(web.totals.visitors, 2);
     assert.equal(web.totals.pageviews, 3);
     assert.ok(web.sql.length >= 4);
-    assert.match(web.dashboard, /^https:\/\/glass\.test\/app#\/insights\/web/);
+    assert.match(web.dashboard, /^https:\/\/glass\.test\/app#\/reports/);
 
     const trends = await t.json<{ series: { total: number }[] }>('POST', '/api/query', {
       body: { kind: 'trends', series: [{ event: 'signup_completed' }], breakdown: 'plan', from: '-1d' },

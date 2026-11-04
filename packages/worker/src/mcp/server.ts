@@ -9,7 +9,7 @@
  * Spec: https://modelcontextprotocol.io/specification
  */
 
-import { GLASS_VERSION } from '@glassanalytics/core/version';
+import { GLASS_VERSION, upgradeMessage } from '@glassanalytics/core/version';
 import { z } from 'zod/v4';
 import type { Scope } from '../auth.ts';
 import { HttpError, describeIssues, isValidationError, json } from '../http.ts';
@@ -25,7 +25,8 @@ export const INSTRUCTIONS = `Glass is the analytics for this product: web analyt
 - Times: ISO dates or relative offsets like "-30d"; ranges end at "now" by default.
 - To debug a user problem: query_funnel or query_trends with a breakdown → list_replays (with_errors) → summarise_replay.
 - To add tracking: "instrument" returns the exact code. Name events object_action in snake_case past tense.
-- Every result includes the SQL that ran and a dashboard link; quote them when reporting back.`;
+- Every result includes the SQL that ran and a dashboard link; quote them when reporting back.
+- If overview or /health reports upgradeAvailable, tell the user to run \`npx @glassanalytics/cli@latest upgrade\` — do not try to upgrade yourself.`;
 
 interface JsonRpcRequest {
   jsonrpc: '2.0';
@@ -89,11 +90,16 @@ async function handleMessage(msg: JsonRpcRequest, service: GlassService, scope: 
   switch (msg.method) {
     case 'initialize': {
       const requested = String(msg.params?.protocolVersion ?? '');
+      const health = await service.health();
+      const instructions =
+        health.upgradeAvailable && health.latest
+          ? `${INSTRUCTIONS}\n- UPGRADE NEEDED: ${upgradeMessage(health.version, health.latest)}`
+          : INSTRUCTIONS;
       return rpcResult(msg.id, {
         protocolVersion: SUPPORTED_VERSIONS.includes(requested) ? requested : SUPPORTED_VERSIONS[0],
         capabilities: { tools: { listChanged: false } },
         serverInfo: { name: 'glass', title: 'Glass Analytics', version: GLASS_VERSION },
-        instructions: INSTRUCTIONS,
+        instructions,
       });
     }
     case 'ping':

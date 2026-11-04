@@ -57,6 +57,28 @@ describe('trends', () => {
     );
   });
 
+  it('combines multiple breakdown properties', async () => {
+    const db = createDb();
+    insert(db, [
+      { event: 'buy', browser: 'Chrome', props: { plan: 'pro' } },
+      { event: 'buy', browser: 'Chrome', props: { plan: 'pro' } },
+      { event: 'buy', browser: 'Chrome', props: { plan: 'free' } },
+      { event: 'buy', browser: 'Firefox', props: { plan: 'pro' } },
+    ]);
+    const r = await runTrends(
+      { series: [{ event: 'buy' }], from: '-1d', breakdown: ['browser', 'plan'] },
+      context(db),
+    );
+    assert.deepEqual(
+      r.series.map((s) => [s.breakdown, s.total]).sort(),
+      [
+        ['Chrome · free', 1],
+        ['Chrome · pro', 2],
+        ['Firefox · pro', 1],
+      ].sort(),
+    );
+  });
+
   it('sums a numeric property and ignores non-numeric values', async () => {
     const db = createDb();
     insert(db, [
@@ -151,6 +173,51 @@ describe('funnels', () => {
     assert.deepEqual(
       r.steps.map((s) => s.count),
       [3, 2],
+    );
+  });
+});
+
+describe('cohort filters', () => {
+  // Pro cohort: people whose person.plan was "pro" on any event in the last 30 days.
+  const pro = { project: 'p', from: NOW - 30 * DAY, to: NOW, filters: [{ property: 'person.plan', value: 'pro' }] };
+  const seed = () => {
+    const db = createDb();
+    insert(db, [
+      { distinct_id: 'anon-a', event: 'view' },
+      { distinct_id: 'anon-a', user_id: 'a', event: 'view', person_props: { plan: 'pro' } },
+      { distinct_id: 'b', user_id: 'b', event: 'view', person_props: { plan: 'free' } },
+      { distinct_id: 'c', event: 'view' },
+    ]);
+    link(db, 'anon-a', 'a');
+    return db;
+  };
+
+  it('keeps only people in the cohort, including their anonymous events', async () => {
+    const r = await runTrends(
+      { series: [{ event: 'view' }], from: '-1d', filters: [{ property: 'cohort', value: 'pro', cohorts: { pro } }] as never },
+      context(seed()),
+    );
+    assert.equal(r.series[0]!.total, 2);
+  });
+
+  it('excludes the cohort with not_in and works on funnel steps', async () => {
+    const db = seed();
+    const out = await runTrends(
+      { series: [{ event: 'view', math: 'unique_persons' }], from: '-1d', filters: [{ property: 'cohort', op: 'not_in', value: ['pro'], cohorts: { pro } }] as never },
+      context(db),
+    );
+    assert.equal(out.series[0]!.total, 2);
+    const funnel = await runFunnel(
+      { steps: [{ event: 'view', filters: [{ property: 'cohort', value: 'pro', cohorts: { pro } }] as never }, { event: 'view' }], from: '-7d' },
+      context(db),
+    );
+    assert.equal(funnel.steps[0]!.count, 1);
+  });
+
+  it('refuses an unresolved cohort key', async () => {
+    await assert.rejects(
+      runTrends({ series: [{ event: 'view' }], from: '-1d', filters: [{ property: 'cohort', value: 'pro' }] }, context(seed())),
+      /not resolved/,
     );
   });
 });

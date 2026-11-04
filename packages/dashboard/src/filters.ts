@@ -1,6 +1,6 @@
 /**
  * Dashboard filters live in the URL as repeated `f=property:value` params,
- * e.g. `#/web?f=path:/pricing&f=country:GB`, so filtered views can be shared
+ * e.g. `#/reports?f=path:/pricing&f=country:GB`, so filtered views can be shared
  * and constructed by agents.
  */
 

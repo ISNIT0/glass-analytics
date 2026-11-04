@@ -19,7 +19,7 @@ export const filterSchema = z
     property: z
       .string()
       .describe(
-        'Property to test. Built-in columns: path, url, host, referrer_host, utm_source, utm_medium, utm_campaign, country, region, city, device, browser, os, event, session_id, user_id. Anything else is an event property ("plan" or "props.plan"); prefix with "person." for person properties ("person.plan").',
+        'Property to test. Built-in columns: path, url, host, referrer_host, utm_source, utm_medium, utm_campaign, country, region, city, device, browser, os, event, session_id, user_id. Anything else is an event property ("plan" or "props.plan"); prefix with "person." for person properties ("person.plan"). Use "cohort" with a saved cohort key as the value (ops eq/in or neq/not_in) to keep only people in (or not in) that cohort; list keys with list_cohorts.',
       ),
     op: z.enum(FILTER_OPS).optional().describe('Comparison operator. Defaults to "eq".'),
     value: z
@@ -69,7 +69,12 @@ export const trendsSpec = z
       .max(10)
       .describe('One line per series.'),
     interval: z.enum(['hour', 'day', 'week', 'month']).optional().describe('Bucket size. Defaults to "day".'),
-    breakdown: z.string().optional().describe('Split each series by this property, e.g. "browser" or "person.plan".'),
+    breakdown: z
+      .union([z.string(), z.array(z.string()).min(1).max(4)])
+      .optional()
+      .describe(
+        'Split each series by one or more properties, e.g. "browser", "person.plan", or ["browser","utm_source"]. Multiple properties are joined with " · ".',
+      ),
     breakdownLimit: z.number().int().min(1).max(50).optional().describe('Top N breakdown values to keep. Default 10.'),
   })
   .describe('Event counts or aggregates over time.');
@@ -82,7 +87,12 @@ export const funnelSpec = z
       .union([z.string(), z.number()])
       .optional()
       .describe('Maximum time from the first step to the last, e.g. "1h", "7d". Seconds if a number. Default "7d".'),
-    breakdown: z.string().optional().describe('Split by a property of the first step, e.g. "utm_source".'),
+    breakdown: z
+      .union([z.string(), z.array(z.string()).min(1).max(4)])
+      .optional()
+      .describe(
+        'Split by one or more properties of the first step, e.g. "utm_source" or ["utm_source","device"]. Multiple properties are joined with " · ".',
+      ),
     breakdownLimit: z.number().int().min(1).max(50).optional(),
   })
   .describe('Conversion through an ordered sequence of events.');

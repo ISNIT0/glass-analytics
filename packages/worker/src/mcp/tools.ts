@@ -59,7 +59,8 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: 'list_events',
     title: 'List tracked events',
-    description: 'Every event name seen recently with counts, last-seen time and documentation status. Use before querying to get exact names.',
+    description:
+      'Every event name seen recently with counts, last-seen time and documentation status. Use before querying to get exact names. Clear the undocumented list with define_event before relying on custom events in funnels or trends.',
     input: inputs.listEvents,
     scope: 'read',
     run: (s, a) => s.listEvents(a),
@@ -67,7 +68,8 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: 'describe_event',
     title: 'Describe an event',
-    description: 'Properties sent with an event (sampled from recent events): types, coverage and example values.',
+    description:
+      'Properties sent with an event (sampled from recent events): types, coverage and example values, plus any saved documentation. Use after shipping capture, then define_event.',
     input: inputs.describeEvent,
     scope: 'read',
     run: (s, a) => s.describeEvent(a),
@@ -75,7 +77,8 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: 'define_event',
     title: 'Document an event',
-    description: 'Save a description, owner and property descriptions for an event so future agents and teammates understand it.',
+    description:
+      'Required after adding a custom event. Save a how/when description (which user action or code path fires it), owner, and a meaning for each property so future agents and teammates can query it safely.',
     input: inputs.defineEvent,
     scope: 'admin',
     run: (s, a) => s.defineEvent(a),
@@ -83,15 +86,34 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: 'instrument',
     title: 'Get tracking code',
-    description: 'The exact code to install Glass and capture a named event in a given framework, plus naming warnings.',
+    description:
+      'The exact code to install Glass and capture a named event in a given framework, plus naming warnings. After deploy, describe_event then define_event with how/when and property meanings.',
     input: inputs.instrument,
     scope: 'read',
     run: (s, a) => s.instrument(a),
   },
   {
+    name: 'property_values',
+    title: 'List property values',
+    description:
+      'Most common values of a property with event and people counts, optionally on one event or containing some text. Use before filtering so the value you filter on actually exists. property "cohort" lists saved cohort keys.',
+    input: inputs.propertyValues,
+    scope: 'read',
+    run: (s, a) => s.propertyValues(a),
+  },
+  {
+    name: 'list_person_properties',
+    title: 'List person properties',
+    description: 'Person property names (sampled from recently active people) with types and example values. Filter on them as "person.<name>".',
+    input: inputs.listPersonProperties,
+    scope: 'read',
+    run: (s, a) => s.listPersonProperties(a),
+  },
+  {
     name: 'search_persons',
     title: 'Search people',
-    description: 'Identified people, most recently active first, optionally matching an id or property value.',
+    description:
+      'Identified people (most recently active first) plus counts of identified people and anonymous devices active in the look-back window. Optionally filter by id or property value.',
     input: inputs.searchPersons,
     scope: 'read',
     run: (s, a) => s.searchPersons(a),
@@ -103,6 +125,71 @@ export const TOOLS: ToolDefinition[] = [
     input: inputs.getPerson,
     scope: 'read',
     run: (s, a) => s.getPerson(a),
+  },
+  {
+    name: 'list_insights',
+    title: 'List saved analyses',
+    description: 'Saved trends/funnel/retention analyses on the Insights tab. New projects are seeded with DAU, WAU, MAU, pageviews and retention defaults.',
+    input: inputs.listInsights,
+    scope: 'read',
+    run: (s, a) => s.listInsights(a),
+  },
+  {
+    name: 'get_insight',
+    title: 'Get a saved analysis',
+    description: 'One saved analysis by key, including its query spec.',
+    input: inputs.getInsight,
+    scope: 'read',
+    run: (s, a) => s.getInsight(a),
+  },
+  {
+    name: 'save_insight',
+    title: 'Save an analysis',
+    description: 'Create or update a named trends/funnel/retention analysis with a title and description.',
+    input: inputs.saveInsight,
+    scope: 'admin',
+    run: (s, a) => s.saveInsight(a),
+  },
+  {
+    name: 'delete_insight',
+    title: 'Delete a saved analysis',
+    description: 'Remove a saved analysis from the Insights tab.',
+    input: inputs.deleteInsight,
+    scope: 'admin',
+    run: (s, a) => s.deleteInsight(a),
+  },
+  {
+    name: 'list_cohorts',
+    title: 'List cohorts',
+    description: 'Saved person cohorts with live membership counts. Filter any query to a cohort with {"property":"cohort","value":"<key>"} (op "neq" to exclude it).',
+    input: inputs.listCohorts,
+    scope: 'read',
+    run: (s, a) => s.listCohorts(a),
+  },
+  {
+    name: 'save_cohort',
+    title: 'Save a cohort',
+    description:
+      'Create or update a named person cohort from filters (and optional didEvent). Returns the live membership count.',
+    input: inputs.saveCohort,
+    scope: 'admin',
+    run: (s, a) => s.saveCohort(a),
+  },
+  {
+    name: 'count_cohort',
+    title: 'Count a cohort',
+    description: 'How many distinct people match filters (and optional didEvent) without saving.',
+    input: inputs.countCohort,
+    scope: 'read',
+    run: (s, a) => s.countCohort(a),
+  },
+  {
+    name: 'delete_cohort',
+    title: 'Delete a cohort',
+    description: 'Remove a saved cohort definition.',
+    input: inputs.deleteCohort,
+    scope: 'admin',
+    run: (s, a) => s.deleteCohort(a),
   },
   {
     name: 'list_replays',

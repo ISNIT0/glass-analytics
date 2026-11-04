@@ -7,7 +7,7 @@
 import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { GLASS_VERSION } from '@glassanalytics/core/version';
+import { GLASS_VERSION, UPGRADE_COMMAND, isNewerThan } from '@glassanalytics/core/version';
 import { call } from '../client.ts';
 import { deploy, ensureBucket, installWorkerFiles, migrate, putSecrets, renderWranglerConfig } from '../cloudflare/provision.ts';
 import { type Wrangler, createWrangler } from '../cloudflare/wrangler.ts';
@@ -69,22 +69,36 @@ export async function upgrade(options: { token?: string; json?: boolean }, deps:
 export async function status(options: { json?: boolean }): Promise<void> {
   const conn = connection();
   const config = loadConfig();
-  const health = await call<{ version: string; store: string; replay: boolean; freshnessSeconds: number }>('GET', '/health');
+  const health = await call<{
+    version: string;
+    latest?: string | null;
+    upgradeAvailable?: boolean;
+    upgradeCommand?: string;
+    store: string;
+    replay: boolean;
+    freshnessSeconds: number;
+  }>('GET', '/health');
   const events = await call<{ events: { event: string; count: number; lastSeen: string }[] }>('GET', `/api/events?days=1${conn.project ? `&project=${conn.project}` : ''}`).catch(() => ({ events: [] }));
   const total = events.events.reduce((a, e) => a + e.count, 0);
   const last = events.events.map((e) => e.lastSeen).sort().at(-1);
   const mcp = existsSync(join(projectRoot(), '.mcp.json'));
+  const cliMismatch = health.version !== GLASS_VERSION;
+  const npmNewer = Boolean(health.latest && isNewerThan(health.latest, health.version));
+  const upgradeAvailable = Boolean(health.upgradeAvailable) || cliMismatch || npmNewer;
+  const upgradeCommand = health.upgradeCommand ?? UPGRADE_COMMAND;
   const result = {
     host: conn.host,
     project: conn.project,
     version: health.version,
+    latest: health.latest ?? null,
     cliVersion: GLASS_VERSION,
     store: health.store,
     replay: health.replay,
     eventsLast24h: total,
     lastEvent: last ?? null,
     mcpConfigured: mcp,
-    upgradeAvailable: health.version !== GLASS_VERSION,
+    upgradeAvailable,
+    upgradeCommand,
     account: config?.accountId,
   };
   if (options.json) return printJson(result);
@@ -92,7 +106,13 @@ export async function status(options: { json?: boolean }): Promise<void> {
   (total ? ok : skip)(total ? `${total.toLocaleString('en-US')} events in the last 24 hours, latest ${last}` : 'No events in the last 24 hours. Is the snippet installed?');
   (health.replay ? ok : skip)(health.replay ? 'Session replay enabled' : 'Session replay disabled (no R2 bucket); `glass upgrade` retries');
   (mcp ? ok : skip)(mcp ? 'MCP server configured in .mcp.json' : 'No .mcp.json; run `glass init` again to write agent files');
-  if (result.upgradeAvailable) skip(`This CLI is Glass ${GLASS_VERSION}; the Worker runs ${health.version}. Run \`glass upgrade\`.`);
+  if (health.latest && isNewerThan(health.latest, health.version)) {
+    skip(`Glass ${health.latest} is available (this deployment is ${health.version}). Run: ${upgradeCommand}`);
+  } else if (cliMismatch) {
+    skip(`This CLI is Glass ${GLASS_VERSION}; the Worker runs ${health.version}. Run: ${upgradeCommand}`);
+  } else {
+    ok(`Up to date (Glass ${health.version})`);
+  }
 }
 
 export function key(options: { read?: boolean; json?: boolean }): void {

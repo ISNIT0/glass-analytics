@@ -10,6 +10,12 @@
  * | `plan`, `props.plan` | the event property `plan`                        |
  * | `person.plan`      | the person property `plan` at the time of the event |
  * | `props.address.city` | a nested event property                          |
+ * | `cohort`           | membership of a saved cohort (value: cohort key)    |
+ *
+ * `cohort` filters use `eq`/`in` ("in any of these cohorts") or `neq`/`not_in`.
+ * The server resolves each key to its saved definition before compiling, so
+ * core never reads the cohorts table. An event property literally named
+ * "cohort" is still reachable as `props.cohort`.
  */
 
 import { FILTERABLE_COLUMNS } from './events.ts';
@@ -42,6 +48,21 @@ export interface Filter {
   /** Defaults to `eq`. */
   op?: FilterOp;
   value?: FilterValue;
+  /** Resolved definitions for a `cohort` filter, keyed by cohort key. Set by the server, never by callers. */
+  cohorts?: Record<string, CohortMembers>;
+}
+
+/** Pseudo-property that filters on saved-cohort membership. */
+export const COHORT_PROPERTY = 'cohort';
+
+/** Who is in a cohort: people with a matching event in [from, to). */
+export interface CohortMembers {
+  project: string;
+  from: number;
+  to: number;
+  /** Only people who did one of these events. */
+  events?: string[];
+  filters: Filter[];
 }
 
 export function parseProperty(input: string): PropertyRef {

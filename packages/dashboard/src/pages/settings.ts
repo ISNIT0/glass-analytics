@@ -43,7 +43,15 @@ export function settingsPage(): Node[] {
     ),
     later(async () => {
       const [health, projects] = await Promise.all([
-        api.get<{ version: string; store: string; replay: boolean; freshnessSeconds: number }>('/health'),
+        api.get<{
+          version: string;
+          latest?: string | null;
+          upgradeAvailable?: boolean;
+          upgradeCommand?: string;
+          store: string;
+          replay: boolean;
+          freshnessSeconds: number;
+        }>('/health'),
         api.get<{ projects: { id: string; name: string; createdAt: number; allowedOrigins: string[] }[] }>('/api/projects'),
       ]);
       const id = h('input', { type: 'text', required: true, placeholder: 'acme-docs', pattern: '[a-z0-9][a-z0-9_-]*' });
@@ -71,18 +79,29 @@ export function settingsPage(): Node[] {
         ]),
         panel(
           'This deployment',
-          h(
-            'dl',
-            { class: 'props' },
-            h('dt', {}, 'Version'),
-            h('dd', {}, health.version),
-            h('dt', {}, 'Event store'),
-            h('dd', {}, health.store === 'lake' ? `Iceberg lake (data appears after about ${Math.round(health.freshnessSeconds / 60)} min)` : 'D1 (real time)'),
-            h('dt', {}, 'Session replay'),
-            h('dd', {}, health.replay ? 'Enabled' : 'Disabled (no R2 bucket)'),
-            h('dt', {}, 'Signed in with'),
-            h('dd', {}, h('button', { type: 'button', class: 'ghost small', onclick: () => { prefs.key = null; location.reload(); } }, 'Forget this key')),
-          ),
+          [
+            health.upgradeAvailable && health.latest
+              ? h(
+                  'p',
+                  { class: 'notice' },
+                  `Glass ${health.latest} is available. Run `,
+                  h('code', {}, health.upgradeCommand ?? 'npx @glassanalytics/cli@latest upgrade'),
+                  ` in your project.`,
+                )
+              : null,
+            h(
+              'dl',
+              { class: 'props' },
+              h('dt', {}, 'Version'),
+              h('dd', {}, health.latest && health.latest !== health.version ? `${health.version} (latest ${health.latest})` : health.version),
+              h('dt', {}, 'Event store'),
+              h('dd', {}, health.store === 'lake' ? `Iceberg lake (data appears after about ${Math.round(health.freshnessSeconds / 60)} min)` : 'D1 (real time)'),
+              h('dt', {}, 'Session replay'),
+              h('dd', {}, health.replay ? 'Enabled' : 'Disabled (no R2 bucket)'),
+              h('dt', {}, 'Signed in with'),
+              h('dd', {}, h('button', { type: 'button', class: 'ghost small', onclick: () => { prefs.key = null; location.reload(); } }, 'Forget this key')),
+            ),
+          ],
         ),
       );
     }),

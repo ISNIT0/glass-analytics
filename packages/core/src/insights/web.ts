@@ -4,12 +4,15 @@
  * 1. totals for the range (visitors, pageviews, sessions, bounces, duration)
  * 2. totals for the previous period of the same length (for change %)
  * 3. a visitors/pageviews time series
- * 4. every breakdown table at once (one UNION ALL of top-10 subqueries)
+ * 4. every breakdown table (chunked UNION ALLs — D1 caps compound SELECTs at 7)
  * 5. web vitals samples (p75 computed here, since SQLite has no percentile function)
  *
  * Visitors are distinct `distinct_id`s (devices), as in other web analytics tools;
  * product analytics (trends/funnels/retention) count persons instead.
  */
+
+/** D1's SQLITE_MAX_COMPOUND_SELECT is 7; stay under it with headroom. */
+const MAX_UNION = 5;
 
 import { SYSTEM_EVENTS } from '../events.ts';
 import type { Dialect } from '../sql/dialect.ts';
@@ -93,7 +96,7 @@ function shapeTotals(row: Record<string, unknown> | undefined): WebTotals {
   };
 }
 
-function breakdownsSql(d: Dialect, ctx: QueryContext, range: TimeRange, filters: WebSpec['filters']): string {
+function breakdownsSql(d: Dialect, ctx: QueryContext, range: TimeRange, filters: WebSpec['filters']): string[] {
   const cte = eventsCte(d, { project: ctx.project, ...range, events: [PV, SYSTEM_EVENTS.exception], filters });
   const none = (expr: string) => `COALESCE(NULLIF(${expr}, ''), '(none)')`;
   const simple = (name: string, expr: string, event: string = PV) =>
@@ -130,7 +133,11 @@ function breakdownsSql(d: Dialect, ctx: QueryContext, range: TimeRange, filters:
     simple('os', none('os')),
     simple('errors', none(d.jsonText('props', ['message'])), SYSTEM_EVENTS.exception),
   ];
-  return `WITH ${cte}\n${parts.join('\nUNION ALL\n')}`;
+  const chunks: string[] = [];
+  for (let i = 0; i < parts.length; i += MAX_UNION) {
+    chunks.push(`WITH ${cte}\n${parts.slice(i, i + MAX_UNION).join('\nUNION ALL\n')}`);
+  }
+  return chunks;
 }
 
 function vitalsSql(d: Dialect, ctx: QueryContext, range: TimeRange, filters: WebSpec['filters']): string {
@@ -168,20 +175,22 @@ SELECT bucket, COUNT(DISTINCT distinct_id) AS visitors, COUNT(*) AS pageviews
 FROM (SELECT ${bucketExpr(d, 'ts_ms', interval, spec.utcOffsetMinutes)} AS bucket, distinct_id FROM ev) t
 GROUP BY bucket ORDER BY bucket LIMIT 5000`;
 
+  const breakdownQueries = breakdownsSql(d, ctx, range, spec.filters);
   const queries = {
     totals: totalsSql(d, ctx, range, spec.filters),
     previous: compare ? totalsSql(d, ctx, previous, spec.filters) : null,
     series: seriesSql,
-    breakdowns: breakdownsSql(d, ctx, range, spec.filters),
+    breakdowns: breakdownQueries,
     vitals: vitalsSql(d, ctx, range, spec.filters),
   };
-  const [totalsRows, previousRows, seriesRows, breakdownRows, vitalRows] = await Promise.all([
+  const [totalsRows, previousRows, seriesRows, breakdownChunks, vitalRows] = await Promise.all([
     ctx.execute(queries.totals),
     queries.previous ? ctx.execute(queries.previous) : Promise.resolve(null),
     ctx.execute(queries.series),
-    ctx.execute(queries.breakdowns),
+    Promise.all(breakdownQueries.map((q) => ctx.execute(q))),
     ctx.execute(queries.vitals),
   ]);
+  const breakdownRows = breakdownChunks.flat();
 
   const buckets = bucketsBetween(range, interval, spec.utcOffsetMinutes);
   const slot = new Map(buckets.map((b, i) => [b, i]));
@@ -231,7 +240,7 @@ GROUP BY bucket ORDER BY bucket LIMIT 5000`;
     timeseries: { buckets, visitors, pageviews },
     breakdowns,
     vitals,
-    sql: [queries.totals, ...(queries.previous ? [queries.previous] : []), queries.series, queries.breakdowns, queries.vitals],
+    sql: [queries.totals, ...(queries.previous ? [queries.previous] : []), queries.series, ...queries.breakdowns, queries.vitals],
     range: { from: iso(range.from), to: iso(range.to) },
     summary:
       totals.pageviews === 0

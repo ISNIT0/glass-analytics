@@ -86,6 +86,14 @@ Without JavaScript:
 
 Name events `object_action` in snake_case and past tense. Put details in properties, and never send emails, names or other personal data.
 
+Document every custom event once it is shipping — agents and teammates need to know **how and when** it fires, and **what each property means**:
+
+```sh
+npx @glassanalytics/cli events signup_completed --describe "Fired when the user finishes signup after email verification."
+```
+
+Prefer the MCP `define_event` tool so you can set property meanings in the same call (`plan` → chosen plan id, etc.). `list_events` returns an `undocumented` list; clear it before building funnels or trends on those events.
+
 ## 5. Look at the data
 
 - **Dashboard:** `https://glass.<you>.workers.dev/app`. Sign in with the key from `npx @glassanalytics/cli key`. Share a view-only dashboard with `npx @glassanalytics/cli key --read`.
@@ -98,7 +106,9 @@ Name events `object_action` in snake_case and past tense. Put details in propert
 npx @glassanalytics/cli@latest upgrade
 ```
 
-This copies the new Worker into `.glass/`, applies new migrations and redeploys. `npx @glassanalytics/cli status` tells you when an upgrade is available.
+This copies the new Worker into `.glass/`, applies new migrations and redeploys.
+
+You'll also be told when an upgrade is available: the dashboard shows a banner after login, `glass status` (and other CLI commands) print a reminder, and MCP/`overview` include `upgradeAvailable` so agents can ask you to run the command above.
 
 ## Removing Glass
 

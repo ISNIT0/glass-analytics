@@ -7,7 +7,7 @@
  * step 1. The breakdown value is read from the step-1 event.
  */
 
-import { breakdownExpr, filtersSql } from '../sql/filters.ts';
+import { breakdownExpr, breakdownProperties, filtersSql } from '../sql/filters.ts';
 import { eventsCte, num, text } from '../sql/source.ts';
 import { iso, parseDuration, resolveRange } from '../time.ts';
 import type { FunnelSpec } from './schemas.ts';
@@ -33,7 +33,7 @@ export interface FunnelResult extends ResultBase {
   breakdowns?: { value: string; steps: FunnelStepResult[] }[];
 }
 
-export function compileFunnel(spec: FunnelSpec, ctx: QueryContext, range: { from: number; to: number }, windowMs: number): string {
+export function compileFunnel(spec: FunnelSpec, ctx: QueryContext, range: { from: number; to: number }, windowMs: number): string[] {
   const d = ctx.dialect;
   const steps = spec.steps;
   const cte = eventsCte(d, {
@@ -54,9 +54,10 @@ export function compileFunnel(spec: FunnelSpec, ctx: QueryContext, range: { from
   GROUP BY pid
 )`);
 
-  if (spec.breakdown) {
+  const breakdowns = breakdownProperties(spec.breakdown);
+  if (breakdowns.length) {
     ctes.push(`b AS (
-  SELECT s1.pid, MIN(${breakdownExpr(spec.breakdown, d, 'ev')}) AS bd
+  SELECT s1.pid, MIN(${breakdownExpr(breakdowns, d, 'ev')}) AS bd
   FROM s1 JOIN ev ON ev.pid = s1.pid AND ev.ts_ms = s1.t1
   WHERE ev.event = ${d.str(first.event)} AND ${filtersSql(first.filters, d, 'ev')}
   GROUP BY s1.pid
@@ -78,16 +79,24 @@ export function compileFunnel(spec: FunnelSpec, ctx: QueryContext, range: { from
 )`);
   }
 
-  const bdSelect = spec.breakdown ? `COALESCE(b.bd, '(none)')` : `''`;
-  const bdJoin = (s: string) => (spec.breakdown ? ` LEFT JOIN b ON b.pid = ${s}.pid` : '');
-  const bdGroup = spec.breakdown ? ` GROUP BY COALESCE(b.bd, '(none)')` : '';
+  const bdSelect = breakdowns.length ? `COALESCE(b.bd, '(none)')` : `''`;
+  const bdJoin = (s: string) => (breakdowns.length ? ` LEFT JOIN b ON b.pid = ${s}.pid` : '');
+  const bdGroup = breakdowns.length ? ` GROUP BY COALESCE(b.bd, '(none)')` : '';
   const selects = steps.map((_, i) => {
     const k = i + 1;
     const s = `s${k}`;
     const dt = k === 1 ? '0' : `SUM(${s}.t${k} - ${s}.t${k - 1})`;
     return `SELECT ${k} AS step, ${bdSelect} AS bd, COUNT(*) AS n, ${dt} AS dt_ms FROM ${s}${bdJoin(s)}${bdGroup}`;
   });
-  return `WITH ${ctes.join(',\n')}\n${selects.join('\nUNION ALL\n')}`;
+  // D1 caps compound SELECTs at 7; chunk when a funnel has more steps.
+  const maxUnion = 5;
+  const head = `WITH ${ctes.join(',\n')}\n`;
+  if (selects.length <= maxUnion) return [head + selects.join('\nUNION ALL\n')];
+  const chunks: string[] = [];
+  for (let i = 0; i < selects.length; i += maxUnion) {
+    chunks.push(head + selects.slice(i, i + maxUnion).join('\nUNION ALL\n'));
+  }
+  return chunks;
 }
 
 function shapeSteps(spec: FunnelSpec, counts: Map<number, { n: number; dt: number }>): FunnelStepResult[] {
@@ -110,7 +119,7 @@ export async function runFunnel(spec: FunnelSpec, ctx: QueryContext): Promise<Fu
   const range = resolveRange(spec.from, spec.to, ctx.now);
   const windowMs = parseDuration(spec.window ?? '7d');
   const sql = compileFunnel(spec, ctx, range, windowMs);
-  const rows = await ctx.execute(sql);
+  const rows = (await Promise.all(sql.map((q) => ctx.execute(q)))).flat();
 
   // Aggregate rows into per-breakdown step counts.
   const byValue = new Map<string, Map<number, { n: number; dt: number }>>();
@@ -133,12 +142,12 @@ export async function runFunnel(spec: FunnelSpec, ctx: QueryContext): Promise<Fu
     kind: 'funnel',
     windowSeconds: windowMs / 1000,
     steps: shapeSteps(spec, total),
-    sql: [sql],
+    sql,
     range: { from: iso(range.from), to: iso(range.to) },
     summary: '',
   };
 
-  if (spec.breakdown) {
+  if (breakdownProperties(spec.breakdown).length) {
     const limit = spec.breakdownLimit ?? 10;
     const ranked = [...byValue.entries()].sort((a, b) => (b[1].get(1)?.n ?? 0) - (a[1].get(1)?.n ?? 0));
     const top = ranked.slice(0, limit).map(([value, steps]) => ({ value, steps: shapeSteps(spec, steps) }));

@@ -2,7 +2,7 @@
  * Trends: an aggregate of events per time bucket, optionally broken down by a property.
  */
 
-import { breakdownExpr, filtersSql, propertyNumber } from '../sql/filters.ts';
+import { breakdownExpr, breakdownProperties, filtersSql, propertyNumber } from '../sql/filters.ts';
 import { bucketExpr, eventsCte, num, text } from '../sql/source.ts';
 import { type Interval, bucketsBetween, iso, resolveRange } from '../time.ts';
 import type { TrendsSpec } from './schemas.ts';
@@ -65,7 +65,8 @@ export function compileTrendsSeries(spec: TrendsSpec, series: Series, ctx: Query
     events: series.event === '*' ? undefined : [series.event],
     filters: spec.filters,
   });
-  const bd = spec.breakdown ? breakdownExpr(spec.breakdown, d) : "''";
+  const breakdowns = breakdownProperties(spec.breakdown);
+  const bd = breakdowns.length ? breakdownExpr(breakdowns, d) : "''";
   const val = series.property ? propertyNumber(series.property, d) : 'NULL';
   const inner = `SELECT ${bucketExpr(d, 'ts_ms', interval, spec.utcOffsetMinutes)} AS bucket, ${bd} AS bd, pid, session_id, ${val} AS val
     FROM ev WHERE ${filtersSql(series.filters, d)}`;
@@ -123,11 +124,12 @@ export async function runTrends(spec: TrendsSpec, ctx: QueryContext): Promise<Tr
       key === 'Other'
         ? ranked.filter((r) => !keep.has(r.bd)).reduce((a, r) => a + r.value, 0)
         : (ranked.find((r) => r.bd === key)?.value ?? 0);
-    const keys = spec.breakdown ? [...keep, ...(byValue.has('Other') ? ['Other'] : [])] : [''];
+    const hasBreakdown = breakdownProperties(spec.breakdown).length > 0;
+    const keys = hasBreakdown ? [...keep, ...(byValue.has('Other') ? ['Other'] : [])] : [''];
     for (const key of keys) {
       out.push({
-        label: spec.breakdown ? `${label} · ${key}` : label,
-        breakdown: spec.breakdown ? key : null,
+        label: hasBreakdown ? `${label} · ${key}` : label,
+        breakdown: hasBreakdown ? key : null,
         values: byValue.get(key) ?? new Array<number>(buckets.length).fill(0),
         total: totalFor(key),
       });
