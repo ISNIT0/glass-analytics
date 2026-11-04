@@ -1,0 +1,22 @@
+{
+  "project": "demo",
+  "key": "signup-by-source",
+  "name": "Signup by source",
+  "description": "Which traffic sources turn visitors into accounts.",
+  "kind": "funnel",
+  "spec": {
+    "steps": [
+      {
+        "event": "$pageview"
+      },
+      {
+        "event": "signup_completed"
+      }
+    ],
+    "window": "1d",
+    "breakdown": "utm_source",
+    "from": "-30d"
+  },
+  "updatedAt": "2026-11-04T21:04:44.042Z",
+  "dashboard": "http://127.0.0.1:55244/app#/insights/signup-by-source?project=demo"
+}

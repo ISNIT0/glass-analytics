@@ -1,0 +1,194 @@
+{
+  "project": "demo",
+  "id": "user-maya",
+  "identified": true,
+  "properties": {
+    "plan": "team"
+  },
+  "firstSeen": "2026-11-04T21:04:56.032Z",
+  "lastSeen": "2026-11-04T21:05:06.140Z",
+  "devices": [
+    "01a1a860-e410-7a90-9963-0f9700bb02e6"
+  ],
+  "recentEvents": [
+    {
+      "event": "upgrade_clicked",
+      "time": "2026-11-04T21:05:01.872Z",
+      "path": "/app",
+      "session": "01a1a860-e417-7f72-ab7c-b12f5c1c0c74",
+      "properties": {}
+    },
+    {
+      "event": "$click",
+      "time": "2026-11-04T21:05:01.872Z",
+      "path": "/app",
+      "session": "01a1a860-e417-7f72-ab7c-b12f5c1c0c74",
+      "properties": {
+        "tag": "button",
+        "text": "Upgrade now",
+        "id": "pay"
+      }
+    },
+    {
+      "event": "upgrade_clicked",
+      "time": "2026-11-04T21:05:01.688Z",
+      "path": "/app",
+      "session": "01a1a860-e417-7f72-ab7c-b12f5c1c0c74",
+      "properties": {}
+    },
+    {
+      "event": "$click",
+      "time": "2026-11-04T21:05:01.688Z",
+      "path": "/app",
+      "session": "01a1a860-e417-7f72-ab7c-b12f5c1c0c74",
+      "properties": {
+        "tag": "button",
+        "text": "Upgrade now",
+        "id": "pay"
+      }
+    },
+    {
+      "event": "upgrade_clicked",
+      "time": "2026-11-04T21:05:01.506Z",
+      "path": "/app",
+      "session": "01a1a860-e417-7f72-ab7c-b12f5c1c0c74",
+      "properties": {}
+    },
+    {
+      "event": "$click",
+      "time": "2026-11-04T21:05:01.506Z",
+      "path": "/app",
+      "session": "01a1a860-e417-7f72-ab7c-b12f5c1c0c74",
+      "properties": {
+        "tag": "button",
+        "text": "Upgrade now",
+        "id": "pay"
+      }
+    },
+    {
+      "event": "upgrade_clicked",
+      "time": "2026-11-04T21:05:01.323Z",
+      "path": "/app",
+      "session": "01a1a860-e417-7f72-ab7c-b12f5c1c0c74",
+      "properties": {}
+    },
+    {
+      "event": "$click",
+      "time": "2026-11-04T21:05:01.323Z",
+      "path": "/app",
+      "session": "01a1a860-e417-7f72-ab7c-b12f5c1c0c74",
+      "properties": {
+        "tag": "button",
+        "text": "Upgrade now",
+        "id": "pay"
+      }
+    },
+    {
+      "event": "upgrade_clicked",
+      "time": "2026-11-04T21:05:01.139Z",
+      "path": "/app",
+      "session": "01a1a860-e417-7f72-ab7c-b12f5c1c0c74",
+      "properties": {}
+    },
+    {
+      "event": "$click",
+      "time": "2026-11-04T21:05:01.139Z",
+      "path": "/app",
+      "session": "01a1a860-e417-7f72-ab7c-b12f5c1c0c74",
+      "properties": {
+        "tag": "button",
+        "text": "Upgrade now",
+        "id": "pay"
+      }
+    },
+    {
+      "event": "$exception",
+      "time": "2026-11-04T21:04:59.111Z",
+      "path": "/app",
+      "session": "01a1a860-e417-7f72-ab7c-b12f5c1c0c74",
+      "properties": {
+        "type": "TypeError",
+        "message": "Cannot read properties of undefined (reading 'number')",
+        "stack": "TypeError: Cannot read properties of undefined (reading 'number')\n    at HTMLButtonElement.<anonymous> (http://inkwell.example/app:24:19)",
+        "source": "http://inkwell.example/app",
+        "line": 24,
+        "column": 19
+      }
+    },
+    {
+      "event": "upgrade_clicked",
+      "time": "2026-11-04T21:04:59.109Z",
+      "path": "/app",
+      "session": "01a1a860-e417-7f72-ab7c-b12f5c1c0c74",
+      "properties": {}
+    },
+    {
+      "event": "$click",
+      "time": "2026-11-04T21:04:59.109Z",
+      "path": "/app",
+      "session": "01a1a860-e417-7f72-ab7c-b12f5c1c0c74",
+      "properties": {
+        "tag": "button",
+        "text": "Upgrade now",
+        "id": "pay"
+      }
+    },
+    {
+      "event": "$pageview",
+      "time": "2026-11-04T21:04:56.057Z",
+      "path": "/app",
+      "session": "01a1a860-e417-7f72-ab7c-b12f5c1c0c74",
+      "properties": {}
+    },
+    {
+      "event": "signup_completed",
+      "time": "2026-11-04T21:04:56.032Z",
+      "path": "/signup",
+      "session": "01a1a860-e417-7f72-ab7c-b12f5c1c0c74",
+      "properties": {
+        "plan": "team"
+      }
+    },
+    {
+      "event": "$identify",
+      "time": "2026-11-04T21:04:56.032Z",
+      "path": "/signup",
+      "session": "01a1a860-e417-7f72-ab7c-b12f5c1c0c74",
+      "properties": {
+        "$set": {
+          "plan": "team"
+        }
+      }
+    },
+    {
+      "event": "$click",
+      "time": "2026-11-04T21:04:56.031Z",
+      "path": "/signup",
+      "session": "01a1a860-e417-7f72-ab7c-b12f5c1c0c74",
+      "properties": {
+        "tag": "button",
+        "text": "Create account"
+      }
+    },
+    {
+      "event": "$pageview",
+      "time": "2026-11-04T21:04:51.729Z",
+      "path": "/signup",
+      "session": "01a1a860-e417-7f72-ab7c-b12f5c1c0c74",
+      "properties": {}
+    }
+  ],
+  "replays": [
+    {
+      "session": "01a1a860-e417-7f72-ab7c-b12f5c1c0c74",
+      "started": "2026-11-04T21:04:44.590Z",
+      "errors": 1,
+      "url": "http://inkwell.example/"
+    }
+  ],
+  "summary": "Identified person \"user-maya\": 18 events in 90 days, 1 recorded sessions.",
+  "sql": [
+    "WITH ev AS (\n  SELECT e.*,\n    CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid\n  FROM events e\n  LEFT JOIN (\n    SELECT distinct_id, MIN(person_id) AS person_id\n    FROM identities\n    WHERE project = 'demo'\n    GROUP BY distinct_id\n  ) i ON i.distinct_id = e.distinct_id\n  WHERE e.project = 'demo'\n    AND e.ts_ms >= 1786050448831\n    AND e.ts_ms < 1793826508831\n)\nSELECT event, ts_ms, path, session_id, props FROM ev WHERE pid = 'user-maya' OR distinct_id = 'user-maya'\nORDER BY ts_ms DESC LIMIT 100"
+  ],
+  "dashboard": "http://127.0.0.1:55244/app#/users/user-maya?project=demo"
+}

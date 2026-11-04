@@ -1,0 +1,79 @@
+{
+  "project": "demo",
+  "id": "user-sam",
+  "identified": true,
+  "properties": {
+    "plan": "free"
+  },
+  "firstSeen": "2026-11-04T21:04:54.422Z",
+  "lastSeen": "2026-11-04T21:04:59.445Z",
+  "devices": [
+    "01a1a860-e410-7de7-8ed9-d346dcc136dc"
+  ],
+  "recentEvents": [
+    {
+      "event": "$pageview",
+      "time": "2026-11-04T21:04:54.444Z",
+      "path": "/app",
+      "session": "01a1a860-e417-74c4-bf1a-21a6f3d85a70",
+      "properties": {}
+    },
+    {
+      "event": "signup_completed",
+      "time": "2026-11-04T21:04:54.422Z",
+      "path": "/signup",
+      "session": "01a1a860-e417-74c4-bf1a-21a6f3d85a70",
+      "properties": {
+        "plan": "free"
+      }
+    },
+    {
+      "event": "$identify",
+      "time": "2026-11-04T21:04:54.422Z",
+      "path": "/signup",
+      "session": "01a1a860-e417-74c4-bf1a-21a6f3d85a70",
+      "properties": {
+        "$set": {
+          "plan": "free"
+        }
+      }
+    },
+    {
+      "event": "$click",
+      "time": "2026-11-04T21:04:54.420Z",
+      "path": "/signup",
+      "session": "01a1a860-e417-74c4-bf1a-21a6f3d85a70",
+      "properties": {
+        "tag": "button",
+        "text": "Create account"
+      }
+    },
+    {
+      "event": "$pageview",
+      "time": "2026-11-04T21:04:50.205Z",
+      "path": "/signup",
+      "session": "01a1a860-e417-74c4-bf1a-21a6f3d85a70",
+      "properties": {}
+    },
+    {
+      "event": "$pageview",
+      "time": "2026-11-04T21:04:44.569Z",
+      "path": "/pricing",
+      "session": "01a1a860-e417-74c4-bf1a-21a6f3d85a70",
+      "properties": {}
+    }
+  ],
+  "replays": [
+    {
+      "session": "01a1a860-e417-74c4-bf1a-21a6f3d85a70",
+      "started": "2026-11-04T21:04:44.590Z",
+      "errors": 0,
+      "url": "http://inkwell.example/pricing"
+    }
+  ],
+  "summary": "Identified person \"user-sam\": 6 events in 90 days, 1 recorded sessions.",
+  "sql": [
+    "WITH ev AS (\n  SELECT e.*,\n    CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid\n  FROM events e\n  LEFT JOIN (\n    SELECT distinct_id, MIN(person_id) AS person_id\n    FROM identities\n    WHERE project = 'demo'\n    GROUP BY distinct_id\n  ) i ON i.distinct_id = e.distinct_id\n  WHERE e.project = 'demo'\n    AND e.ts_ms >= 1786050449561\n    AND e.ts_ms < 1793826509561\n)\nSELECT event, ts_ms, path, session_id, props FROM ev WHERE pid = 'user-sam' OR distinct_id = 'user-sam'\nORDER BY ts_ms DESC LIMIT 100"
+  ],
+  "dashboard": "http://127.0.0.1:55244/app#/users/user-sam?project=demo"
+}

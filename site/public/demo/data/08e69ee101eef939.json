@@ -1,0 +1,38 @@
+{
+  "project": "demo",
+  "event": "$exposure",
+  "sampled": 500,
+  "lastSeen": "2026-11-04T18:52:58.324Z",
+  "description": "",
+  "owner": "",
+  "properties": [
+    {
+      "name": "flag",
+      "types": [
+        "string"
+      ],
+      "coverage": 1,
+      "examples": [
+        "pricing-page-v2",
+        "onboarding-checklist"
+      ],
+      "description": ""
+    },
+    {
+      "name": "variant",
+      "types": [
+        "string"
+      ],
+      "coverage": 1,
+      "examples": [
+        "test",
+        "control"
+      ],
+      "description": ""
+    }
+  ],
+  "summary": "\"$exposure\": 2 properties across the latest 500 events.",
+  "sql": [
+    "SELECT props, ts_ms FROM events\nWHERE project = 'demo' AND event = '$exposure' AND ts_ms >= 1791234480542\nORDER BY ts_ms DESC LIMIT 500"
+  ]
+}

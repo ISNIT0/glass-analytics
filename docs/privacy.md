@@ -1,6 +1,6 @@
 # Privacy
 
-Glass runs entirely in your Cloudflare account. There is no Glass service: events, people, recordings and keys live in your D1 database, your R2 buckets and your Worker's secrets. Nothing is sent to the Glass project or to any third party, and neither the dashboard nor the landing page loads third-party resources.
+Glass runs entirely in your Cloudflare account. There is no Glass service: events, people, recordings and keys live in your D1 database, your R2 buckets and your Worker's secrets. Nothing is sent to the Glass project or to any third party, and the dashboard and SDK load no third-party resources. (The Glass website, which is separate from your deployment, uses the Meta Pixel to measure its own ads.)
 
 ## What is stored
 

@@ -1,0 +1,760 @@
+{
+  "kind": "web",
+  "interval": "day",
+  "totals": {
+    "visitors": 5366,
+    "pageviews": 14744,
+    "sessions": 6707,
+    "bounceRate": 0.4920232592813478,
+    "avgSessionSeconds": 57.003988817653195,
+    "viewsPerSession": 2.198300283286119
+  },
+  "previous": {
+    "visitors": 0,
+    "pageviews": 0,
+    "sessions": 0,
+    "bounceRate": 0,
+    "avgSessionSeconds": 0,
+    "viewsPerSession": 0
+  },
+  "timeseries": {
+    "buckets": [
+      1785974400000,
+      1786060800000,
+      1786147200000,
+      1786233600000,
+      1786320000000,
+      1786406400000,
+      1786492800000,
+      1786579200000,
+      1786665600000,
+      1786752000000,
+      1786838400000,
+      1786924800000,
+      1787011200000,
+      1787097600000,
+      1787184000000,
+      1787270400000,
+      1787356800000,
+      1787443200000,
+      1787529600000,
+      1787616000000,
+      1787702400000,
+      1787788800000,
+      1787875200000,
+      1787961600000,
+      1788048000000,
+      1788134400000,
+      1788220800000,
+      1788307200000,
+      1788393600000,
+      1788480000000,
+      1788566400000,
+      1788652800000,
+      1788739200000,
+      1788825600000,
+      1788912000000,
+      1788998400000,
+      1789084800000,
+      1789171200000,
+      1789257600000,
+      1789344000000,
+      1789430400000,
+      1789516800000,
+      1789603200000,
+      1789689600000,
+      1789776000000,
+      1789862400000,
+      1789948800000,
+      1790035200000,
+      1790121600000,
+      1790208000000,
+      1790294400000,
+      1790380800000,
+      1790467200000,
+      1790553600000,
+      1790640000000,
+      1790726400000,
+      1790812800000,
+      1790899200000,
+      1790985600000,
+      1791072000000,
+      1791158400000,
+      1791244800000,
+      1791331200000,
+      1791417600000,
+      1791504000000,
+      1791590400000,
+      1791676800000,
+      1791763200000,
+      1791849600000,
+      1791936000000,
+      1792022400000,
+      1792108800000,
+      1792195200000,
+      1792281600000,
+      1792368000000,
+      1792454400000,
+      1792540800000,
+      1792627200000,
+      1792713600000,
+      1792800000000,
+      1792886400000,
+      1792972800000,
+      1793059200000,
+      1793145600000,
+      1793232000000,
+      1793318400000,
+      1793404800000,
+      1793491200000,
+      1793577600000,
+      1793664000000,
+      1793750400000
+    ],
+    "visitors": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      46,
+      51,
+      55,
+      32,
+      30,
+      52,
+      51,
+      59,
+      49,
+      48,
+      38,
+      39,
+      64,
+      54,
+      53,
+      60,
+      63,
+      38,
+      49,
+      76,
+      73,
+      79,
+      62,
+      74,
+      48,
+      53,
+      84,
+      86,
+      92,
+      81,
+      80,
+      53,
+      47,
+      77,
+      100,
+      77,
+      104,
+      102,
+      67,
+      68,
+      99,
+      109,
+      102,
+      104,
+      106,
+      73,
+      78,
+      110,
+      251,
+      172,
+      105,
+      125,
+      84,
+      77,
+      108,
+      115,
+      132,
+      130,
+      140,
+      78,
+      102,
+      136,
+      145,
+      128,
+      139,
+      130,
+      97,
+      95,
+      156,
+      137
+    ],
+    "pageviews": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      107,
+      106,
+      145,
+      65,
+      74,
+      132,
+      142,
+      137,
+      119,
+      120,
+      103,
+      86,
+      147,
+      131,
+      141,
+      155,
+      127,
+      87,
+      119,
+      181,
+      171,
+      209,
+      152,
+      211,
+      127,
+      129,
+      229,
+      215,
+      229,
+      174,
+      199,
+      140,
+      119,
+      184,
+      228,
+      192,
+      249,
+      239,
+      137,
+      164,
+      249,
+      253,
+      244,
+      231,
+      233,
+      162,
+      166,
+      278,
+      606,
+      401,
+      225,
+      290,
+      174,
+      153,
+      234,
+      286,
+      339,
+      279,
+      317,
+      171,
+      202,
+      290,
+      298,
+      288,
+      316,
+      312,
+      203,
+      192,
+      352,
+      306
+    ]
+  },
+  "breakdowns": {
+    "pages": [
+      {
+        "value": "/",
+        "visitors": 2895,
+        "count": 3479
+      },
+      {
+        "value": "/pricing",
+        "visitors": 2050,
+        "count": 2717
+      },
+      {
+        "value": "/templates",
+        "visitors": 1527,
+        "count": 1798
+      },
+      {
+        "value": "/features/focus-mode",
+        "visitors": 1211,
+        "count": 1387
+      },
+      {
+        "value": "/blog/writing-every-day",
+        "visitors": 1105,
+        "count": 1201
+      },
+      {
+        "value": "/docs",
+        "visitors": 1034,
+        "count": 1163
+      },
+      {
+        "value": "/changelog",
+        "visitors": 755,
+        "count": 810
+      },
+      {
+        "value": "/app",
+        "visitors": 463,
+        "count": 1343
+      },
+      {
+        "value": "/blog/markdown-for-writers",
+        "visitors": 442,
+        "count": 442
+      },
+      {
+        "value": "/about",
+        "visitors": 383,
+        "count": 402
+      }
+    ],
+    "entry_pages": [
+      {
+        "value": "/",
+        "visitors": 2355,
+        "count": 2355
+      },
+      {
+        "value": "/blog/writing-every-day",
+        "visitors": 674,
+        "count": 674
+      },
+      {
+        "value": "/templates",
+        "visitors": 502,
+        "count": 502
+      },
+      {
+        "value": "/pricing",
+        "visitors": 484,
+        "count": 484
+      },
+      {
+        "value": "/app",
+        "visitors": 461,
+        "count": 1341
+      },
+      {
+        "value": "/blog/markdown-for-writers",
+        "visitors": 442,
+        "count": 442
+      },
+      {
+        "value": "/features/focus-mode",
+        "visitors": 371,
+        "count": 371
+      },
+      {
+        "value": "/docs",
+        "visitors": 318,
+        "count": 318
+      },
+      {
+        "value": "/changelog",
+        "visitors": 219,
+        "count": 219
+      },
+      {
+        "value": "/signup",
+        "visitors": 1,
+        "count": 1
+      }
+    ],
+    "exit_pages": [
+      {
+        "value": "/",
+        "visitors": 1330,
+        "count": 1330
+      },
+      {
+        "value": "/pricing",
+        "visitors": 1055,
+        "count": 1055
+      },
+      {
+        "value": "/templates",
+        "visitors": 767,
+        "count": 767
+      },
+      {
+        "value": "/features/focus-mode",
+        "visitors": 586,
+        "count": 586
+      },
+      {
+        "value": "/blog/writing-every-day",
+        "visitors": 476,
+        "count": 476
+      },
+      {
+        "value": "/docs",
+        "visitors": 469,
+        "count": 469
+      },
+      {
+        "value": "/app",
+        "visitors": 463,
+        "count": 1343
+      },
+      {
+        "value": "/changelog",
+        "visitors": 349,
+        "count": 349
+      },
+      {
+        "value": "/blog/markdown-for-writers",
+        "visitors": 174,
+        "count": 174
+      },
+      {
+        "value": "/about",
+        "visitors": 158,
+        "count": 158
+      }
+    ],
+    "referrers": [
+      {
+        "value": "Direct / None",
+        "visitors": 1965,
+        "count": 3016
+      },
+      {
+        "value": "google.com",
+        "visitors": 1420,
+        "count": 1420
+      },
+      {
+        "value": "producthunt.com",
+        "visitors": 422,
+        "count": 422
+      },
+      {
+        "value": "news.ycombinator.com",
+        "visitors": 406,
+        "count": 406
+      },
+      {
+        "value": "reddit.com",
+        "visitors": 328,
+        "count": 328
+      },
+      {
+        "value": "t.co",
+        "visitors": 315,
+        "count": 315
+      },
+      {
+        "value": "facebook.com",
+        "visitors": 282,
+        "count": 282
+      },
+      {
+        "value": "duckduckgo.com",
+        "visitors": 200,
+        "count": 200
+      },
+      {
+        "value": "github.com",
+        "visitors": 168,
+        "count": 168
+      },
+      {
+        "value": "bing.com",
+        "visitors": 150,
+        "count": 150
+      }
+    ],
+    "utm_source": [
+      {
+        "value": "(none)",
+        "visitors": 4124,
+        "count": 5325
+      },
+      {
+        "value": "producthunt",
+        "visitors": 422,
+        "count": 422
+      },
+      {
+        "value": "newsletter",
+        "visitors": 363,
+        "count": 363
+      },
+      {
+        "value": "twitter",
+        "visitors": 315,
+        "count": 315
+      },
+      {
+        "value": "meta",
+        "visitors": 282,
+        "count": 282
+      }
+    ],
+    "utm_medium": [
+      {
+        "value": "(none)",
+        "visitors": 4124,
+        "count": 5325
+      },
+      {
+        "value": "referral",
+        "visitors": 422,
+        "count": 422
+      },
+      {
+        "value": "email",
+        "visitors": 363,
+        "count": 363
+      },
+      {
+        "value": "social",
+        "visitors": 315,
+        "count": 315
+      },
+      {
+        "value": "paid",
+        "visitors": 282,
+        "count": 282
+      }
+    ],
+    "utm_campaign": [
+      {
+        "value": "(none)",
+        "visitors": 4498,
+        "count": 5747
+      },
+      {
+        "value": "october-digest",
+        "visitors": 363,
+        "count": 363
+      },
+      {
+        "value": "launch-week",
+        "visitors": 315,
+        "count": 315
+      },
+      {
+        "value": "autumn-writers",
+        "visitors": 282,
+        "count": 282
+      }
+    ],
+    "countries": [
+      {
+        "value": "US",
+        "visitors": 1633,
+        "count": 4462
+      },
+      {
+        "value": "GB",
+        "visitors": 982,
+        "count": 2742
+      },
+      {
+        "value": "DE",
+        "visitors": 489,
+        "count": 1397
+      },
+      {
+        "value": "IN",
+        "visitors": 376,
+        "count": 1029
+      },
+      {
+        "value": "CA",
+        "visitors": 336,
+        "count": 882
+      },
+      {
+        "value": "FR",
+        "visitors": 325,
+        "count": 886
+      },
+      {
+        "value": "NL",
+        "visitors": 223,
+        "count": 638
+      },
+      {
+        "value": "AU",
+        "visitors": 203,
+        "count": 562
+      },
+      {
+        "value": "BR",
+        "visitors": 164,
+        "count": 421
+      },
+      {
+        "value": "SE",
+        "visitors": 161,
+        "count": 448
+      }
+    ],
+    "devices": [
+      {
+        "value": "desktop",
+        "visitors": 3427,
+        "count": 9394
+      },
+      {
+        "value": "mobile",
+        "visitors": 1939,
+        "count": 5350
+      }
+    ],
+    "browsers": [
+      {
+        "value": "Chrome",
+        "visitors": 2442,
+        "count": 6751
+      },
+      {
+        "value": "Safari",
+        "visitors": 1827,
+        "count": 5086
+      },
+      {
+        "value": "Edge",
+        "visitors": 651,
+        "count": 1719
+      },
+      {
+        "value": "Firefox",
+        "visitors": 446,
+        "count": 1188
+      }
+    ],
+    "os": [
+      {
+        "value": "macOS",
+        "visitors": 2330,
+        "count": 6487
+      },
+      {
+        "value": "iOS",
+        "visitors": 1354,
+        "count": 3757
+      },
+      {
+        "value": "Windows",
+        "visitors": 1097,
+        "count": 2907
+      },
+      {
+        "value": "Android",
+        "visitors": 585,
+        "count": 1593
+      }
+    ],
+    "errors": [
+      {
+        "value": "Cannot read properties of undefined (reading 'wordCount')",
+        "visitors": 46,
+        "count": 48
+      },
+      {
+        "value": "Failed to fetch",
+        "visitors": 14,
+        "count": 14
+      },
+      {
+        "value": "crypto.randomUUID is not a function",
+        "visitors": 7,
+        "count": 7
+      },
+      {
+        "value": "ResizeObserver loop limit exceeded",
+        "visitors": 6,
+        "count": 6
+      },
+      {
+        "value": "Cannot read properties of undefined (reading 'number')",
+        "visitors": 1,
+        "count": 1
+      }
+    ]
+  },
+  "vitals": {
+    "CLS": {
+      "p75": 0.128,
+      "samples": 998
+    },
+    "FCP": {
+      "p75": 1861.781,
+      "samples": 977
+    },
+    "LCP": {
+      "p75": 2877.438,
+      "samples": 1027
+    },
+    "INP": {
+      "p75": 283.933,
+      "samples": 997
+    },
+    "TTFB": {
+      "p75": 729.152,
+      "samples": 1001
+    }
+  },
+  "sql": [
+    "WITH ev AS (\n  SELECT e.*,\n    CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid\n  FROM events e\n  LEFT JOIN (\n    SELECT distinct_id, MIN(person_id) AS person_id\n    FROM identities\n    WHERE project = 'demo'\n    GROUP BY distinct_id\n  ) i ON i.distinct_id = e.distinct_id\n  WHERE e.project = 'demo'\n    AND e.ts_ms >= 1786050413011\n    AND e.ts_ms < 1793826413011\n    AND e.event IN ('$pageview', '$pageleave')\n),\npv AS (SELECT distinct_id FROM ev WHERE event = '$pageview'),\ns AS (\n  SELECT session_id, MIN(ts_ms) AS start_ms, MAX(ts_ms) AS end_ms,\n    SUM(CASE WHEN event = '$pageview' THEN 1 ELSE 0 END) AS pvs\n  FROM ev GROUP BY session_id\n)\nSELECT\n  (SELECT COUNT(DISTINCT distinct_id) FROM pv) AS visitors,\n  (SELECT COUNT(*) FROM pv) AS pageviews,\n  (SELECT COUNT(*) FROM s WHERE pvs > 0) AS sessions,\n  (SELECT COUNT(*) FROM s WHERE pvs = 1) AS bounces,\n  (SELECT SUM(end_ms - start_ms) FROM s WHERE pvs > 0) AS duration_ms",
+    "WITH ev AS (\n  SELECT e.*,\n    CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid\n  FROM events e\n  LEFT JOIN (\n    SELECT distinct_id, MIN(person_id) AS person_id\n    FROM identities\n    WHERE project = 'demo'\n    GROUP BY distinct_id\n  ) i ON i.distinct_id = e.distinct_id\n  WHERE e.project = 'demo'\n    AND e.ts_ms >= 1778274413011\n    AND e.ts_ms < 1786050413011\n    AND e.event IN ('$pageview', '$pageleave')\n),\npv AS (SELECT distinct_id FROM ev WHERE event = '$pageview'),\ns AS (\n  SELECT session_id, MIN(ts_ms) AS start_ms, MAX(ts_ms) AS end_ms,\n    SUM(CASE WHEN event = '$pageview' THEN 1 ELSE 0 END) AS pvs\n  FROM ev GROUP BY session_id\n)\nSELECT\n  (SELECT COUNT(DISTINCT distinct_id) FROM pv) AS visitors,\n  (SELECT COUNT(*) FROM pv) AS pageviews,\n  (SELECT COUNT(*) FROM s WHERE pvs > 0) AS sessions,\n  (SELECT COUNT(*) FROM s WHERE pvs = 1) AS bounces,\n  (SELECT SUM(end_ms - start_ms) FROM s WHERE pvs > 0) AS duration_ms",
+    "WITH ev AS (\n  SELECT e.*,\n    CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid\n  FROM events e\n  LEFT JOIN (\n    SELECT distinct_id, MIN(person_id) AS person_id\n    FROM identities\n    WHERE project = 'demo'\n    GROUP BY distinct_id\n  ) i ON i.distinct_id = e.distinct_id\n  WHERE e.project = 'demo'\n    AND e.ts_ms >= 1786050413011\n    AND e.ts_ms < 1793826413011\n    AND e.event IN ('$pageview')\n)\nSELECT bucket, COUNT(DISTINCT distinct_id) AS visitors, COUNT(*) AS pageviews\nFROM (SELECT ((ts_ms / 86400000) * 86400000) AS bucket, distinct_id FROM ev) t\nGROUP BY bucket ORDER BY bucket LIMIT 5000",
+    "WITH ev AS (\n  SELECT e.*,\n    CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid\n  FROM events e\n  LEFT JOIN (\n    SELECT distinct_id, MIN(person_id) AS person_id\n    FROM identities\n    WHERE project = 'demo'\n    GROUP BY distinct_id\n  ) i ON i.distinct_id = e.distinct_id\n  WHERE e.project = 'demo'\n    AND e.ts_ms >= 1786050413011\n    AND e.ts_ms < 1793826413011\n    AND e.event IN ('$pageview', '$exception')\n)\nSELECT * FROM (\n  SELECT 'pages' AS dim, val, COUNT(DISTINCT distinct_id) AS visitors, COUNT(*) AS n\n  FROM (SELECT COALESCE(NULLIF(path, ''), '(none)') AS val, distinct_id FROM ev WHERE event = '$pageview') t\n  GROUP BY val ORDER BY visitors DESC, n DESC LIMIT 10\n) pages_t\nUNION ALL\nSELECT * FROM (\n  SELECT 'entry_pages' AS dim, val, COUNT(DISTINCT distinct_id) AS visitors, COUNT(*) AS n\n  FROM (\n    SELECT ev.session_id, MIN(COALESCE(NULLIF(ev.path, ''), '(none)')) AS val, MIN(ev.distinct_id) AS distinct_id\n    FROM (SELECT session_id, MIN(ts_ms) AS t FROM ev WHERE event = '$pageview' GROUP BY session_id) x\n    JOIN ev ON ev.session_id = x.session_id AND ev.ts_ms = x.t AND ev.event = '$pageview'\n    GROUP BY ev.session_id\n  ) t\n  GROUP BY val ORDER BY visitors DESC, n DESC LIMIT 10\n) entry_pages_t\nUNION ALL\nSELECT * FROM (\n  SELECT 'exit_pages' AS dim, val, COUNT(DISTINCT distinct_id) AS visitors, COUNT(*) AS n\n  FROM (\n    SELECT ev.session_id, MIN(COALESCE(NULLIF(ev.path, ''), '(none)')) AS val, MIN(ev.distinct_id) AS distinct_id\n    FROM (SELECT session_id, MAX(ts_ms) AS t FROM ev WHERE event = '$pageview' GROUP BY session_id) x\n    JOIN ev ON ev.session_id = x.session_id AND ev.ts_ms = x.t AND ev.event = '$pageview'\n    GROUP BY ev.session_id\n  ) t\n  GROUP BY val ORDER BY visitors DESC, n DESC LIMIT 10\n) exit_pages_t\nUNION ALL\nSELECT * FROM (\n  SELECT 'referrers' AS dim, val, COUNT(DISTINCT distinct_id) AS visitors, COUNT(*) AS n\n  FROM (\n    SELECT ev.session_id, MIN(COALESCE(NULLIF(ev.referrer_host, ''), 'Direct / None')) AS val, MIN(ev.distinct_id) AS distinct_id\n    FROM (SELECT session_id, MIN(ts_ms) AS t FROM ev WHERE event = '$pageview' GROUP BY session_id) x\n    JOIN ev ON ev.session_id = x.session_id AND ev.ts_ms = x.t AND ev.event = '$pageview'\n    GROUP BY ev.session_id\n  ) t\n  GROUP BY val ORDER BY visitors DESC, n DESC LIMIT 10\n) referrers_t\nUNION ALL\nSELECT * FROM (\n  SELECT 'utm_source' AS dim, val, COUNT(DISTINCT distinct_id) AS visitors, COUNT(*) AS n\n  FROM (\n    SELECT ev.session_id, MIN(COALESCE(NULLIF(ev.utm_source, ''), '(none)')) AS val, MIN(ev.distinct_id) AS distinct_id\n    FROM (SELECT session_id, MIN(ts_ms) AS t FROM ev WHERE event = '$pageview' GROUP BY session_id) x\n    JOIN ev ON ev.session_id = x.session_id AND ev.ts_ms = x.t AND ev.event = '$pageview'\n    GROUP BY ev.session_id\n  ) t\n  GROUP BY val ORDER BY visitors DESC, n DESC LIMIT 10\n) utm_source_t",
+    "WITH ev AS (\n  SELECT e.*,\n    CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid\n  FROM events e\n  LEFT JOIN (\n    SELECT distinct_id, MIN(person_id) AS person_id\n    FROM identities\n    WHERE project = 'demo'\n    GROUP BY distinct_id\n  ) i ON i.distinct_id = e.distinct_id\n  WHERE e.project = 'demo'\n    AND e.ts_ms >= 1786050413011\n    AND e.ts_ms < 1793826413011\n    AND e.event IN ('$pageview', '$exception')\n)\nSELECT * FROM (\n  SELECT 'utm_medium' AS dim, val, COUNT(DISTINCT distinct_id) AS visitors, COUNT(*) AS n\n  FROM (\n    SELECT ev.session_id, MIN(COALESCE(NULLIF(ev.utm_medium, ''), '(none)')) AS val, MIN(ev.distinct_id) AS distinct_id\n    FROM (SELECT session_id, MIN(ts_ms) AS t FROM ev WHERE event = '$pageview' GROUP BY session_id) x\n    JOIN ev ON ev.session_id = x.session_id AND ev.ts_ms = x.t AND ev.event = '$pageview'\n    GROUP BY ev.session_id\n  ) t\n  GROUP BY val ORDER BY visitors DESC, n DESC LIMIT 10\n) utm_medium_t\nUNION ALL\nSELECT * FROM (\n  SELECT 'utm_campaign' AS dim, val, COUNT(DISTINCT distinct_id) AS visitors, COUNT(*) AS n\n  FROM (\n    SELECT ev.session_id, MIN(COALESCE(NULLIF(ev.utm_campaign, ''), '(none)')) AS val, MIN(ev.distinct_id) AS distinct_id\n    FROM (SELECT session_id, MIN(ts_ms) AS t FROM ev WHERE event = '$pageview' GROUP BY session_id) x\n    JOIN ev ON ev.session_id = x.session_id AND ev.ts_ms = x.t AND ev.event = '$pageview'\n    GROUP BY ev.session_id\n  ) t\n  GROUP BY val ORDER BY visitors DESC, n DESC LIMIT 10\n) utm_campaign_t\nUNION ALL\nSELECT * FROM (\n  SELECT 'countries' AS dim, val, COUNT(DISTINCT distinct_id) AS visitors, COUNT(*) AS n\n  FROM (SELECT COALESCE(NULLIF(country, ''), '(none)') AS val, distinct_id FROM ev WHERE event = '$pageview') t\n  GROUP BY val ORDER BY visitors DESC, n DESC LIMIT 10\n) countries_t\nUNION ALL\nSELECT * FROM (\n  SELECT 'devices' AS dim, val, COUNT(DISTINCT distinct_id) AS visitors, COUNT(*) AS n\n  FROM (SELECT COALESCE(NULLIF(device, ''), '(none)') AS val, distinct_id FROM ev WHERE event = '$pageview') t\n  GROUP BY val ORDER BY visitors DESC, n DESC LIMIT 10\n) devices_t\nUNION ALL\nSELECT * FROM (\n  SELECT 'browsers' AS dim, val, COUNT(DISTINCT distinct_id) AS visitors, COUNT(*) AS n\n  FROM (SELECT COALESCE(NULLIF(browser, ''), '(none)') AS val, distinct_id FROM ev WHERE event = '$pageview') t\n  GROUP BY val ORDER BY visitors DESC, n DESC LIMIT 10\n) browsers_t",
+    "WITH ev AS (\n  SELECT e.*,\n    CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid\n  FROM events e\n  LEFT JOIN (\n    SELECT distinct_id, MIN(person_id) AS person_id\n    FROM identities\n    WHERE project = 'demo'\n    GROUP BY distinct_id\n  ) i ON i.distinct_id = e.distinct_id\n  WHERE e.project = 'demo'\n    AND e.ts_ms >= 1786050413011\n    AND e.ts_ms < 1793826413011\n    AND e.event IN ('$pageview', '$exception')\n)\nSELECT * FROM (\n  SELECT 'os' AS dim, val, COUNT(DISTINCT distinct_id) AS visitors, COUNT(*) AS n\n  FROM (SELECT COALESCE(NULLIF(os, ''), '(none)') AS val, distinct_id FROM ev WHERE event = '$pageview') t\n  GROUP BY val ORDER BY visitors DESC, n DESC LIMIT 10\n) os_t\nUNION ALL\nSELECT * FROM (\n  SELECT 'errors' AS dim, val, COUNT(DISTINCT distinct_id) AS visitors, COUNT(*) AS n\n  FROM (SELECT COALESCE(NULLIF((CASE json_type(props, '$.\"message\"') WHEN 'true' THEN 'true' WHEN 'false' THEN 'false' WHEN 'null' THEN NULL ELSE CAST(json_extract(props, '$.\"message\"') AS TEXT) END), ''), '(none)') AS val, distinct_id FROM ev WHERE event = '$exception') t\n  GROUP BY val ORDER BY visitors DESC, n DESC LIMIT 10\n) errors_t",
+    "WITH ev AS (\n  SELECT e.*,\n    CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid\n  FROM events e\n  LEFT JOIN (\n    SELECT distinct_id, MIN(person_id) AS person_id\n    FROM identities\n    WHERE project = 'demo'\n    GROUP BY distinct_id\n  ) i ON i.distinct_id = e.distinct_id\n  WHERE e.project = 'demo'\n    AND e.ts_ms >= 1786050413011\n    AND e.ts_ms < 1793826413011\n    AND e.event IN ('$web_vitals')\n)\nSELECT (CASE json_type(props, '$.\"metric\"') WHEN 'true' THEN 'true' WHEN 'false' THEN 'false' WHEN 'null' THEN NULL ELSE CAST(json_extract(props, '$.\"metric\"') AS TEXT) END) AS metric, (CASE WHEN json_type(props, '$.\"value\"') IN ('integer', 'real') THEN json_extract(props, '$.\"value\"') END) AS val\nFROM ev\nORDER BY ts_ms DESC\nLIMIT 5000"
+  ],
+  "range": {
+    "from": "2026-08-06T21:06:53.011Z",
+    "to": "2026-11-04T21:06:53.011Z"
+  },
+  "summary": "5,366 visitors, 14,744 pageviews, 6,707 sessions, bounce rate 49.2%. Top page / (2,895 visitors). Top referrer Direct / None.",
+  "project": "demo",
+  "dashboard": "http://127.0.0.1:55244/app#/reports?project=demo&spec=%7B%22from%22%3A%22-90d%22%2C%22filters%22%3A%5B%5D%7D"
+}

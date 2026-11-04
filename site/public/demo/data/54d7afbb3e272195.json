@@ -1,0 +1,40 @@
+{
+  "project": "demo",
+  "event": "signup_completed",
+  "sampled": 370,
+  "lastSeen": "2026-11-04T21:04:56.032Z",
+  "description": "Fired once the account exists and the person is signed in, right after identify().",
+  "owner": "Growth",
+  "properties": [
+    {
+      "name": "plan",
+      "types": [
+        "string"
+      ],
+      "coverage": 1,
+      "examples": [
+        "team",
+        "free",
+        "pro"
+      ],
+      "description": "Chosen plan: free, pro or team."
+    },
+    {
+      "name": "method",
+      "types": [
+        "string"
+      ],
+      "coverage": 0.9945945945945946,
+      "examples": [
+        "email",
+        "github",
+        "google"
+      ],
+      "description": "email, google or github."
+    }
+  ],
+  "summary": "\"signup_completed\": 2 properties across the latest 370 events.",
+  "sql": [
+    "SELECT props, ts_ms FROM events\nWHERE project = 'demo' AND event = 'signup_completed' AND ts_ms >= 1791234482693\nORDER BY ts_ms DESC LIMIT 500"
+  ]
+}

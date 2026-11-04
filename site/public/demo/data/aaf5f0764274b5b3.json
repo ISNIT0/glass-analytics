@@ -1,0 +1,22 @@
+{
+  "project": "demo",
+  "key": "revenue-by-plan",
+  "name": "Revenue by plan",
+  "description": "First-payment revenue per week, by plan.",
+  "kind": "trends",
+  "spec": {
+    "series": [
+      {
+        "event": "subscription_started",
+        "math": "sum",
+        "property": "amount",
+        "label": "Revenue"
+      }
+    ],
+    "interval": "week",
+    "breakdown": "plan",
+    "from": "-56d"
+  },
+  "updatedAt": "2026-11-04T21:04:44.041Z",
+  "dashboard": "http://127.0.0.1:55244/app#/insights/revenue-by-plan?project=demo"
+}

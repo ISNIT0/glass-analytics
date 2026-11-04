@@ -1,0 +1,73 @@
+{
+  "project": "demo",
+  "experiment": {
+    "key": "pricing-page-v2",
+    "flag": "pricing-page-v2",
+    "status": "running",
+    "goal": {
+      "event": "signup_completed"
+    },
+    "secondary": [],
+    "hypothesis": "A shorter pricing page with one highlighted plan lifts signups.",
+    "startedAt": 1792184679531,
+    "endedAt": null,
+    "shippedVariant": null,
+    "createdAt": 1793826279561
+  },
+  "results": {
+    "kind": "experiment",
+    "flag": "pricing-page-v2",
+    "goal": "signup_completed",
+    "variants": [
+      {
+        "variant": "control",
+        "exposures": 338,
+        "conversions": 72,
+        "conversionRate": 0.21301775147928995,
+        "rateInterval": [
+          0.17271876957252802,
+          0.259766919705781
+        ],
+        "vsControl": null,
+        "mean": null
+      },
+      {
+        "variant": "test",
+        "exposures": 353,
+        "conversions": 86,
+        "conversionRate": 0.24362606232294617,
+        "rateInterval": [
+          0.20176081581999164,
+          0.2910113273382051
+        ],
+        "vsControl": {
+          "probabilityToBeatControl": 0.82895,
+          "expectedLift": 0.1528318395301793,
+          "liftInterval": [
+            -0.1324162733560924,
+            0.5037120665309035
+          ]
+        },
+        "mean": null
+      }
+    ],
+    "excludedMultipleVariants": 0,
+    "srm": {
+      "chiSquare": 0.3256150506512301,
+      "pValue": 0.568252584977539,
+      "mismatch": false
+    },
+    "winner": null,
+    "estimatedDaysToSignificance": 308,
+    "sql": [
+      "WITH ev AS (\n  SELECT e.*,\n    CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid\n  FROM events e\n  LEFT JOIN (\n    SELECT distinct_id, MIN(person_id) AS person_id\n    FROM identities\n    WHERE project = 'demo'\n    GROUP BY distinct_id\n  ) i ON i.distinct_id = e.distinct_id\n  WHERE e.project = 'demo'\n    AND e.ts_ms >= 1792184079531\n    AND e.ts_ms < 1793826477644\n    AND e.event IN ('$exposure', 'signup_completed')\n),\nx AS (\n  SELECT pid, MIN(ts_ms) AS t0, MIN((CASE json_type(props, '$.\"variant\"') WHEN 'true' THEN 'true' WHEN 'false' THEN 'false' WHEN 'null' THEN NULL ELSE CAST(json_extract(props, '$.\"variant\"') AS TEXT) END)) AS variant, COUNT(DISTINCT (CASE json_type(props, '$.\"variant\"') WHEN 'true' THEN 'true' WHEN 'false' THEN 'false' WHEN 'null' THEN NULL ELSE CAST(json_extract(props, '$.\"variant\"') AS TEXT) END)) AS nv\n  FROM ev\n  WHERE event = '$exposure' AND (CASE json_type(props, '$.\"flag\"') WHEN 'true' THEN 'true' WHEN 'false' THEN 'false' WHEN 'null' THEN NULL ELSE CAST(json_extract(props, '$.\"flag\"') AS TEXT) END) = 'pricing-page-v2'\n  GROUP BY pid\n),\nxe AS (SELECT pid, t0, variant FROM x WHERE nv = 1),\ng AS (\n  SELECT xe.pid, SUM(0) AS total\n  FROM xe JOIN ev ON ev.pid = xe.pid\n  WHERE ev.event = 'signup_completed' AND ev.ts_ms >= xe.t0 AND 1 = 1\n  GROUP BY xe.pid\n)\nSELECT xe.variant AS variant,\n  COUNT(*) AS exposures,\n  SUM(CASE WHEN g.pid IS NULL THEN 0 ELSE 1 END) AS conversions,\n  SUM(COALESCE(g.total, 0)) AS value_sum,\n  SUM(COALESCE(g.total, 0) * COALESCE(g.total, 0)) AS value_sumsq,\n  MIN(xe.t0) AS first_exposure,\n  (SELECT COUNT(*) FROM x WHERE nv > 1) AS multi\nFROM xe LEFT JOIN g ON g.pid = xe.pid\nGROUP BY xe.variant"
+    ],
+    "range": {
+      "from": "2026-10-16T20:54:39.531Z",
+      "to": "2026-11-04T21:07:57.644Z"
+    },
+    "summary": "control: 72/338 = 21.3% (control); test: 86/353 = 24.4%, 82.9% chance to beat control (lift 15.3%). No winner yet; roughly 308 more days to detect a 10% lift at the current pace."
+  },
+  "summary": "[running] control: 72/338 = 21.3% (control); test: 86/353 = 24.4%, 82.9% chance to beat control (lift 15.3%). No winner yet; roughly 308 more days to detect a 10% lift at the current pace.",
+  "dashboard": "http://127.0.0.1:55244/app#/experiments/pricing-page-v2?project=demo"
+}

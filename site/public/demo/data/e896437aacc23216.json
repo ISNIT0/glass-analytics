@@ -1,0 +1,137 @@
+{
+  "project": "demo",
+  "id": "user_1681",
+  "identified": true,
+  "properties": {
+    "signup_source": "pricing",
+    "plan": "free",
+    "email": "user_1681@example.com",
+    "company_size": "1"
+  },
+  "firstSeen": "2026-11-04T09:09:30.051Z",
+  "lastSeen": "2026-11-04T09:17:36.351Z",
+  "devices": [
+    "943b24cb-7762-4c05-ad91-baf8561c9b99"
+  ],
+  "recentEvents": [
+    {
+      "event": "document_created",
+      "time": "2026-11-04T09:17:31.351Z",
+      "path": "/app",
+      "session": "cs_c2356bcb029b84355d7f_996546",
+      "properties": {
+        "template": "blog-post",
+        "words": 847
+      }
+    },
+    {
+      "event": "$exposure",
+      "time": "2026-11-04T09:09:31.051Z",
+      "path": "/app",
+      "session": "cs_c2356bcb029b84355d7f_996546",
+      "properties": {
+        "flag": "onboarding-checklist",
+        "variant": "test"
+      }
+    },
+    {
+      "event": "signup_completed",
+      "time": "2026-11-04T09:09:30.251Z",
+      "path": "/welcome",
+      "session": "2293d541-0de1-4c91-ac97-405532ae2112",
+      "properties": {
+        "plan": "free",
+        "method": "email"
+      }
+    },
+    {
+      "event": "$identify",
+      "time": "2026-11-04T09:09:30.051Z",
+      "path": "",
+      "session": "2293d541-0de1-4c91-ac97-405532ae2112",
+      "properties": {
+        "$set": {
+          "plan": "free",
+          "email": "user_1681@example.com",
+          "company_size": "1"
+        },
+        "$set_once": {
+          "signup_source": "pricing"
+        }
+      }
+    },
+    {
+      "event": "signup_started",
+      "time": "2026-11-04T09:08:16.612Z",
+      "path": "/signup",
+      "session": "2293d541-0de1-4c91-ac97-405532ae2112",
+      "properties": {
+        "source": "pricing"
+      }
+    },
+    {
+      "event": "$exposure",
+      "time": "2026-11-04T09:08:12.612Z",
+      "path": "/pricing",
+      "session": "2293d541-0de1-4c91-ac97-405532ae2112",
+      "properties": {
+        "flag": "pricing-page-v2",
+        "variant": "test"
+      }
+    },
+    {
+      "event": "$pageview",
+      "time": "2026-11-04T09:08:03.667Z",
+      "path": "/pricing",
+      "session": "2293d541-0de1-4c91-ac97-405532ae2112",
+      "properties": {}
+    },
+    {
+      "event": "$web_vitals",
+      "time": "2026-11-04T09:07:56.965Z",
+      "path": "/features/focus-mode",
+      "session": "2293d541-0de1-4c91-ac97-405532ae2112",
+      "properties": {
+        "metric": "CLS",
+        "value": 0.005
+      }
+    },
+    {
+      "event": "$pageview",
+      "time": "2026-11-04T09:07:54.465Z",
+      "path": "/features/focus-mode",
+      "session": "2293d541-0de1-4c91-ac97-405532ae2112",
+      "properties": {}
+    },
+    {
+      "event": "$web_vitals",
+      "time": "2026-11-04T09:07:36.762Z",
+      "path": "/blog/writing-every-day",
+      "session": "2293d541-0de1-4c91-ac97-405532ae2112",
+      "properties": {
+        "metric": "INP",
+        "value": 159.03
+      }
+    },
+    {
+      "event": "$pageview",
+      "time": "2026-11-04T09:07:34.262Z",
+      "path": "/blog/writing-every-day",
+      "session": "2293d541-0de1-4c91-ac97-405532ae2112",
+      "properties": {}
+    },
+    {
+      "event": "$pageview",
+      "time": "2026-11-04T09:06:42.179Z",
+      "path": "/",
+      "session": "2293d541-0de1-4c91-ac97-405532ae2112",
+      "properties": {}
+    }
+  ],
+  "replays": [],
+  "summary": "Identified person \"user_1681\": 12 events in 90 days.",
+  "sql": [
+    "WITH ev AS (\n  SELECT e.*,\n    CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid\n  FROM events e\n  LEFT JOIN (\n    SELECT distinct_id, MIN(person_id) AS person_id\n    FROM identities\n    WHERE project = 'demo'\n    GROUP BY distinct_id\n  ) i ON i.distinct_id = e.distinct_id\n  WHERE e.project = 'demo'\n    AND e.ts_ms >= 1786050465712\n    AND e.ts_ms < 1793826525712\n)\nSELECT event, ts_ms, path, session_id, props FROM ev WHERE pid = 'user_1681' OR distinct_id = 'user_1681'\nORDER BY ts_ms DESC LIMIT 100"
+  ],
+  "dashboard": "http://127.0.0.1:55244/app#/users/user_1681?project=demo"
+}

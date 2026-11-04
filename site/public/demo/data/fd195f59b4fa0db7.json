@@ -1,0 +1,13 @@
+{
+  "project": "demo",
+  "event": "upgrade_clicked",
+  "sampled": 6,
+  "lastSeen": "2026-11-04T21:05:01.872Z",
+  "description": "",
+  "owner": "",
+  "properties": [],
+  "summary": "\"upgrade_clicked\": 0 properties across the latest 6 events.",
+  "sql": [
+    "SELECT props, ts_ms FROM events\nWHERE project = 'demo' AND event = 'upgrade_clicked' AND ts_ms >= 1791234486992\nORDER BY ts_ms DESC LIMIT 500"
+  ]
+}

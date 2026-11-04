@@ -1,0 +1,200 @@
+{
+  "project": "demo",
+  "id": "user_1370",
+  "identified": true,
+  "properties": {
+    "signup_source": "header",
+    "plan": "free",
+    "email": "user_1370@example.com",
+    "company_size": "11-50"
+  },
+  "firstSeen": "2026-10-10T18:52:58.108Z",
+  "lastSeen": "2026-11-04T12:03:10.192Z",
+  "devices": [
+    "d2cc4dc7-2fa2-45f3-a267-5a90fd4ef79b"
+  ],
+  "recentEvents": [
+    {
+      "event": "document_created",
+      "time": "2026-11-04T12:03:05.193Z",
+      "path": "/app",
+      "session": "00ca7c9c-7b39-4dd0-acdf-ef6d4bfd04f9",
+      "properties": {
+        "template": "blank",
+        "words": 1954
+      }
+    },
+    {
+      "event": "$pageview",
+      "time": "2026-11-04T11:58:05.193Z",
+      "path": "/app",
+      "session": "00ca7c9c-7b39-4dd0-acdf-ef6d4bfd04f9",
+      "properties": {}
+    },
+    {
+      "event": "document_created",
+      "time": "2026-11-03T04:21:23.525Z",
+      "path": "/app",
+      "session": "04040ffc-1077-4c5f-afb5-4188b69489c5",
+      "properties": {
+        "template": "blank",
+        "words": 1117
+      }
+    },
+    {
+      "event": "document_created",
+      "time": "2026-11-03T04:16:23.525Z",
+      "path": "/app",
+      "session": "04040ffc-1077-4c5f-afb5-4188b69489c5",
+      "properties": {
+        "template": "daily-journal",
+        "words": 2411
+      }
+    },
+    {
+      "event": "$pageview",
+      "time": "2026-11-03T04:11:23.525Z",
+      "path": "/app",
+      "session": "04040ffc-1077-4c5f-afb5-4188b69489c5",
+      "properties": {}
+    },
+    {
+      "event": "document_shared",
+      "time": "2026-10-30T20:24:46.862Z",
+      "path": "/app",
+      "session": "6178d390-1970-4895-abe9-e13e155a206b",
+      "properties": {
+        "via": "link"
+      }
+    },
+    {
+      "event": "document_created",
+      "time": "2026-10-30T20:04:46.862Z",
+      "path": "/app",
+      "session": "6178d390-1970-4895-abe9-e13e155a206b",
+      "properties": {
+        "template": "blank",
+        "words": 2484
+      }
+    },
+    {
+      "event": "$pageview",
+      "time": "2026-10-30T19:59:46.862Z",
+      "path": "/app",
+      "session": "6178d390-1970-4895-abe9-e13e155a206b",
+      "properties": {}
+    },
+    {
+      "event": "document_created",
+      "time": "2026-10-28T12:03:10.192Z",
+      "path": "/app",
+      "session": "7840cee3-4f6c-42a1-ac85-2d8f91c8414e",
+      "properties": {
+        "template": "daily-journal",
+        "words": 2214
+      }
+    },
+    {
+      "event": "document_created",
+      "time": "2026-10-28T12:03:10.192Z",
+      "path": "/app",
+      "session": "7840cee3-4f6c-42a1-ac85-2d8f91c8414e",
+      "properties": {
+        "template": "blank",
+        "words": 2049
+      }
+    },
+    {
+      "event": "$pageview",
+      "time": "2026-10-28T12:03:10.192Z",
+      "path": "/app",
+      "session": "7840cee3-4f6c-42a1-ac85-2d8f91c8414e",
+      "properties": {}
+    },
+    {
+      "event": "document_created",
+      "time": "2026-10-28T12:03:10.192Z",
+      "path": "/app",
+      "session": "62de4473-aa63-45cb-afc3-5b7dcddcce19",
+      "properties": {
+        "template": "blank",
+        "words": 1784
+      }
+    },
+    {
+      "event": "document_created",
+      "time": "2026-10-28T12:03:10.192Z",
+      "path": "/app",
+      "session": "62de4473-aa63-45cb-afc3-5b7dcddcce19",
+      "properties": {
+        "template": "newsletter",
+        "words": 2064
+      }
+    },
+    {
+      "event": "$pageview",
+      "time": "2026-10-28T12:03:10.192Z",
+      "path": "/app",
+      "session": "62de4473-aa63-45cb-afc3-5b7dcddcce19",
+      "properties": {}
+    },
+    {
+      "event": "document_created",
+      "time": "2026-10-28T12:03:10.192Z",
+      "path": "/app",
+      "session": "cs_5dbf01ea6f5cb3743b03_996216",
+      "properties": {
+        "template": "daily-journal",
+        "words": 217
+      }
+    },
+    {
+      "event": "signup_completed",
+      "time": "2026-10-10T18:52:58.308Z",
+      "path": "/welcome",
+      "session": "7b3ceb5b-8fc6-46b9-abdf-1b5e0b7404bc",
+      "properties": {
+        "plan": "free",
+        "method": "email"
+      }
+    },
+    {
+      "event": "$identify",
+      "time": "2026-10-10T18:52:58.108Z",
+      "path": "",
+      "session": "7b3ceb5b-8fc6-46b9-abdf-1b5e0b7404bc",
+      "properties": {
+        "$set": {
+          "plan": "free",
+          "email": "user_1370@example.com",
+          "company_size": "11-50"
+        },
+        "$set_once": {
+          "signup_source": "header"
+        }
+      }
+    },
+    {
+      "event": "signup_started",
+      "time": "2026-10-10T18:52:12.127Z",
+      "path": "/signup",
+      "session": "7b3ceb5b-8fc6-46b9-abdf-1b5e0b7404bc",
+      "properties": {
+        "source": "header"
+      }
+    },
+    {
+      "event": "$pageview",
+      "time": "2026-10-10T18:51:30.921Z",
+      "path": "/changelog",
+      "session": "7b3ceb5b-8fc6-46b9-abdf-1b5e0b7404bc",
+      "properties": {}
+    }
+  ],
+  "replays": [],
+  "summary": "Identified person \"user_1370\": 19 events in 90 days.",
+  "sql": [
+    "WITH ev AS (\n  SELECT e.*,\n    CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid\n  FROM events e\n  LEFT JOIN (\n    SELECT distinct_id, MIN(person_id) AS person_id\n    FROM identities\n    WHERE project = 'demo'\n    GROUP BY distinct_id\n  ) i ON i.distinct_id = e.distinct_id\n  WHERE e.project = 'demo'\n    AND e.ts_ms >= 1786050462028\n    AND e.ts_ms < 1793826522028\n)\nSELECT event, ts_ms, path, session_id, props FROM ev WHERE pid = 'user_1370' OR distinct_id = 'user_1370'\nORDER BY ts_ms DESC LIMIT 100"
+  ],
+  "dashboard": "http://127.0.0.1:55244/app#/users/user_1370?project=demo"
+}

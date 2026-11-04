@@ -1,0 +1,60 @@
+{
+  "kind": "trends",
+  "interval": "week",
+  "buckets": [
+    1788739200000,
+    1789344000000,
+    1789948800000,
+    1790553600000,
+    1791158400000,
+    1791763200000,
+    1792368000000,
+    1792972800000,
+    1793577600000
+  ],
+  "series": [
+    {
+      "label": "Revenue · team",
+      "breakdown": "team",
+      "values": [
+        580,
+        29,
+        58,
+        58,
+        696,
+        1508,
+        319,
+        290,
+        0
+      ],
+      "total": 3538
+    },
+    {
+      "label": "Revenue · pro",
+      "breakdown": "pro",
+      "values": [
+        207,
+        324,
+        306,
+        306,
+        459,
+        279,
+        171,
+        450,
+        207
+      ],
+      "total": 2709
+    }
+  ],
+  "sql": [
+    "WITH ev AS (\n  SELECT e.*,\n    CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid\n  FROM events e\n  LEFT JOIN (\n    SELECT distinct_id, MIN(person_id) AS person_id\n    FROM identities\n    WHERE project = 'demo'\n    GROUP BY distinct_id\n  ) i ON i.distinct_id = e.distinct_id\n  WHERE e.project = 'demo'\n    AND e.ts_ms >= 1788988037716\n    AND e.ts_ms < 1793826437716\n    AND e.event IN ('subscription_started')\n)\nSELECT bucket, bd, SUM(val) AS agg\nFROM (SELECT (((ts_ms / 86400000) - (((ts_ms / 86400000) + 3) % 7)) * 86400000) AS bucket, COALESCE(NULLIF((CASE json_type(props, '$.\"plan\"') WHEN 'true' THEN 'true' WHEN 'false' THEN 'false' WHEN 'null' THEN NULL ELSE CAST(json_extract(props, '$.\"plan\"') AS TEXT) END), ''), '(none)') AS bd, pid, session_id, (CASE WHEN json_type(props, '$.\"amount\"') IN ('integer', 'real') THEN json_extract(props, '$.\"amount\"') END) AS val\n    FROM ev WHERE 1 = 1) t\nGROUP BY bucket, bd\nORDER BY bucket\nLIMIT 50000",
+    "WITH ev AS (\n  SELECT e.*,\n    CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid\n  FROM events e\n  LEFT JOIN (\n    SELECT distinct_id, MIN(person_id) AS person_id\n    FROM identities\n    WHERE project = 'demo'\n    GROUP BY distinct_id\n  ) i ON i.distinct_id = e.distinct_id\n  WHERE e.project = 'demo'\n    AND e.ts_ms >= 1788988037716\n    AND e.ts_ms < 1793826437716\n    AND e.event IN ('subscription_started')\n)\nSELECT bd, SUM(val) AS agg\nFROM (SELECT (((ts_ms / 86400000) - (((ts_ms / 86400000) + 3) % 7)) * 86400000) AS bucket, COALESCE(NULLIF((CASE json_type(props, '$.\"plan\"') WHEN 'true' THEN 'true' WHEN 'false' THEN 'false' WHEN 'null' THEN NULL ELSE CAST(json_extract(props, '$.\"plan\"') AS TEXT) END), ''), '(none)') AS bd, pid, session_id, (CASE WHEN json_type(props, '$.\"amount\"') IN ('integer', 'real') THEN json_extract(props, '$.\"amount\"') END) AS val\n    FROM ev WHERE 1 = 1) t\nGROUP BY bd\nORDER BY agg DESC\nLIMIT 1000"
+  ],
+  "range": {
+    "from": "2026-09-09T21:07:17.716Z",
+    "to": "2026-11-04T21:07:17.716Z"
+  },
+  "summary": "2026-09-09 to 2026-11-04 by week. Revenue · team: 3,538; Revenue · pro: 2,709",
+  "project": "demo",
+  "dashboard": "http://127.0.0.1:55244/app#/insights/trends?project=demo&spec=%7B%22from%22%3A%22-56d%22%2C%22series%22%3A%5B%7B%22event%22%3A%22subscription_started%22%2C%22math%22%3A%22sum%22%2C%22property%22%3A%22amount%22%2C%22label%22%3A%22Revenue%22%7D%5D%2C%22interval%22%3A%22week%22%2C%22breakdown%22%3A%5B%22plan%22%5D%7D"
+}

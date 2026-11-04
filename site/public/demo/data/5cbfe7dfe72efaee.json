@@ -1,0 +1,44 @@
+{
+  "project": "demo",
+  "event": "$web_vitals",
+  "sampled": 500,
+  "lastSeen": "2026-11-04T18:51:48.717Z",
+  "description": "",
+  "owner": "",
+  "properties": [
+    {
+      "name": "metric",
+      "types": [
+        "string"
+      ],
+      "coverage": 1,
+      "examples": [
+        "CLS",
+        "FCP",
+        "LCP",
+        "INP",
+        "TTFB"
+      ],
+      "description": ""
+    },
+    {
+      "name": "value",
+      "types": [
+        "number"
+      ],
+      "coverage": 1,
+      "examples": [
+        "0.275",
+        "2686.186",
+        "1030.318",
+        "0.009",
+        "790.149"
+      ],
+      "description": ""
+    }
+  ],
+  "summary": "\"$web_vitals\": 2 properties across the latest 500 events.",
+  "sql": [
+    "SELECT props, ts_ms FROM events\nWHERE project = 'demo' AND event = '$web_vitals' AND ts_ms >= 1791234479111\nORDER BY ts_ms DESC LIMIT 500"
+  ]
+}

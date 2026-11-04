@@ -1,0 +1,48 @@
+{
+  "project": "demo",
+  "event": "$click",
+  "sampled": 8,
+  "lastSeen": "2026-11-04T21:05:01.872Z",
+  "description": "",
+  "owner": "",
+  "properties": [
+    {
+      "name": "tag",
+      "types": [
+        "string"
+      ],
+      "coverage": 1,
+      "examples": [
+        "button"
+      ],
+      "description": ""
+    },
+    {
+      "name": "text",
+      "types": [
+        "string"
+      ],
+      "coverage": 1,
+      "examples": [
+        "Upgrade now",
+        "Create account"
+      ],
+      "description": ""
+    },
+    {
+      "name": "id",
+      "types": [
+        "string"
+      ],
+      "coverage": 0.75,
+      "examples": [
+        "pay"
+      ],
+      "description": ""
+    }
+  ],
+  "summary": "\"$click\": 3 properties across the latest 8 events.",
+  "sql": [
+    "SELECT props, ts_ms FROM events\nWHERE project = 'demo' AND event = '$click' AND ts_ms >= 1791234486276\nORDER BY ts_ms DESC LIMIT 500"
+  ]
+}

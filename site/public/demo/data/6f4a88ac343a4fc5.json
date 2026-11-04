@@ -1,0 +1,85 @@
+{
+  "project": "demo",
+  "event": "$exception",
+  "sampled": 58,
+  "lastSeen": "2026-11-04T21:04:59.111Z",
+  "description": "",
+  "owner": "",
+  "properties": [
+    {
+      "name": "type",
+      "types": [
+        "string"
+      ],
+      "coverage": 1,
+      "examples": [
+        "TypeError",
+        "Error"
+      ],
+      "description": ""
+    },
+    {
+      "name": "message",
+      "types": [
+        "string"
+      ],
+      "coverage": 1,
+      "examples": [
+        "Cannot read properties of undefined (reading 'number')",
+        "Cannot read properties of undefined (reading 'wordCount')",
+        "Failed to fetch",
+        "ResizeObserver loop limit exceeded",
+        "crypto.randomUUID is not a function"
+      ],
+      "description": ""
+    },
+    {
+      "name": "stack",
+      "types": [
+        "string"
+      ],
+      "coverage": 0.017241379310344827,
+      "examples": [
+        "TypeError: Cannot read properties of undefined (reading 'number')\n    at HTMLBut"
+      ],
+      "description": ""
+    },
+    {
+      "name": "source",
+      "types": [
+        "string"
+      ],
+      "coverage": 0.017241379310344827,
+      "examples": [
+        "http://inkwell.example/app"
+      ],
+      "description": ""
+    },
+    {
+      "name": "line",
+      "types": [
+        "number"
+      ],
+      "coverage": 0.017241379310344827,
+      "examples": [
+        "24"
+      ],
+      "description": ""
+    },
+    {
+      "name": "column",
+      "types": [
+        "number"
+      ],
+      "coverage": 0.017241379310344827,
+      "examples": [
+        "19"
+      ],
+      "description": ""
+    }
+  ],
+  "summary": "\"$exception\": 6 properties across the latest 58 events.",
+  "sql": [
+    "SELECT props, ts_ms FROM events\nWHERE project = 'demo' AND event = '$exception' AND ts_ms >= 1791234484843\nORDER BY ts_ms DESC LIMIT 500"
+  ]
+}

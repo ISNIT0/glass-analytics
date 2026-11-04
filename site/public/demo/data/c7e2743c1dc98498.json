@@ -1,0 +1,120 @@
+{
+  "project": "demo",
+  "id": "user_1683",
+  "identified": true,
+  "properties": {
+    "signup_source": "pricing",
+    "plan": "free",
+    "email": "user_1683@example.com",
+    "company_size": "1"
+  },
+  "firstSeen": "2026-11-04T17:22:04.411Z",
+  "lastSeen": "2026-11-04T17:24:49.419Z",
+  "devices": [
+    "ecd96ab9-ac03-484a-ab34-7a81a2db165f"
+  ],
+  "recentEvents": [
+    {
+      "event": "document_created",
+      "time": "2026-11-04T17:24:44.420Z",
+      "path": "/app",
+      "session": "cs_988c4f65c174e4899c7b_996562",
+      "properties": {
+        "template": "blog-post",
+        "words": 191
+      }
+    },
+    {
+      "event": "$exposure",
+      "time": "2026-11-04T17:22:05.411Z",
+      "path": "/app",
+      "session": "cs_988c4f65c174e4899c7b_996562",
+      "properties": {
+        "flag": "onboarding-checklist",
+        "variant": "control"
+      }
+    },
+    {
+      "event": "signup_completed",
+      "time": "2026-11-04T17:22:04.611Z",
+      "path": "/welcome",
+      "session": "ef49a5cc-aec9-4556-a028-26e4fafdafe5",
+      "properties": {
+        "plan": "free",
+        "method": "github"
+      }
+    },
+    {
+      "event": "$identify",
+      "time": "2026-11-04T17:22:04.411Z",
+      "path": "",
+      "session": "ef49a5cc-aec9-4556-a028-26e4fafdafe5",
+      "properties": {
+        "$set": {
+          "plan": "free",
+          "email": "user_1683@example.com",
+          "company_size": "1"
+        },
+        "$set_once": {
+          "signup_source": "pricing"
+        }
+      }
+    },
+    {
+      "event": "signup_started",
+      "time": "2026-11-04T17:20:45.597Z",
+      "path": "/signup",
+      "session": "ef49a5cc-aec9-4556-a028-26e4fafdafe5",
+      "properties": {
+        "source": "pricing"
+      }
+    },
+    {
+      "event": "$exposure",
+      "time": "2026-11-04T17:20:41.597Z",
+      "path": "/pricing",
+      "session": "ef49a5cc-aec9-4556-a028-26e4fafdafe5",
+      "properties": {
+        "flag": "pricing-page-v2",
+        "variant": "test"
+      }
+    },
+    {
+      "event": "$web_vitals",
+      "time": "2026-11-04T17:20:30.917Z",
+      "path": "/pricing",
+      "session": "ef49a5cc-aec9-4556-a028-26e4fafdafe5",
+      "properties": {
+        "metric": "INP",
+        "value": 157.464
+      }
+    },
+    {
+      "event": "$pageview",
+      "time": "2026-11-04T17:20:28.417Z",
+      "path": "/pricing",
+      "session": "ef49a5cc-aec9-4556-a028-26e4fafdafe5",
+      "properties": {}
+    },
+    {
+      "event": "$pageview",
+      "time": "2026-11-04T17:19:48.408Z",
+      "path": "/pricing",
+      "session": "ef49a5cc-aec9-4556-a028-26e4fafdafe5",
+      "properties": {}
+    },
+    {
+      "event": "$pageview",
+      "time": "2026-11-04T17:19:22.240Z",
+      "path": "/pricing",
+      "session": "ef49a5cc-aec9-4556-a028-26e4fafdafe5",
+      "properties": {}
+    }
+  ],
+  "replays": [],
+  "summary": "Identified person \"user_1683\": 10 events in 90 days.",
+  "sql": [
+    "WITH ev AS (\n  SELECT e.*,\n    CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid\n  FROM events e\n  LEFT JOIN (\n    SELECT distinct_id, MIN(person_id) AS person_id\n    FROM identities\n    WHERE project = 'demo'\n    GROUP BY distinct_id\n  ) i ON i.distinct_id = e.distinct_id\n  WHERE e.project = 'demo'\n    AND e.ts_ms >= 1786050453961\n    AND e.ts_ms < 1793826513961\n)\nSELECT event, ts_ms, path, session_id, props FROM ev WHERE pid = 'user_1683' OR distinct_id = 'user_1683'\nORDER BY ts_ms DESC LIMIT 100"
+  ],
+  "dashboard": "http://127.0.0.1:55244/app#/users/user_1683?project=demo"
+}

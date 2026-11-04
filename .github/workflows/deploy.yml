@@ -14,17 +14,20 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    defaults:
-      run:
-        working-directory: site
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm install
-      - name: Deploy landing page Worker
-        run: npx wrangler deploy
+          cache: pnpm
+      - run: pnpm install --no-frozen-lockfile
+      # Builds the packages (the homepage shows the SDK's real size), then the
+      # site: pages from docs/ and site/src, client scripts, sitemap, llms.txt.
+      - run: pnpm site:build
+      - name: Deploy the site Worker (static assets)
+        working-directory: site
+        run: pnpm exec wrangler deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

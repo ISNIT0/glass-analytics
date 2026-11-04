@@ -1,0 +1,63 @@
+{
+  "project": "demo",
+  "enabled": true,
+  "total": 3,
+  "offset": 0,
+  "replays": [
+    {
+      "session": "01a1a860-e417-7f74-ba77-dd6e4045c156",
+      "person": "01a1a860-e410-7e96-ae38-b43568f6cf1f",
+      "started": "2026-11-04T21:04:44.590Z",
+      "durationSeconds": 12,
+      "activeSeconds": null,
+      "pages": 3,
+      "clicks": 0,
+      "rageClicks": 0,
+      "deadClicks": null,
+      "errors": 0,
+      "consoleErrors": 0,
+      "failedRequests": 0,
+      "url": "http://inkwell.example/",
+      "device": "mobile, Safari, GB",
+      "summarised": false,
+      "dashboard": "http://127.0.0.1:55244/app#/replays/01a1a860-e417-7f74-ba77-dd6e4045c156?project=demo"
+    },
+    {
+      "session": "01a1a860-e417-7f72-ab7c-b12f5c1c0c74",
+      "person": "user-maya",
+      "started": "2026-11-04T21:04:44.590Z",
+      "durationSeconds": 18,
+      "activeSeconds": null,
+      "pages": 4,
+      "clicks": 9,
+      "rageClicks": 1,
+      "deadClicks": null,
+      "errors": 1,
+      "consoleErrors": 6,
+      "failedRequests": 6,
+      "url": "http://inkwell.example/",
+      "device": "desktop, Chrome, GB",
+      "summarised": false,
+      "dashboard": "http://127.0.0.1:55244/app#/replays/01a1a860-e417-7f72-ab7c-b12f5c1c0c74?project=demo"
+    },
+    {
+      "session": "01a1a860-e417-74c4-bf1a-21a6f3d85a70",
+      "person": "user-sam",
+      "started": "2026-11-04T21:04:44.590Z",
+      "durationSeconds": 10,
+      "activeSeconds": null,
+      "pages": 3,
+      "clicks": 2,
+      "rageClicks": 0,
+      "deadClicks": null,
+      "errors": 0,
+      "consoleErrors": 0,
+      "failedRequests": 0,
+      "url": "http://inkwell.example/pricing",
+      "device": "desktop, Chrome, GB",
+      "summarised": false,
+      "dashboard": "http://127.0.0.1:55244/app#/replays/01a1a860-e417-74c4-bf1a-21a6f3d85a70?project=demo"
+    }
+  ],
+  "summary": "3 recorded sessions match. Use summarise_replay to read one, analyse_replays for patterns across them."
+}

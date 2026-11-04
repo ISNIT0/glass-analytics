@@ -13,6 +13,9 @@
     "test": "node --test \"packages/*/test/**/*.test.ts\"",
     "test:e2e": "node scripts/build.ts && node --test \"e2e/*.test.ts\"",
     "dev": "node scripts/build.ts && node packages/worker/test/server.ts",
+    "site:build": "node scripts/build.ts && node site/build.ts",
+    "site:assets": "node scripts/site-assets.ts",
+    "site:dev": "node scripts/build.ts && node site/build.ts && pnpm --filter @glassanalytics/site exec wrangler dev",
     "dev:wrangler": "node scripts/build.ts && pnpm --filter @glassanalytics/worker exec wrangler dev",
     "lint": "biome check .",
     "format": "biome format --write .",
@@ -26,6 +29,7 @@
     "@changesets/cli": "^2.29.0",
     "@types/node": "^22.18.0",
     "esbuild": "^0.28.0",
+    "marked": "^15.0.12",
     "playwright": "^1.63.0",
     "typescript": "^6.0.0"
   }

@@ -1,0 +1,94 @@
+{
+  "project": "demo",
+  "conversions": [
+    "signup_completed",
+    "subscription_started"
+  ],
+  "dimension": "referrer",
+  "rows": [
+    {
+      "value": "Direct / None",
+      "visitors": 1675,
+      "sessions": 2178,
+      "converted": 253,
+      "rate": 0.15104477611940298,
+      "bounceRate": 0.32477611940298506
+    },
+    {
+      "value": "google.com",
+      "visitors": 1420,
+      "sessions": 1762,
+      "converted": 171,
+      "rate": 0.12042253521126761,
+      "bounceRate": 0.3647887323943662
+    },
+    {
+      "value": "producthunt.com",
+      "visitors": 422,
+      "sessions": 555,
+      "converted": 68,
+      "rate": 0.16113744075829384,
+      "bounceRate": 0.33886255924170616
+    },
+    {
+      "value": "news.ycombinator.com",
+      "visitors": 406,
+      "sessions": 479,
+      "converted": 40,
+      "rate": 0.09852216748768473,
+      "bounceRate": 0.3916256157635468
+    },
+    {
+      "value": "reddit.com",
+      "visitors": 328,
+      "sessions": 389,
+      "converted": 37,
+      "rate": 0.11280487804878049,
+      "bounceRate": 0.3170731707317073
+    },
+    {
+      "value": "t.co",
+      "visitors": 315,
+      "sessions": 390,
+      "converted": 32,
+      "rate": 0.10158730158730159,
+      "bounceRate": 0.30158730158730157
+    },
+    {
+      "value": "facebook.com",
+      "visitors": 282,
+      "sessions": 330,
+      "converted": 31,
+      "rate": 0.1099290780141844,
+      "bounceRate": 0.35815602836879434
+    },
+    {
+      "value": "duckduckgo.com",
+      "visitors": 200,
+      "sessions": 250,
+      "converted": 22,
+      "rate": 0.11,
+      "bounceRate": 0.365
+    },
+    {
+      "value": "github.com",
+      "visitors": 168,
+      "sessions": 190,
+      "converted": 14,
+      "rate": 0.08333333333333333,
+      "bounceRate": 0.35714285714285715
+    },
+    {
+      "value": "bing.com",
+      "visitors": 150,
+      "sessions": 184,
+      "converted": 20,
+      "rate": 0.13333333333333333,
+      "bounceRate": 0.36
+    }
+  ],
+  "sql": [
+    "WITH ev AS (\n  SELECT e.*,\n    CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid\n  FROM events e\n  LEFT JOIN (\n    SELECT distinct_id, MIN(person_id) AS person_id\n    FROM identities\n    WHERE project = 'demo'\n    GROUP BY distinct_id\n  ) i ON i.distinct_id = e.distinct_id\n  WHERE e.project = 'demo'\n    AND e.ts_ms >= 1786050411895\n    AND e.ts_ms < 1793826411895\n    AND e.event IN ('$pageview', 'signup_completed', 'subscription_started')\n),\nfirsts AS (SELECT distinct_id, MIN(ts_ms) AS t FROM ev WHERE event = '$pageview' GROUP BY distinct_id),\ntouch AS (\n  SELECT ev.distinct_id, MIN(COALESCE(NULLIF(ev.referrer_host, ''), 'Direct / None')) AS val\n  FROM ev JOIN firsts ON firsts.distinct_id = ev.distinct_id AND ev.ts_ms = firsts.t AND ev.event = '$pageview'\n  GROUP BY ev.distinct_id\n),\nvisits AS (SELECT distinct_id, COUNT(DISTINCT session_id) AS sessions, COUNT(*) AS views FROM ev WHERE event = '$pageview' GROUP BY distinct_id),\nconv AS (SELECT DISTINCT distinct_id FROM ev WHERE event IN ('signup_completed', 'subscription_started'))\nSELECT touch.val AS val, COUNT(*) AS visitors, SUM(visits.sessions) AS sessions,\n  SUM(CASE WHEN conv.distinct_id IS NULL THEN 0 ELSE 1 END) AS converted,\n  SUM(CASE WHEN visits.views = 1 THEN 1 ELSE 0 END) AS bounced\nFROM touch\nJOIN visits ON visits.distinct_id = touch.distinct_id\nLEFT JOIN conv ON conv.distinct_id = touch.distinct_id\nGROUP BY touch.val ORDER BY visitors DESC LIMIT 25"
+  ],
+  "summary": "Top referrers by visitors: Direct / None 1675 (15.1% converted), google.com 1420 (12.0% converted), producthunt.com 422 (16.1% converted), news.ycombinator.com 406 (9.9% converted), reddit.com 328 (11.3% converted)."
+}

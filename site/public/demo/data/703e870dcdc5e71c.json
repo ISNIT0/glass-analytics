@@ -1,0 +1,21 @@
+{
+  "project": "demo",
+  "key": "signups-by-plan",
+  "name": "Signups by plan",
+  "description": "New accounts each day, split by the plan they chose.",
+  "kind": "trends",
+  "spec": {
+    "series": [
+      {
+        "event": "signup_completed",
+        "math": "unique_persons",
+        "label": "Signups"
+      }
+    ],
+    "interval": "day",
+    "breakdown": "plan",
+    "from": "-30d"
+  },
+  "updatedAt": "2026-11-04T21:04:44.039Z",
+  "dashboard": "http://127.0.0.1:55244/app#/insights/signups-by-plan?project=demo"
+}

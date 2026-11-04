@@ -1,0 +1,120 @@
+{
+  "project": "demo",
+  "days": 30,
+  "events": [
+    {
+      "event": "$pageview",
+      "count": 8522,
+      "lastSeen": "2026-11-04T21:04:56.349Z",
+      "description": "",
+      "role": null,
+      "system": true
+    },
+    {
+      "event": "$web_vitals",
+      "count": 3274,
+      "lastSeen": "2026-11-04T18:51:48.717Z",
+      "description": "",
+      "role": null,
+      "system": true
+    },
+    {
+      "event": "document_created",
+      "count": 2309,
+      "lastSeen": "2026-11-04T20:51:43.798Z",
+      "description": "Fired when a writer creates a document, blank or from a template.",
+      "role": null,
+      "system": false
+    },
+    {
+      "event": "$exposure",
+      "count": 826,
+      "lastSeen": "2026-11-04T18:52:58.324Z",
+      "description": "",
+      "role": null,
+      "system": true
+    },
+    {
+      "event": "signup_started",
+      "count": 605,
+      "lastSeen": "2026-11-04T18:39:47.994Z",
+      "description": "Fired when someone opens the signup form, from the header button or the pricing page.",
+      "role": null,
+      "system": false
+    },
+    {
+      "event": "$identify",
+      "count": 370,
+      "lastSeen": "2026-11-04T21:04:56.032Z",
+      "description": "",
+      "role": null,
+      "system": true
+    },
+    {
+      "event": "signup_completed",
+      "count": 370,
+      "lastSeen": "2026-11-04T21:04:56.032Z",
+      "description": "Fired once the account exists and the person is signed in, right after identify().",
+      "role": "conversion",
+      "system": false
+    },
+    {
+      "event": "document_shared",
+      "count": 304,
+      "lastSeen": "2026-11-04T21:01:43.798Z",
+      "description": "Fired when a writer shares a document by link, email or export.",
+      "role": "important",
+      "system": false
+    },
+    {
+      "event": "subscription_started",
+      "count": 70,
+      "lastSeen": "2026-11-03T17:52:52.993Z",
+      "description": "Fired when the first payment succeeds and the plan becomes active.",
+      "role": "conversion",
+      "system": false
+    },
+    {
+      "event": "$exception",
+      "count": 58,
+      "lastSeen": "2026-11-04T21:04:59.111Z",
+      "description": "",
+      "role": null,
+      "system": true
+    },
+    {
+      "event": "invite_sent",
+      "count": 35,
+      "lastSeen": "2026-11-02T09:03:08.293Z",
+      "description": "Fired when a team admin invites someone to their workspace.",
+      "role": null,
+      "system": false
+    },
+    {
+      "event": "$click",
+      "count": 8,
+      "lastSeen": "2026-11-04T21:05:01.872Z",
+      "description": "",
+      "role": null,
+      "system": true
+    },
+    {
+      "event": "upgrade_clicked",
+      "count": 6,
+      "lastSeen": "2026-11-04T21:05:01.872Z",
+      "description": "",
+      "role": null,
+      "system": false
+    }
+  ],
+  "undocumented": [
+    "upgrade_clicked"
+  ],
+  "summary": "13 distinct events in the last 30 days; 1 custom events have no description (use define_event).",
+  "namingGuide": "Name events object_action in snake_case and past tense (signup_completed, plan_upgraded, invite_sent). Put variable details in properties ({ plan: \"pro\" }), never in the event name. Never send emails, names or other personal data as properties.",
+  "documentationGuide": "After a custom event is shipping, call define_event (or `glass events <name> --describe \"…\"`). The description must say how and when the event is fired (which user action or code path). Document every property with what it means and which values to expect (e.g. description: \"Fired when the user finishes checkout after payment succeeds.\"; properties: { plan: \"Chosen plan id (free|pro|enterprise)\", amount: \"Charge in the account currency\" }). list_events returns undocumented custom events — document those before relying on them in funnels or trends.",
+  "sql": [
+    "SELECT event, COUNT(*) AS n, MAX(ts_ms) AS last_seen FROM events\nWHERE project = 'demo' AND ts_ms >= 1791234407656\nGROUP BY event ORDER BY n DESC LIMIT 500"
+  ],
+  "dashboard": "http://127.0.0.1:55244/app#/events?project=demo"
+}

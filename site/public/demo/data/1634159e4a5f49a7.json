@@ -1,0 +1,259 @@
+{
+  "project": "demo",
+  "id": "user_1455",
+  "identified": true,
+  "properties": {
+    "signup_source": "pricing",
+    "plan": "pro",
+    "email": "user_1455@example.com",
+    "company_size": "2-10"
+  },
+  "firstSeen": "2026-10-15T14:43:08.731Z",
+  "lastSeen": "2026-11-04T16:48:22.875Z",
+  "devices": [
+    "eb08cbd3-0734-4631-a78e-c9da5700ca9f"
+  ],
+  "recentEvents": [
+    {
+      "event": "document_shared",
+      "time": "2026-11-04T16:48:17.876Z",
+      "path": "/app",
+      "session": "3462df67-ca9f-4f1c-afd9-069a10413874",
+      "properties": {
+        "via": "link"
+      }
+    },
+    {
+      "event": "document_created",
+      "time": "2026-11-04T16:28:17.876Z",
+      "path": "/app",
+      "session": "3462df67-ca9f-4f1c-afd9-069a10413874",
+      "properties": {
+        "template": "daily-journal",
+        "words": 578
+      }
+    },
+    {
+      "event": "$pageview",
+      "time": "2026-11-04T16:23:17.876Z",
+      "path": "/app",
+      "session": "3462df67-ca9f-4f1c-afd9-069a10413874",
+      "properties": {}
+    },
+    {
+      "event": "document_created",
+      "time": "2026-10-30T19:47:07.242Z",
+      "path": "/app",
+      "session": "7c023dab-1b5b-4a2b-a9a2-87e91f46eb5f",
+      "properties": {
+        "template": "daily-journal",
+        "words": 691
+      }
+    },
+    {
+      "event": "document_created",
+      "time": "2026-10-30T19:42:07.242Z",
+      "path": "/app",
+      "session": "7c023dab-1b5b-4a2b-a9a2-87e91f46eb5f",
+      "properties": {
+        "template": "novel-chapter",
+        "words": 1007
+      }
+    },
+    {
+      "event": "$pageview",
+      "time": "2026-10-30T19:37:07.242Z",
+      "path": "/app",
+      "session": "7c023dab-1b5b-4a2b-a9a2-87e91f46eb5f",
+      "properties": {}
+    },
+    {
+      "event": "document_created",
+      "time": "2026-10-28T16:48:22.875Z",
+      "path": "/app",
+      "session": "318e8c77-1b7f-40f4-aa67-b4e78092c916",
+      "properties": {
+        "template": "daily-journal",
+        "words": 2297
+      }
+    },
+    {
+      "event": "$pageview",
+      "time": "2026-10-28T16:48:22.875Z",
+      "path": "/app",
+      "session": "318e8c77-1b7f-40f4-aa67-b4e78092c916",
+      "properties": {}
+    },
+    {
+      "event": "document_created",
+      "time": "2026-10-28T16:48:22.875Z",
+      "path": "/app",
+      "session": "84b2711d-fb45-45bd-a6e2-e32a1f6be5de",
+      "properties": {
+        "template": "blank",
+        "words": 1235
+      }
+    },
+    {
+      "event": "$pageview",
+      "time": "2026-10-28T16:48:22.875Z",
+      "path": "/app",
+      "session": "84b2711d-fb45-45bd-a6e2-e32a1f6be5de",
+      "properties": {}
+    },
+    {
+      "event": "document_created",
+      "time": "2026-10-28T16:48:22.875Z",
+      "path": "/app",
+      "session": "520cbb81-bea5-42fc-acea-c255df268aaa",
+      "properties": {
+        "template": "blank",
+        "words": 1279
+      }
+    },
+    {
+      "event": "document_created",
+      "time": "2026-10-28T16:48:22.875Z",
+      "path": "/app",
+      "session": "520cbb81-bea5-42fc-acea-c255df268aaa",
+      "properties": {
+        "template": "novel-chapter",
+        "words": 2074
+      }
+    },
+    {
+      "event": "$pageview",
+      "time": "2026-10-28T16:48:22.875Z",
+      "path": "/app",
+      "session": "520cbb81-bea5-42fc-acea-c255df268aaa",
+      "properties": {}
+    },
+    {
+      "event": "document_created",
+      "time": "2026-10-28T16:48:22.875Z",
+      "path": "/app",
+      "session": "cs_21e157861e28a63bf990_996225",
+      "properties": {
+        "template": "blog-post",
+        "words": 486
+      }
+    },
+    {
+      "event": "subscription_started",
+      "time": "2026-10-15T14:44:38.731Z",
+      "path": "/app/billing",
+      "session": "debd0219-0140-46e5-a2c7-0600402be9d6",
+      "properties": {
+        "plan": "pro",
+        "interval": "year",
+        "amount": 90
+      }
+    },
+    {
+      "event": "signup_completed",
+      "time": "2026-10-15T14:43:08.931Z",
+      "path": "/welcome",
+      "session": "debd0219-0140-46e5-a2c7-0600402be9d6",
+      "properties": {
+        "plan": "pro",
+        "method": "email"
+      }
+    },
+    {
+      "event": "$identify",
+      "time": "2026-10-15T14:43:08.731Z",
+      "path": "",
+      "session": "debd0219-0140-46e5-a2c7-0600402be9d6",
+      "properties": {
+        "$set": {
+          "plan": "pro",
+          "email": "user_1455@example.com",
+          "company_size": "2-10"
+        },
+        "$set_once": {
+          "signup_source": "pricing"
+        }
+      }
+    },
+    {
+      "event": "signup_started",
+      "time": "2026-10-15T14:42:40.575Z",
+      "path": "/signup",
+      "session": "debd0219-0140-46e5-a2c7-0600402be9d6",
+      "properties": {
+        "source": "pricing"
+      }
+    },
+    {
+      "event": "$pageview",
+      "time": "2026-10-15T14:41:52.383Z",
+      "path": "/features/focus-mode",
+      "session": "debd0219-0140-46e5-a2c7-0600402be9d6",
+      "properties": {}
+    },
+    {
+      "event": "$pageview",
+      "time": "2026-10-15T14:40:44.088Z",
+      "path": "/templates",
+      "session": "debd0219-0140-46e5-a2c7-0600402be9d6",
+      "properties": {}
+    },
+    {
+      "event": "$web_vitals",
+      "time": "2026-10-15T14:40:27.537Z",
+      "path": "/pricing",
+      "session": "debd0219-0140-46e5-a2c7-0600402be9d6",
+      "properties": {
+        "metric": "TTFB",
+        "value": 913.754
+      }
+    },
+    {
+      "event": "$pageview",
+      "time": "2026-10-15T14:40:25.037Z",
+      "path": "/pricing",
+      "session": "debd0219-0140-46e5-a2c7-0600402be9d6",
+      "properties": {}
+    },
+    {
+      "event": "$web_vitals",
+      "time": "2026-10-15T14:38:50.353Z",
+      "path": "/templates",
+      "session": "debd0219-0140-46e5-a2c7-0600402be9d6",
+      "properties": {
+        "metric": "CLS",
+        "value": 0.232
+      }
+    },
+    {
+      "event": "$pageview",
+      "time": "2026-10-15T14:38:47.853Z",
+      "path": "/templates",
+      "session": "debd0219-0140-46e5-a2c7-0600402be9d6",
+      "properties": {}
+    },
+    {
+      "event": "$web_vitals",
+      "time": "2026-10-15T14:37:27.129Z",
+      "path": "/",
+      "session": "debd0219-0140-46e5-a2c7-0600402be9d6",
+      "properties": {
+        "metric": "CLS",
+        "value": 0.192
+      }
+    },
+    {
+      "event": "$pageview",
+      "time": "2026-10-15T14:37:24.629Z",
+      "path": "/",
+      "session": "debd0219-0140-46e5-a2c7-0600402be9d6",
+      "properties": {}
+    }
+  ],
+  "replays": [],
+  "summary": "Identified person \"user_1455\": 26 events in 90 days.",
+  "sql": [
+    "WITH ev AS (\n  SELECT e.*,\n    CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid\n  FROM events e\n  LEFT JOIN (\n    SELECT distinct_id, MIN(person_id) AS person_id\n    FROM identities\n    WHERE project = 'demo'\n    GROUP BY distinct_id\n  ) i ON i.distinct_id = e.distinct_id\n  WHERE e.project = 'demo'\n    AND e.ts_ms >= 1786050455428\n    AND e.ts_ms < 1793826515428\n)\nSELECT event, ts_ms, path, session_id, props FROM ev WHERE pid = 'user_1455' OR distinct_id = 'user_1455'\nORDER BY ts_ms DESC LIMIT 100"
+  ],
+  "dashboard": "http://127.0.0.1:55244/app#/users/user_1455?project=demo"
+}

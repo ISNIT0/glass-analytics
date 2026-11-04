@@ -1,0 +1,159 @@
+{
+  "project": "demo",
+  "interval": "day",
+  "buckets": [
+    1791158400000,
+    1791244800000,
+    1791331200000,
+    1791417600000,
+    1791504000000,
+    1791590400000,
+    1791676800000,
+    1791763200000,
+    1791849600000,
+    1791936000000,
+    1792022400000,
+    1792108800000,
+    1792195200000,
+    1792281600000,
+    1792368000000,
+    1792454400000,
+    1792540800000,
+    1792627200000,
+    1792713600000,
+    1792800000000,
+    1792886400000,
+    1792972800000,
+    1793059200000,
+    1793145600000,
+    1793232000000,
+    1793318400000,
+    1793404800000,
+    1793491200000,
+    1793577600000,
+    1793664000000,
+    1793750400000
+  ],
+  "errors": {
+    "total": 58,
+    "previous": 13,
+    "series": [
+      0,
+      0,
+      1,
+      3,
+      2,
+      1,
+      0,
+      3,
+      0,
+      2,
+      2,
+      2,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      3,
+      2,
+      2,
+      3,
+      1,
+      1,
+      2,
+      1,
+      0,
+      3,
+      4,
+      3
+    ],
+    "visitors": 56,
+    "sessions": 58,
+    "sessionsTotal": 4089,
+    "sessionRate": 0.014184397163120567
+  },
+  "errorPages": [
+    {
+      "path": "/app",
+      "errors": 51,
+      "visitors": 49
+    },
+    {
+      "path": "/signup",
+      "errors": 4,
+      "visitors": 4
+    },
+    {
+      "path": "/templates",
+      "errors": 3,
+      "visitors": 3
+    }
+  ],
+  "notFound": [],
+  "slowPages": [
+    {
+      "path": "/about",
+      "p75": 3727.901,
+      "samples": 19
+    },
+    {
+      "path": "/blog/writing-every-day",
+      "p75": 3422.393,
+      "samples": 60
+    },
+    {
+      "path": "/blog/markdown-for-writers",
+      "p75": 3136.552,
+      "samples": 36
+    },
+    {
+      "path": "/",
+      "p75": 2965.699,
+      "samples": 154
+    },
+    {
+      "path": "/pricing",
+      "p75": 2904.223,
+      "samples": 131
+    },
+    {
+      "path": "/docs",
+      "p75": 2724.42,
+      "samples": 56
+    },
+    {
+      "path": "/templates",
+      "p75": 2581.285,
+      "samples": 99
+    },
+    {
+      "path": "/features/focus-mode",
+      "p75": 2548.867,
+      "samples": 56
+    },
+    {
+      "path": "/changelog",
+      "p75": 2537.955,
+      "samples": 38
+    }
+  ],
+  "sql": [
+    "WITH ev AS (\n  SELECT e.*,\n    CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid\n  FROM events e\n  LEFT JOIN (\n    SELECT distinct_id, MIN(person_id) AS person_id\n    FROM identities\n    WHERE project = 'demo'\n    GROUP BY distinct_id\n  ) i ON i.distinct_id = e.distinct_id\n  WHERE e.project = 'demo'\n    AND e.ts_ms >= 1791234392795\n    AND e.ts_ms < 1793826392795\n    AND e.event IN ('$pageview', '$exception')\n)\nSELECT\n  (SELECT COUNT(*) FROM ev WHERE event = '$exception') AS errors,\n  (SELECT COUNT(DISTINCT distinct_id) FROM ev WHERE event = '$exception') AS visitors,\n  (SELECT COUNT(DISTINCT session_id) FROM ev WHERE event = '$exception') AS sessions,\n  (SELECT COUNT(DISTINCT session_id) FROM ev WHERE event = '$pageview') AS sessions_total",
+    "WITH ev AS (\n  SELECT e.*,\n    CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid\n  FROM events e\n  LEFT JOIN (\n    SELECT distinct_id, MIN(person_id) AS person_id\n    FROM identities\n    WHERE project = 'demo'\n    GROUP BY distinct_id\n  ) i ON i.distinct_id = e.distinct_id\n  WHERE e.project = 'demo'\n    AND e.ts_ms >= 1788642392795\n    AND e.ts_ms < 1791234392795\n    AND e.event IN ('$exception')\n)\nSELECT COUNT(*) AS errors FROM ev",
+    "WITH ev AS (\n  SELECT e.*,\n    CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid\n  FROM events e\n  LEFT JOIN (\n    SELECT distinct_id, MIN(person_id) AS person_id\n    FROM identities\n    WHERE project = 'demo'\n    GROUP BY distinct_id\n  ) i ON i.distinct_id = e.distinct_id\n  WHERE e.project = 'demo'\n    AND e.ts_ms >= 1791234392795\n    AND e.ts_ms < 1793826392795\n    AND e.event IN ('$exception')\n)\nSELECT ((ts_ms / 86400000) * 86400000) AS bucket, COUNT(*) AS n FROM ev GROUP BY ((ts_ms / 86400000) * 86400000) ORDER BY bucket LIMIT 5000",
+    "WITH ev AS (\n  SELECT e.*,\n    CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid\n  FROM events e\n  LEFT JOIN (\n    SELECT distinct_id, MIN(person_id) AS person_id\n    FROM identities\n    WHERE project = 'demo'\n    GROUP BY distinct_id\n  ) i ON i.distinct_id = e.distinct_id\n  WHERE e.project = 'demo'\n    AND e.ts_ms >= 1791234392795\n    AND e.ts_ms < 1793826392795\n    AND e.event IN ('$exception')\n)\nSELECT COALESCE(NULLIF(path, ''), '(none)') AS path, COUNT(*) AS n, COUNT(DISTINCT distinct_id) AS visitors\nFROM ev GROUP BY COALESCE(NULLIF(path, ''), '(none)') ORDER BY n DESC LIMIT 10",
+    "WITH ev AS (\n  SELECT e.*,\n    CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid\n  FROM events e\n  LEFT JOIN (\n    SELECT distinct_id, MIN(person_id) AS person_id\n    FROM identities\n    WHERE project = 'demo'\n    GROUP BY distinct_id\n  ) i ON i.distinct_id = e.distinct_id\n  WHERE e.project = 'demo'\n    AND e.ts_ms >= 1791234392795\n    AND e.ts_ms < 1793826392795\n    AND e.event IN ('$pageview')\n)\nSELECT path, MIN(title) AS title, COUNT(*) AS views, COUNT(DISTINCT distinct_id) AS visitors,\n  MIN(COALESCE(NULLIF(referrer_host, ''), 'Direct / None')) AS referrer\nFROM ev\nWHERE LOWER(COALESCE(title, '')) LIKE '%404%' OR LOWER(COALESCE(title, '')) LIKE '%not found%' OR LOWER(COALESCE(title, '')) LIKE '%page not found%' OR LOWER(COALESCE(path, '')) LIKE '%/404%'\nGROUP BY path ORDER BY views DESC LIMIT 10",
+    "WITH ev AS (\n  SELECT e.*,\n    CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid\n  FROM events e\n  LEFT JOIN (\n    SELECT distinct_id, MIN(person_id) AS person_id\n    FROM identities\n    WHERE project = 'demo'\n    GROUP BY distinct_id\n  ) i ON i.distinct_id = e.distinct_id\n  WHERE e.project = 'demo'\n    AND e.ts_ms >= 1791234392795\n    AND e.ts_ms < 1793826392795\n    AND e.event IN ('$web_vitals')\n)\nSELECT COALESCE(NULLIF(path, ''), '(none)') AS path, (CASE WHEN json_type(props, '$.\"value\"') IN ('integer', 'real') THEN json_extract(props, '$.\"value\"') END) AS val\nFROM ev WHERE (CASE json_type(props, '$.\"metric\"') WHEN 'true' THEN 'true' WHEN 'false' THEN 'false' WHEN 'null' THEN NULL ELSE CAST(json_extract(props, '$.\"metric\"') AS TEXT) END) = 'LCP'\nORDER BY ts_ms DESC LIMIT 5000"
+  ],
+  "summary": "58 errors in 58 of 4089 sessions (1.4%), affecting 56 visitors. Slowest page by LCP: /about (p75 3728 ms).",
+  "replays": {
+    "sessions": 3,
+    "rageClicks": 1,
+    "deadClicks": 0,
+    "failedRequests": 6,
+    "consoleErrors": 6
+  }
+}

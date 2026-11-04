@@ -1,0 +1,86 @@
+{
+  "project": "demo",
+  "id": "user_1685",
+  "identified": true,
+  "properties": {
+    "signup_source": "header",
+    "plan": "free",
+    "email": "user_1685@example.com",
+    "company_size": "2-10"
+  },
+  "firstSeen": "2026-11-04T18:40:31.169Z",
+  "lastSeen": "2026-11-04T18:47:07.935Z",
+  "devices": [
+    "0b648b98-b30f-4c48-add1-8069e66873d7"
+  ],
+  "recentEvents": [
+    {
+      "event": "document_created",
+      "time": "2026-11-04T18:47:02.936Z",
+      "path": "/app",
+      "session": "cs_cba47528cfb357341a04_996565",
+      "properties": {
+        "template": "blog-post",
+        "words": 888
+      }
+    },
+    {
+      "event": "$exposure",
+      "time": "2026-11-04T18:40:32.169Z",
+      "path": "/app",
+      "session": "cs_cba47528cfb357341a04_996565",
+      "properties": {
+        "flag": "onboarding-checklist",
+        "variant": "control"
+      }
+    },
+    {
+      "event": "signup_completed",
+      "time": "2026-11-04T18:40:31.369Z",
+      "path": "/welcome",
+      "session": "06b8953d-76d6-43d4-adba-deb7cb3a14dc",
+      "properties": {
+        "plan": "free",
+        "method": "email"
+      }
+    },
+    {
+      "event": "$identify",
+      "time": "2026-11-04T18:40:31.169Z",
+      "path": "",
+      "session": "06b8953d-76d6-43d4-adba-deb7cb3a14dc",
+      "properties": {
+        "$set": {
+          "plan": "free",
+          "email": "user_1685@example.com",
+          "company_size": "2-10"
+        },
+        "$set_once": {
+          "signup_source": "header"
+        }
+      }
+    },
+    {
+      "event": "signup_started",
+      "time": "2026-11-04T18:39:47.994Z",
+      "path": "/signup",
+      "session": "06b8953d-76d6-43d4-adba-deb7cb3a14dc",
+      "properties": {
+        "source": "header"
+      }
+    },
+    {
+      "event": "$pageview",
+      "time": "2026-11-04T18:38:37.413Z",
+      "path": "/",
+      "session": "06b8953d-76d6-43d4-adba-deb7cb3a14dc",
+      "properties": {}
+    }
+  ],
+  "replays": [],
+  "summary": "Identified person \"user_1685\": 6 events in 90 days.",
+  "sql": [
+    "WITH ev AS (\n  SELECT e.*,\n    CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid\n  FROM events e\n  LEFT JOIN (\n    SELECT distinct_id, MIN(person_id) AS person_id\n    FROM identities\n    WHERE project = 'demo'\n    GROUP BY distinct_id\n  ) i ON i.distinct_id = e.distinct_id\n  WHERE e.project = 'demo'\n    AND e.ts_ms >= 1786050452496\n    AND e.ts_ms < 1793826512496\n)\nSELECT event, ts_ms, path, session_id, props FROM ev WHERE pid = 'user_1685' OR distinct_id = 'user_1685'\nORDER BY ts_ms DESC LIMIT 100"
+  ],
+  "dashboard": "http://127.0.0.1:55244/app#/users/user_1685?project=demo"
+}

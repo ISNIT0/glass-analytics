@@ -1,0 +1,49 @@
+{
+  "project": "demo",
+  "experiments": [
+    {
+      "key": "annual-billing-nudge",
+      "flag": "annual-billing-nudge",
+      "status": "draft",
+      "goal": {
+        "event": "subscription_started"
+      },
+      "secondary": [],
+      "hypothesis": "Showing the annual saving at checkout increases paid conversion.",
+      "startedAt": null,
+      "endedAt": null,
+      "shippedVariant": null,
+      "createdAt": 1793826279567
+    },
+    {
+      "key": "onboarding-checklist",
+      "flag": "onboarding-checklist",
+      "status": "running",
+      "goal": {
+        "event": "document_created"
+      },
+      "secondary": [],
+      "hypothesis": "A three-step checklist gets new writers to their first document.",
+      "startedAt": 1792789479531,
+      "endedAt": null,
+      "shippedVariant": null,
+      "createdAt": 1793826279564
+    },
+    {
+      "key": "pricing-page-v2",
+      "flag": "pricing-page-v2",
+      "status": "running",
+      "goal": {
+        "event": "signup_completed"
+      },
+      "secondary": [],
+      "hypothesis": "A shorter pricing page with one highlighted plan lifts signups.",
+      "startedAt": 1792184679531,
+      "endedAt": null,
+      "shippedVariant": null,
+      "createdAt": 1793826279561
+    }
+  ],
+  "summary": "3 experiments: annual-billing-nudge (draft), onboarding-checklist (running), pricing-page-v2 (running).",
+  "dashboard": "http://127.0.0.1:55244/app#/experiments?project=demo"
+}

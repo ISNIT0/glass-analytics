@@ -1,0 +1,65 @@
+{
+  "project": "demo",
+  "cohorts": [
+    {
+      "key": "active-writers",
+      "name": "Active writers",
+      "filters": [],
+      "didEvent": "document_created",
+      "from": "-14d",
+      "count": 327,
+      "updatedAt": "2026-11-04T21:04:44.022Z",
+      "sql": [
+        "WITH ev AS (\n  SELECT e.*,\n    CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid\n  FROM events e\n  LEFT JOIN (\n    SELECT distinct_id, MIN(person_id) AS person_id\n    FROM identities\n    WHERE project = 'demo'\n    GROUP BY distinct_id\n  ) i ON i.distinct_id = e.distinct_id\n  WHERE e.project = 'demo'\n    AND e.ts_ms >= 1792616825428\n    AND e.ts_ms < 1793826425428\n    AND e.event IN ('document_created')\n)\nSELECT COUNT(DISTINCT pid) AS n FROM ev"
+      ],
+      "retention": "http://127.0.0.1:55244/app#/insights/retention?project=demo&spec=%7B%22cohortEvent%22%3A%7B%22event%22%3A%22document_created%22%2C%22filters%22%3A%5B%5D%7D%2C%22returnEvent%22%3A%7B%22event%22%3A%22%24pageview%22%7D%2C%22period%22%3A%22week%22%2C%22periods%22%3A8%2C%22filters%22%3A%5B%5D%7D"
+    },
+    {
+      "key": "paying-customers",
+      "name": "Paying customers",
+      "filters": [
+        {
+          "property": "person.plan",
+          "op": "in",
+          "value": [
+            "pro",
+            "team"
+          ]
+        }
+      ],
+      "didEvent": null,
+      "from": "-90d",
+      "count": 198,
+      "updatedAt": "2026-11-04T21:04:44.008Z",
+      "sql": [
+        "WITH ev AS (\n  SELECT e.*,\n    CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid\n  FROM events e\n  LEFT JOIN (\n    SELECT distinct_id, MIN(person_id) AS person_id\n    FROM identities\n    WHERE project = 'demo'\n    GROUP BY distinct_id\n  ) i ON i.distinct_id = e.distinct_id\n  WHERE e.project = 'demo'\n    AND e.ts_ms >= 1786050425430\n    AND e.ts_ms < 1793826425430\n    AND ((CASE json_type(e.person_props, '$.\"plan\"') WHEN 'true' THEN 'true' WHEN 'false' THEN 'false' WHEN 'null' THEN NULL ELSE CAST(json_extract(e.person_props, '$.\"plan\"') AS TEXT) END) IN ('pro', 'team'))\n)\nSELECT COUNT(DISTINCT pid) AS n FROM ev"
+      ],
+      "retention": "http://127.0.0.1:55244/app#/insights/retention?project=demo&spec=%7B%22cohortEvent%22%3A%7B%22event%22%3A%22%24pageview%22%2C%22filters%22%3A%5B%7B%22property%22%3A%22person.plan%22%2C%22op%22%3A%22in%22%2C%22value%22%3A%5B%22pro%22%2C%22team%22%5D%7D%5D%7D%2C%22returnEvent%22%3A%7B%22event%22%3A%22%24pageview%22%7D%2C%22period%22%3A%22week%22%2C%22periods%22%3A8%2C%22filters%22%3A%5B%7B%22property%22%3A%22person.plan%22%2C%22op%22%3A%22in%22%2C%22value%22%3A%5B%22pro%22%2C%22team%22%5D%7D%5D%7D"
+    },
+    {
+      "key": "teams-of-11",
+      "name": "Teams of 11+",
+      "filters": [
+        {
+          "property": "person.company_size",
+          "op": "in",
+          "value": [
+            "11-50",
+            "51-200",
+            "200+"
+          ]
+        }
+      ],
+      "didEvent": null,
+      "from": "-90d",
+      "count": 144,
+      "updatedAt": "2026-11-04T21:04:44.025Z",
+      "sql": [
+        "WITH ev AS (\n  SELECT e.*,\n    CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid\n  FROM events e\n  LEFT JOIN (\n    SELECT distinct_id, MIN(person_id) AS person_id\n    FROM identities\n    WHERE project = 'demo'\n    GROUP BY distinct_id\n  ) i ON i.distinct_id = e.distinct_id\n  WHERE e.project = 'demo'\n    AND e.ts_ms >= 1786050425444\n    AND e.ts_ms < 1793826425444\n    AND ((CASE json_type(e.person_props, '$.\"company_size\"') WHEN 'true' THEN 'true' WHEN 'false' THEN 'false' WHEN 'null' THEN NULL ELSE CAST(json_extract(e.person_props, '$.\"company_size\"') AS TEXT) END) IN ('11-50', '51-200', '200+'))\n)\nSELECT COUNT(DISTINCT pid) AS n FROM ev"
+      ],
+      "retention": "http://127.0.0.1:55244/app#/insights/retention?project=demo&spec=%7B%22cohortEvent%22%3A%7B%22event%22%3A%22%24pageview%22%2C%22filters%22%3A%5B%7B%22property%22%3A%22person.company_size%22%2C%22op%22%3A%22in%22%2C%22value%22%3A%5B%2211-50%22%2C%2251-200%22%2C%22200%2B%22%5D%7D%5D%7D%2C%22returnEvent%22%3A%7B%22event%22%3A%22%24pageview%22%7D%2C%22period%22%3A%22week%22%2C%22periods%22%3A8%2C%22filters%22%3A%5B%7B%22property%22%3A%22person.company_size%22%2C%22op%22%3A%22in%22%2C%22value%22%3A%5B%2211-50%22%2C%2251-200%22%2C%22200%2B%22%5D%7D%5D%7D"
+    }
+  ],
+  "summary": "3 cohorts: Active writers (327), Paying customers (198), Teams of 11+ (144).",
+  "dashboard": "http://127.0.0.1:55244/app#/users?project=demo"
+}

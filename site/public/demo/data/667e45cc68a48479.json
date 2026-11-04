@@ -1,0 +1,106 @@
+{
+  "project": "demo",
+  "enabled": true,
+  "matching": 3,
+  "analysed": 3,
+  "skipped": 0,
+  "totals": {
+    "rageClicks": 1,
+    "deadClicks": 1,
+    "errorClicks": 2,
+    "errors": 1,
+    "consoleErrors": 6,
+    "failedRequests": 6
+  },
+  "rageClicks": [
+    {
+      "what": "\"Upgrade now\" (button) · #pay",
+      "occurrences": 5,
+      "sessions": 1,
+      "examples": [
+        {
+          "session": "01a1a860-e417-7f72-ab7c-b12f5c1c0c74",
+          "t": 16548,
+          "at": "00:16",
+          "link": "http://127.0.0.1:55244/app#/replays/01a1a860-e417-7f72-ab7c-b12f5c1c0c74?project=demo&t=16548"
+        }
+      ]
+    }
+  ],
+  "deadClicks": [
+    {
+      "what": "\"Upgrade now\" (button) · #pay",
+      "occurrences": 1,
+      "sessions": 1,
+      "examples": [
+        {
+          "session": "01a1a860-e417-7f72-ab7c-b12f5c1c0c74",
+          "t": 14517,
+          "at": "00:14",
+          "link": "http://127.0.0.1:55244/app#/replays/01a1a860-e417-7f72-ab7c-b12f5c1c0c74?project=demo&t=14517"
+        }
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "what": "TypeError: Cannot read properties of undefined (reading 'number')",
+      "occurrences": 1,
+      "sessions": 1,
+      "examples": [
+        {
+          "session": "01a1a860-e417-7f72-ab7c-b12f5c1c0c74",
+          "t": 14521,
+          "at": "00:14",
+          "link": "http://127.0.0.1:55244/app#/replays/01a1a860-e417-7f72-ab7c-b12f5c1c0c74?project=demo&t=14521"
+        }
+      ]
+    }
+  ],
+  "failedRequests": [
+    {
+      "what": "POST http://inkwell.example/api/billing → 404",
+      "occurrences": 6,
+      "sessions": 1,
+      "examples": [
+        {
+          "session": "01a1a860-e417-7f72-ab7c-b12f5c1c0c74",
+          "t": 14529,
+          "at": "00:14",
+          "link": "http://127.0.0.1:55244/app#/replays/01a1a860-e417-7f72-ab7c-b12f5c1c0c74?project=demo&t=14529"
+        }
+      ]
+    }
+  ],
+  "consoleErrors": [
+    {
+      "what": "Billing request failed: 404",
+      "occurrences": 6,
+      "sessions": 1,
+      "examples": [
+        {
+          "session": "01a1a860-e417-7f72-ab7c-b12f5c1c0c74",
+          "t": 14529,
+          "at": "00:14",
+          "link": "http://127.0.0.1:55244/app#/replays/01a1a860-e417-7f72-ab7c-b12f5c1c0c74?project=demo&t=14529"
+        }
+      ]
+    }
+  ],
+  "exitPages": [
+    {
+      "what": "http://inkwell.example/app",
+      "occurrences": 1,
+      "sessions": 1,
+      "examples": [
+        {
+          "session": "01a1a860-e417-7f72-ab7c-b12f5c1c0c74",
+          "t": 11467,
+          "at": "00:11",
+          "link": "http://127.0.0.1:55244/app#/replays/01a1a860-e417-7f72-ab7c-b12f5c1c0c74?project=demo&t=11467"
+        }
+      ]
+    }
+  ],
+  "summary": "3 sessions analysed: 1 rage clicks, 1 dead clicks, 2 clicks followed by an error, 1 errors, 6 console errors, 6 failed requests.\n\nRage-clicked elements:\n- \"Upgrade now\" (button) · #pay — 1 session, 5× (e.g. 01a1a860-e417-7f72-ab7c-b12f5c1c0c74)\n\nDead clicks (nothing happened):\n- \"Upgrade now\" (button) · #pay — 1 session, 1× (e.g. 01a1a860-e417-7f72-ab7c-b12f5c1c0c74)\n\nErrors:\n- TypeError: Cannot read properties of undefined (reading 'number') — 1 session, 1× (e.g. 01a1a860-e417-7f72-ab7c-b12f5c1c0c74)\n\nFailed requests:\n- POST http://inkwell.example/api/billing → 404 — 1 session, 6× (e.g. 01a1a860-e417-7f72-ab7c-b12f5c1c0c74)\n\nConsole errors:\n- Billing request failed: 404 — 1 session, 6× (e.g. 01a1a860-e417-7f72-ab7c-b12f5c1c0c74)\n\nLast page of sessions with problems:\n- http://inkwell.example/app — 1 session, 1× (e.g. 01a1a860-e417-7f72-ab7c-b12f5c1c0c74)"
+}

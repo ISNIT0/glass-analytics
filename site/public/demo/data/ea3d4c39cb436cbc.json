@@ -1,0 +1,139 @@
+{
+  "kind": "funnel",
+  "windowSeconds": 86400,
+  "steps": [
+    {
+      "label": "$pageview",
+      "event": "$pageview",
+      "count": 3154,
+      "conversionFromStart": 1,
+      "conversionFromPrevious": 1,
+      "avgSecondsFromPrevious": null
+    },
+    {
+      "label": "signup_completed",
+      "event": "signup_completed",
+      "count": 370,
+      "conversionFromStart": 0.11731135066582118,
+      "conversionFromPrevious": 0.11731135066582118,
+      "avgSecondsFromPrevious": 190.32505405405405
+    }
+  ],
+  "sql": [
+    "WITH ev AS (\n  SELECT e.*,\n    CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid\n  FROM events e\n  LEFT JOIN (\n    SELECT distinct_id, MIN(person_id) AS person_id\n    FROM identities\n    WHERE project = 'demo'\n    GROUP BY distinct_id\n  ) i ON i.distinct_id = e.distinct_id\n  WHERE e.project = 'demo'\n    AND e.ts_ms >= 1791234438450\n    AND e.ts_ms < 1793912838450\n    AND e.event IN ('$pageview', 'signup_completed')\n),\ns1 AS (\n  SELECT pid, MIN(ts_ms) AS t1\n  FROM ev\n  WHERE event = '$pageview' AND ts_ms < 1793826438450 AND 1 = 1\n  GROUP BY pid\n),\nb AS (\n  SELECT s1.pid, MIN(COALESCE(NULLIF(ev.utm_source, ''), '(none)')) AS bd\n  FROM s1 JOIN ev ON ev.pid = s1.pid AND ev.ts_ms = s1.t1\n  WHERE ev.event = '$pageview' AND 1 = 1\n  GROUP BY s1.pid\n),\ns2 AS (\n  SELECT s1.pid, s1.t1, MIN(ev.ts_ms) AS t2\n  FROM s1 JOIN ev ON ev.pid = s1.pid\n  WHERE ev.event = 'signup_completed'\n    AND ev.ts_ms > s1.t1\n    AND ev.ts_ms <= s1.t1 + 86400000\n    AND 1 = 1\n  GROUP BY s1.pid, s1.t1\n)\nSELECT 1 AS step, COALESCE(b.bd, '(none)') AS bd, COUNT(*) AS n, 0 AS dt_ms FROM s1 LEFT JOIN b ON b.pid = s1.pid GROUP BY COALESCE(b.bd, '(none)')\nUNION ALL\nSELECT 2 AS step, COALESCE(b.bd, '(none)') AS bd, COUNT(*) AS n, SUM(s2.t2 - s2.t1) AS dt_ms FROM s2 LEFT JOIN b ON b.pid = s2.pid GROUP BY COALESCE(b.bd, '(none)')"
+  ],
+  "range": {
+    "from": "2026-10-05T21:07:18.450Z",
+    "to": "2026-11-04T21:07:18.450Z"
+  },
+  "summary": "3,154 people started; 370 completed (11.7%). Biggest drop-off: into \"signup_completed\" (11.7% of the previous step).",
+  "breakdowns": [
+    {
+      "value": "(none)",
+      "steps": [
+        {
+          "label": "$pageview",
+          "event": "$pageview",
+          "count": 2351,
+          "conversionFromStart": 1,
+          "conversionFromPrevious": 1,
+          "avgSecondsFromPrevious": null
+        },
+        {
+          "label": "signup_completed",
+          "event": "signup_completed",
+          "count": 256,
+          "conversionFromStart": 0.10888983411314335,
+          "conversionFromPrevious": 0.10888983411314335,
+          "avgSecondsFromPrevious": 190.8790078125
+        }
+      ]
+    },
+    {
+      "value": "producthunt",
+      "steps": [
+        {
+          "label": "$pageview",
+          "event": "$pageview",
+          "count": 313,
+          "conversionFromStart": 1,
+          "conversionFromPrevious": 1,
+          "avgSecondsFromPrevious": null
+        },
+        {
+          "label": "signup_completed",
+          "event": "signup_completed",
+          "count": 48,
+          "conversionFromStart": 0.15335463258785942,
+          "conversionFromPrevious": 0.15335463258785942,
+          "avgSecondsFromPrevious": 200.57197916666667
+        }
+      ]
+    },
+    {
+      "value": "newsletter",
+      "steps": [
+        {
+          "label": "$pageview",
+          "event": "$pageview",
+          "count": 174,
+          "conversionFromStart": 1,
+          "conversionFromPrevious": 1,
+          "avgSecondsFromPrevious": null
+        },
+        {
+          "label": "signup_completed",
+          "event": "signup_completed",
+          "count": 36,
+          "conversionFromStart": 0.20689655172413793,
+          "conversionFromPrevious": 0.20689655172413793,
+          "avgSecondsFromPrevious": 164.33802777777777
+        }
+      ]
+    },
+    {
+      "value": "twitter",
+      "steps": [
+        {
+          "label": "$pageview",
+          "event": "$pageview",
+          "count": 167,
+          "conversionFromStart": 1,
+          "conversionFromPrevious": 1,
+          "avgSecondsFromPrevious": null
+        },
+        {
+          "label": "signup_completed",
+          "event": "signup_completed",
+          "count": 16,
+          "conversionFromStart": 0.09580838323353294,
+          "conversionFromPrevious": 0.09580838323353294,
+          "avgSecondsFromPrevious": 210.798375
+        }
+      ]
+    },
+    {
+      "value": "meta",
+      "steps": [
+        {
+          "label": "$pageview",
+          "event": "$pageview",
+          "count": 149,
+          "conversionFromStart": 1,
+          "conversionFromPrevious": 1,
+          "avgSecondsFromPrevious": null
+        },
+        {
+          "label": "signup_completed",
+          "event": "signup_completed",
+          "count": 14,
+          "conversionFromStart": 0.09395973154362416,
+          "conversionFromPrevious": 0.09395973154362416,
+          "avgSecondsFromPrevious": 188.489
+        }
+      ]
+    }
+  ],
+  "project": "demo",
+  "dashboard": "http://127.0.0.1:55244/app#/insights/funnel?project=demo&spec=%7B%22from%22%3A%22-30d%22%2C%22steps%22%3A%5B%7B%22event%22%3A%22%24pageview%22%7D%2C%7B%22event%22%3A%22signup_completed%22%7D%5D%2C%22window%22%3A%221d%22%2C%22breakdown%22%3A%5B%22utm_source%22%5D%7D"
+}

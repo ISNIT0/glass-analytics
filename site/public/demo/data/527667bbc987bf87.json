@@ -1,0 +1,20 @@
+{
+  "project": "demo",
+  "key": "writer-retention",
+  "name": "Writer retention",
+  "description": "Of people who signed up each week, how many came back to write.",
+  "kind": "retention",
+  "spec": {
+    "cohortEvent": {
+      "event": "signup_completed"
+    },
+    "returnEvent": {
+      "event": "document_created"
+    },
+    "period": "week",
+    "periods": 7,
+    "from": "-56d"
+  },
+  "updatedAt": "2026-11-04T21:04:44.041Z",
+  "dashboard": "http://127.0.0.1:55244/app#/insights/writer-retention?project=demo"
+}

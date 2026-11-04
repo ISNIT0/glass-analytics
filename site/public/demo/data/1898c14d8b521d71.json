@@ -1,0 +1,24 @@
+{
+  "project": "demo",
+  "flag": {
+    "key": "ai-suggestions",
+    "description": "Writing suggestions in the sidebar, for paying plans.",
+    "enabled": true,
+    "rollout": 0,
+    "rules": [
+      {
+        "conditions": [
+          {
+            "property": "person.plan",
+            "op": "in",
+            "value": [
+              "pro",
+              "team"
+            ]
+          }
+        ],
+        "rollout": 100
+      }
+    ]
+  }
+}

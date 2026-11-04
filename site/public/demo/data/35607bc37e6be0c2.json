@@ -1,0 +1,38 @@
+{
+  "project": "demo",
+  "id": "01a1a860-e410-7e96-ae38-b43568f6cf1f",
+  "identified": false,
+  "properties": {},
+  "firstSeen": "2026-11-04T21:04:47.165Z",
+  "lastSeen": "2026-11-04T21:04:56.349Z",
+  "devices": [],
+  "recentEvents": [
+    {
+      "event": "$pageview",
+      "time": "2026-11-04T21:04:56.349Z",
+      "path": "/pricing",
+      "session": "01a1a860-e417-7f74-ba77-dd6e4045c156",
+      "properties": {}
+    },
+    {
+      "event": "$pageview",
+      "time": "2026-11-04T21:04:47.165Z",
+      "path": "/changelog",
+      "session": "01a1a860-e417-7f74-ba77-dd6e4045c156",
+      "properties": {}
+    }
+  ],
+  "replays": [
+    {
+      "session": "01a1a860-e417-7f74-ba77-dd6e4045c156",
+      "started": "2026-11-04T21:04:44.590Z",
+      "errors": 0,
+      "url": "http://inkwell.example/"
+    }
+  ],
+  "summary": "Anonymous device \"01a1a860-e410-7e96-ae38-b43568f6cf1f\": 2 events in 90 days, 1 recorded sessions.",
+  "sql": [
+    "WITH ev AS (\n  SELECT e.*,\n    CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid\n  FROM events e\n  LEFT JOIN (\n    SELECT distinct_id, MIN(person_id) AS person_id\n    FROM identities\n    WHERE project = 'demo'\n    GROUP BY distinct_id\n  ) i ON i.distinct_id = e.distinct_id\n  WHERE e.project = 'demo'\n    AND e.ts_ms >= 1786050468685\n    AND e.ts_ms < 1793826528685\n)\nSELECT event, ts_ms, path, session_id, props FROM ev WHERE pid = '01a1a860-e410-7e96-ae38-b43568f6cf1f' OR distinct_id = '01a1a860-e410-7e96-ae38-b43568f6cf1f'\nORDER BY ts_ms DESC LIMIT 100"
+  ],
+  "dashboard": "http://127.0.0.1:55244/app#/users/01a1a860-e410-7e96-ae38-b43568f6cf1f?project=demo"
+}

@@ -1,0 +1,44 @@
+{
+  "project": "demo",
+  "event": "document_created",
+  "sampled": 500,
+  "lastSeen": "2026-11-04T20:51:43.798Z",
+  "description": "Fired when a writer creates a document, blank or from a template.",
+  "owner": "Growth",
+  "properties": [
+    {
+      "name": "template",
+      "types": [
+        "string"
+      ],
+      "coverage": 1,
+      "examples": [
+        "blank",
+        "daily-journal",
+        "novel-chapter",
+        "newsletter",
+        "blog-post"
+      ],
+      "description": "Template id, or \"blank\"."
+    },
+    {
+      "name": "words",
+      "types": [
+        "number"
+      ],
+      "coverage": 1,
+      "examples": [
+        "2086",
+        "1547",
+        "2003",
+        "714",
+        "2320"
+      ],
+      "description": "Word count when the document is first saved."
+    }
+  ],
+  "summary": "\"document_created\": 2 properties across the latest 500 events.",
+  "sql": [
+    "SELECT props, ts_ms FROM events\nWHERE project = 'demo' AND event = 'document_created' AND ts_ms >= 1791234479829\nORDER BY ts_ms DESC LIMIT 500"
+  ]
+}

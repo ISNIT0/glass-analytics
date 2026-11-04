@@ -1,0 +1,19 @@
+{
+  "project": "demo",
+  "flag": {
+    "key": "pricing-page-v2",
+    "description": "Experiment: A shorter pricing page with one highlighted plan lifts signups.",
+    "enabled": true,
+    "rollout": 100,
+    "variants": [
+      {
+        "key": "control",
+        "weight": 50
+      },
+      {
+        "key": "test",
+        "weight": 50
+      }
+    ]
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "project": "demo",
+  "flag": {
+    "key": "annual-billing-nudge",
+    "description": "Experiment: Showing the annual saving at checkout increases paid conversion.",
+    "enabled": false,
+    "rollout": 100,
+    "variants": [
+      {
+        "key": "control",
+        "weight": 50
+      },
+      {
+        "key": "test",
+        "weight": 50
+      }
+    ]
+  }
+}

@@ -1,0 +1,297 @@
+{
+  "project": "demo",
+  "id": "user_1273",
+  "identified": true,
+  "properties": {
+    "signup_source": "header",
+    "plan": "free",
+    "email": "user_1273@example.com",
+    "company_size": "2-10"
+  },
+  "firstSeen": "2026-10-01T16:36:01.120Z",
+  "lastSeen": "2026-11-04T20:46:24.543Z",
+  "devices": [
+    "e2e7c413-4ce6-4faf-ac03-7c708a68875f"
+  ],
+  "recentEvents": [
+    {
+      "event": "document_shared",
+      "time": "2026-11-04T20:46:19.543Z",
+      "path": "/app",
+      "session": "bca3eef8-877e-4d13-a33b-058111bb78c8",
+      "properties": {
+        "via": "link"
+      }
+    },
+    {
+      "event": "document_created",
+      "time": "2026-11-04T20:31:19.543Z",
+      "path": "/app",
+      "session": "bca3eef8-877e-4d13-a33b-058111bb78c8",
+      "properties": {
+        "template": "novel-chapter",
+        "words": 714
+      }
+    },
+    {
+      "event": "document_created",
+      "time": "2026-11-04T20:26:19.543Z",
+      "path": "/app",
+      "session": "bca3eef8-877e-4d13-a33b-058111bb78c8",
+      "properties": {
+        "template": "newsletter",
+        "words": 2320
+      }
+    },
+    {
+      "event": "$pageview",
+      "time": "2026-11-04T20:21:19.543Z",
+      "path": "/app",
+      "session": "bca3eef8-877e-4d13-a33b-058111bb78c8",
+      "properties": {}
+    },
+    {
+      "event": "document_created",
+      "time": "2026-11-01T01:06:11.071Z",
+      "path": "/app",
+      "session": "fea51b82-21e9-4248-ad0a-79d2263f882e",
+      "properties": {
+        "template": "daily-journal",
+        "words": 1936
+      }
+    },
+    {
+      "event": "document_created",
+      "time": "2026-11-01T01:01:11.071Z",
+      "path": "/app",
+      "session": "fea51b82-21e9-4248-ad0a-79d2263f882e",
+      "properties": {
+        "template": "newsletter",
+        "words": 452
+      }
+    },
+    {
+      "event": "document_created",
+      "time": "2026-11-01T00:56:11.071Z",
+      "path": "/app",
+      "session": "fea51b82-21e9-4248-ad0a-79d2263f882e",
+      "properties": {
+        "template": "blank",
+        "words": 581
+      }
+    },
+    {
+      "event": "$pageview",
+      "time": "2026-11-01T00:51:11.071Z",
+      "path": "/app",
+      "session": "fea51b82-21e9-4248-ad0a-79d2263f882e",
+      "properties": {}
+    },
+    {
+      "event": "document_created",
+      "time": "2026-10-28T20:46:24.543Z",
+      "path": "/app",
+      "session": "abafe0c2-2967-41f4-aca5-5cd6cec90fd5",
+      "properties": {
+        "template": "blank",
+        "words": 2525
+      }
+    },
+    {
+      "event": "$pageview",
+      "time": "2026-10-28T20:46:24.543Z",
+      "path": "/app",
+      "session": "abafe0c2-2967-41f4-aca5-5cd6cec90fd5",
+      "properties": {}
+    },
+    {
+      "event": "document_created",
+      "time": "2026-10-28T20:46:24.543Z",
+      "path": "/app",
+      "session": "3db9e3c8-6854-4864-a154-7caa299035d3",
+      "properties": {
+        "template": "daily-journal",
+        "words": 2032
+      }
+    },
+    {
+      "event": "$pageview",
+      "time": "2026-10-28T20:46:24.543Z",
+      "path": "/app",
+      "session": "3db9e3c8-6854-4864-a154-7caa299035d3",
+      "properties": {}
+    },
+    {
+      "event": "document_created",
+      "time": "2026-10-28T20:46:24.543Z",
+      "path": "/app",
+      "session": "558d944e-7cd1-479a-aeb3-313a98b04a71",
+      "properties": {
+        "template": "blog-post",
+        "words": 1890
+      }
+    },
+    {
+      "event": "$pageview",
+      "time": "2026-10-28T20:46:24.543Z",
+      "path": "/app",
+      "session": "558d944e-7cd1-479a-aeb3-313a98b04a71",
+      "properties": {}
+    },
+    {
+      "event": "document_created",
+      "time": "2026-10-28T20:46:24.543Z",
+      "path": "/app",
+      "session": "edf8d895-d92e-4139-a8c0-3af0db1fd83f",
+      "properties": {
+        "template": "blog-post",
+        "words": 2587
+      }
+    },
+    {
+      "event": "document_created",
+      "time": "2026-10-28T20:46:24.543Z",
+      "path": "/app",
+      "session": "edf8d895-d92e-4139-a8c0-3af0db1fd83f",
+      "properties": {
+        "template": "daily-journal",
+        "words": 701
+      }
+    },
+    {
+      "event": "document_created",
+      "time": "2026-10-28T20:46:24.543Z",
+      "path": "/app",
+      "session": "edf8d895-d92e-4139-a8c0-3af0db1fd83f",
+      "properties": {
+        "template": "newsletter",
+        "words": 714
+      }
+    },
+    {
+      "event": "$pageview",
+      "time": "2026-10-28T20:46:24.543Z",
+      "path": "/app",
+      "session": "edf8d895-d92e-4139-a8c0-3af0db1fd83f",
+      "properties": {}
+    },
+    {
+      "event": "document_shared",
+      "time": "2026-10-28T20:46:24.543Z",
+      "path": "/app",
+      "session": "699e39f5-9c7a-440c-acff-96892a0a9fb8",
+      "properties": {
+        "via": "link"
+      }
+    },
+    {
+      "event": "document_created",
+      "time": "2026-10-28T20:46:24.543Z",
+      "path": "/app",
+      "session": "699e39f5-9c7a-440c-acff-96892a0a9fb8",
+      "properties": {
+        "template": "blog-post",
+        "words": 1809
+      }
+    },
+    {
+      "event": "document_created",
+      "time": "2026-10-28T20:46:24.543Z",
+      "path": "/app",
+      "session": "699e39f5-9c7a-440c-acff-96892a0a9fb8",
+      "properties": {
+        "template": "blog-post",
+        "words": 454
+      }
+    },
+    {
+      "event": "$pageview",
+      "time": "2026-10-28T20:46:24.543Z",
+      "path": "/app",
+      "session": "699e39f5-9c7a-440c-acff-96892a0a9fb8",
+      "properties": {}
+    },
+    {
+      "event": "document_created",
+      "time": "2026-10-28T20:46:24.543Z",
+      "path": "/app",
+      "session": "04169481-6324-4f21-ae3e-b78562c9d32b",
+      "properties": {
+        "template": "daily-journal",
+        "words": 1360
+      }
+    },
+    {
+      "event": "document_created",
+      "time": "2026-10-28T20:46:24.543Z",
+      "path": "/app",
+      "session": "04169481-6324-4f21-ae3e-b78562c9d32b",
+      "properties": {
+        "template": "blank",
+        "words": 1174
+      }
+    },
+    {
+      "event": "$pageview",
+      "time": "2026-10-28T20:46:24.543Z",
+      "path": "/app",
+      "session": "04169481-6324-4f21-ae3e-b78562c9d32b",
+      "properties": {}
+    },
+    {
+      "event": "signup_completed",
+      "time": "2026-10-01T16:36:01.320Z",
+      "path": "/welcome",
+      "session": "9b9126f5-600e-4f18-aa24-e967bbfd85ee",
+      "properties": {
+        "plan": "free",
+        "method": "google"
+      }
+    },
+    {
+      "event": "$identify",
+      "time": "2026-10-01T16:36:01.120Z",
+      "path": "",
+      "session": "9b9126f5-600e-4f18-aa24-e967bbfd85ee",
+      "properties": {
+        "$set": {
+          "plan": "free",
+          "email": "user_1273@example.com",
+          "company_size": "2-10"
+        },
+        "$set_once": {
+          "signup_source": "header"
+        }
+      }
+    },
+    {
+      "event": "signup_started",
+      "time": "2026-10-01T16:34:42.175Z",
+      "path": "/signup",
+      "session": "9b9126f5-600e-4f18-aa24-e967bbfd85ee",
+      "properties": {
+        "source": "header"
+      }
+    },
+    {
+      "event": "$pageview",
+      "time": "2026-10-01T16:33:08.189Z",
+      "path": "/features/focus-mode",
+      "session": "9b9126f5-600e-4f18-aa24-e967bbfd85ee",
+      "properties": {}
+    },
+    {
+      "event": "$pageview",
+      "time": "2026-10-01T16:32:30.673Z",
+      "path": "/",
+      "session": "9b9126f5-600e-4f18-aa24-e967bbfd85ee",
+      "properties": {}
+    }
+  ],
+  "replays": [],
+  "summary": "Identified person \"user_1273\": 30 events in 90 days.",
+  "sql": [
+    "WITH ev AS (\n  SELECT e.*,\n    CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid\n  FROM events e\n  LEFT JOIN (\n    SELECT distinct_id, MIN(person_id) AS person_id\n    FROM identities\n    WHERE project = 'demo'\n    GROUP BY distinct_id\n  ) i ON i.distinct_id = e.distinct_id\n  WHERE e.project = 'demo'\n    AND e.ts_ms >= 1786050451028\n    AND e.ts_ms < 1793826511028\n)\nSELECT event, ts_ms, path, session_id, props FROM ev WHERE pid = 'user_1273' OR distinct_id = 'user_1273'\nORDER BY ts_ms DESC LIMIT 100"
+  ],
+  "dashboard": "http://127.0.0.1:55244/app#/users/user_1273?project=demo"
+}

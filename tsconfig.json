@@ -22,5 +22,12 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["packages/*/src/**/*.ts", "packages/*/test/**/*.ts", "scripts/**/*.ts", "e2e/**/*.ts"]
+  "include": [
+    "packages/*/src/**/*.ts",
+    "packages/*/test/**/*.ts",
+    "scripts/**/*.ts",
+    "e2e/**/*.ts",
+    "site/build.ts",
+    "site/src/**/*.ts"
+  ]
 }

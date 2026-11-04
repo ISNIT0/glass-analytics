@@ -1,0 +1,73 @@
+{
+  "project": "demo",
+  "experiment": {
+    "key": "onboarding-checklist",
+    "flag": "onboarding-checklist",
+    "status": "running",
+    "goal": {
+      "event": "document_created"
+    },
+    "secondary": [],
+    "hypothesis": "A three-step checklist gets new writers to their first document.",
+    "startedAt": 1792789479531,
+    "endedAt": null,
+    "shippedVariant": null,
+    "createdAt": 1793826279564
+  },
+  "results": {
+    "kind": "experiment",
+    "flag": "onboarding-checklist",
+    "goal": "document_created",
+    "variants": [
+      {
+        "variant": "control",
+        "exposures": 70,
+        "conversions": 54,
+        "conversionRate": 0.7714285714285715,
+        "rateInterval": [
+          0.6604944698154658,
+          0.8541205981137232
+        ],
+        "vsControl": null,
+        "mean": null
+      },
+      {
+        "variant": "test",
+        "exposures": 65,
+        "conversions": 51,
+        "conversionRate": 0.7846153846153846,
+        "rateInterval": [
+          0.6703320947133157,
+          0.8671336236895105
+        ],
+        "vsControl": {
+          "probabilityToBeatControl": 0.57095,
+          "expectedLift": 0.02105921260429759,
+          "liftInterval": [
+            -0.15399268432056312,
+            0.22384869275368843
+          ]
+        },
+        "mean": null
+      }
+    ],
+    "excludedMultipleVariants": 0,
+    "srm": {
+      "chiSquare": 0.18518518518518517,
+      "pValue": 0.6669545286928191,
+      "mismatch": false
+    },
+    "winner": null,
+    "estimatedDaysToSignificance": 59,
+    "sql": [
+      "WITH ev AS (\n  SELECT e.*,\n    CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid\n  FROM events e\n  LEFT JOIN (\n    SELECT distinct_id, MIN(person_id) AS person_id\n    FROM identities\n    WHERE project = 'demo'\n    GROUP BY distinct_id\n  ) i ON i.distinct_id = e.distinct_id\n  WHERE e.project = 'demo'\n    AND e.ts_ms >= 1792788879531\n    AND e.ts_ms < 1793826476895\n    AND e.event IN ('$exposure', 'document_created')\n),\nx AS (\n  SELECT pid, MIN(ts_ms) AS t0, MIN((CASE json_type(props, '$.\"variant\"') WHEN 'true' THEN 'true' WHEN 'false' THEN 'false' WHEN 'null' THEN NULL ELSE CAST(json_extract(props, '$.\"variant\"') AS TEXT) END)) AS variant, COUNT(DISTINCT (CASE json_type(props, '$.\"variant\"') WHEN 'true' THEN 'true' WHEN 'false' THEN 'false' WHEN 'null' THEN NULL ELSE CAST(json_extract(props, '$.\"variant\"') AS TEXT) END)) AS nv\n  FROM ev\n  WHERE event = '$exposure' AND (CASE json_type(props, '$.\"flag\"') WHEN 'true' THEN 'true' WHEN 'false' THEN 'false' WHEN 'null' THEN NULL ELSE CAST(json_extract(props, '$.\"flag\"') AS TEXT) END) = 'onboarding-checklist'\n  GROUP BY pid\n),\nxe AS (SELECT pid, t0, variant FROM x WHERE nv = 1),\ng AS (\n  SELECT xe.pid, SUM(0) AS total\n  FROM xe JOIN ev ON ev.pid = xe.pid\n  WHERE ev.event = 'document_created' AND ev.ts_ms >= xe.t0 AND 1 = 1\n  GROUP BY xe.pid\n)\nSELECT xe.variant AS variant,\n  COUNT(*) AS exposures,\n  SUM(CASE WHEN g.pid IS NULL THEN 0 ELSE 1 END) AS conversions,\n  SUM(COALESCE(g.total, 0)) AS value_sum,\n  SUM(COALESCE(g.total, 0) * COALESCE(g.total, 0)) AS value_sumsq,\n  MIN(xe.t0) AS first_exposure,\n  (SELECT COUNT(*) FROM x WHERE nv > 1) AS multi\nFROM xe LEFT JOIN g ON g.pid = xe.pid\nGROUP BY xe.variant"
+    ],
+    "range": {
+      "from": "2026-10-23T20:54:39.531Z",
+      "to": "2026-11-04T21:07:56.895Z"
+    },
+    "summary": "control: 54/70 = 77.1% (control); test: 51/65 = 78.5%, 57.1% chance to beat control (lift 2.1%). No winner yet; roughly 59 more days to detect a 10% lift at the current pace."
+  },
+  "summary": "[running] control: 54/70 = 77.1% (control); test: 51/65 = 78.5%, 57.1% chance to beat control (lift 2.1%). No winner yet; roughly 59 more days to detect a 10% lift at the current pace.",
+  "dashboard": "http://127.0.0.1:55244/app#/experiments/onboarding-checklist?project=demo"
+}

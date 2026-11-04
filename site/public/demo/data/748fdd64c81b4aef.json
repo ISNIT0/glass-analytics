@@ -1,0 +1,170 @@
+{
+  "project": "demo",
+  "id": "user_1411",
+  "identified": true,
+  "properties": {
+    "signup_source": "pricing",
+    "plan": "free",
+    "email": "user_1411@example.com",
+    "company_size": "1"
+  },
+  "firstSeen": "2026-10-13T03:20:15.240Z",
+  "lastSeen": "2026-11-04T09:33:09.284Z",
+  "devices": [
+    "8f4b5b68-57ef-4187-a0fa-1be0ab51df0f"
+  ],
+  "recentEvents": [
+    {
+      "event": "document_shared",
+      "time": "2026-11-04T09:33:04.285Z",
+      "path": "/app",
+      "session": "2fda200d-488f-4fad-a035-3c9e76e8d393",
+      "properties": {
+        "via": "email"
+      }
+    },
+    {
+      "event": "document_created",
+      "time": "2026-11-04T09:23:04.285Z",
+      "path": "/app",
+      "session": "2fda200d-488f-4fad-a035-3c9e76e8d393",
+      "properties": {
+        "template": "blank",
+        "words": 775
+      }
+    },
+    {
+      "event": "document_created",
+      "time": "2026-11-04T09:18:04.285Z",
+      "path": "/app",
+      "session": "2fda200d-488f-4fad-a035-3c9e76e8d393",
+      "properties": {
+        "template": "blank",
+        "words": 222
+      }
+    },
+    {
+      "event": "document_created",
+      "time": "2026-11-04T09:13:04.285Z",
+      "path": "/app",
+      "session": "2fda200d-488f-4fad-a035-3c9e76e8d393",
+      "properties": {
+        "template": "blog-post",
+        "words": 1693
+      }
+    },
+    {
+      "event": "$pageview",
+      "time": "2026-11-04T09:08:04.285Z",
+      "path": "/app",
+      "session": "2fda200d-488f-4fad-a035-3c9e76e8d393",
+      "properties": {}
+    },
+    {
+      "event": "document_created",
+      "time": "2026-10-28T09:33:09.284Z",
+      "path": "/app",
+      "session": "cs_a1e95d0f32a99b92d051_996211",
+      "properties": {
+        "template": "daily-journal",
+        "words": 59
+      }
+    },
+    {
+      "event": "signup_completed",
+      "time": "2026-10-13T03:20:15.440Z",
+      "path": "/welcome",
+      "session": "9bde52c2-041a-4282-a0c0-30509d3926e2",
+      "properties": {
+        "plan": "free",
+        "method": "email"
+      }
+    },
+    {
+      "event": "$identify",
+      "time": "2026-10-13T03:20:15.240Z",
+      "path": "",
+      "session": "9bde52c2-041a-4282-a0c0-30509d3926e2",
+      "properties": {
+        "$set": {
+          "plan": "free",
+          "email": "user_1411@example.com",
+          "company_size": "1"
+        },
+        "$set_once": {
+          "signup_source": "pricing"
+        }
+      }
+    },
+    {
+      "event": "signup_started",
+      "time": "2026-10-13T03:19:29.446Z",
+      "path": "/signup",
+      "session": "9bde52c2-041a-4282-a0c0-30509d3926e2",
+      "properties": {
+        "source": "pricing"
+      }
+    },
+    {
+      "event": "$pageview",
+      "time": "2026-10-13T03:18:58.877Z",
+      "path": "/templates",
+      "session": "9bde52c2-041a-4282-a0c0-30509d3926e2",
+      "properties": {}
+    },
+    {
+      "event": "$web_vitals",
+      "time": "2026-10-13T03:17:01.220Z",
+      "path": "/",
+      "session": "9bde52c2-041a-4282-a0c0-30509d3926e2",
+      "properties": {
+        "metric": "FCP",
+        "value": 560.745
+      }
+    },
+    {
+      "event": "$pageview",
+      "time": "2026-10-13T03:16:58.720Z",
+      "path": "/",
+      "session": "9bde52c2-041a-4282-a0c0-30509d3926e2",
+      "properties": {}
+    },
+    {
+      "event": "$pageview",
+      "time": "2026-10-13T03:16:39.909Z",
+      "path": "/pricing",
+      "session": "9bde52c2-041a-4282-a0c0-30509d3926e2",
+      "properties": {}
+    },
+    {
+      "event": "$web_vitals",
+      "time": "2026-10-13T03:16:13.395Z",
+      "path": "/features/focus-mode",
+      "session": "9bde52c2-041a-4282-a0c0-30509d3926e2",
+      "properties": {
+        "metric": "INP",
+        "value": 202.506
+      }
+    },
+    {
+      "event": "$pageview",
+      "time": "2026-10-13T03:16:10.895Z",
+      "path": "/features/focus-mode",
+      "session": "9bde52c2-041a-4282-a0c0-30509d3926e2",
+      "properties": {}
+    },
+    {
+      "event": "$pageview",
+      "time": "2026-10-13T03:16:01.286Z",
+      "path": "/changelog",
+      "session": "9bde52c2-041a-4282-a0c0-30509d3926e2",
+      "properties": {}
+    }
+  ],
+  "replays": [],
+  "summary": "Identified person \"user_1411\": 16 events in 90 days.",
+  "sql": [
+    "WITH ev AS (\n  SELECT e.*,\n    CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid\n  FROM events e\n  LEFT JOIN (\n    SELECT distinct_id, MIN(person_id) AS person_id\n    FROM identities\n    WHERE project = 'demo'\n    GROUP BY distinct_id\n  ) i ON i.distinct_id = e.distinct_id\n  WHERE e.project = 'demo'\n    AND e.ts_ms >= 1786050464978\n    AND e.ts_ms < 1793826524978\n)\nSELECT event, ts_ms, path, session_id, props FROM ev WHERE pid = 'user_1411' OR distinct_id = 'user_1411'\nORDER BY ts_ms DESC LIMIT 100"
+  ],
+  "dashboard": "http://127.0.0.1:55244/app#/users/user_1411?project=demo"
+}

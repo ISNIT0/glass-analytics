@@ -1,0 +1,11 @@
+{
+  "projects": [
+    {
+      "id": "demo",
+      "name": "Inkwell",
+      "allowedOrigins": [],
+      "createdAt": 1793826279522
+    }
+  ],
+  "summary": "1 project: demo."
+}

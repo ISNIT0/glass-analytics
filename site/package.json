@@ -2,10 +2,11 @@
   "name": "@glassanalytics/site",
   "version": "0.1.0",
   "private": true,
-  "description": "The Glass landing page (static, no build step).",
+  "type": "module",
+  "description": "The Glass website: static pages built from the docs and the product (see build.ts).",
   "scripts": {
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy"
+    "build": "node build.ts",
+    "dev": "node build.ts && wrangler dev"
   },
   "devDependencies": {
     "wrangler": "^4.0.0"

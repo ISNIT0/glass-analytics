@@ -1,0 +1,31 @@
+{
+  "project": "demo",
+  "key": "visit-to-paid",
+  "name": "Visit to paid",
+  "description": "From any page view to a first payment, within a week.",
+  "kind": "funnel",
+  "spec": {
+    "steps": [
+      {
+        "event": "$pageview",
+        "label": "Visited"
+      },
+      {
+        "event": "signup_started",
+        "label": "Started signup"
+      },
+      {
+        "event": "signup_completed",
+        "label": "Signed up"
+      },
+      {
+        "event": "subscription_started",
+        "label": "Paid"
+      }
+    ],
+    "window": "7d",
+    "from": "-30d"
+  },
+  "updatedAt": "2026-11-04T21:04:44.040Z",
+  "dashboard": "http://127.0.0.1:55244/app#/insights/visit-to-paid?project=demo"
+}

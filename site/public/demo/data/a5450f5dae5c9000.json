@@ -1,0 +1,141 @@
+{
+  "project": "demo",
+  "insights": [
+    {
+      "key": "documents-written",
+      "name": "Documents written",
+      "description": "Documents created per day, and how many people wrote them.",
+      "kind": "trends",
+      "spec": {
+        "series": [
+          {
+            "event": "document_created",
+            "label": "Documents"
+          },
+          {
+            "event": "document_created",
+            "math": "unique_persons",
+            "label": "Writers"
+          }
+        ],
+        "interval": "day",
+        "from": "-30d"
+      },
+      "updatedAt": "2026-11-04T21:04:44.042Z",
+      "dashboard": "http://127.0.0.1:55244/app#/insights/documents-written?project=demo"
+    },
+    {
+      "key": "revenue-by-plan",
+      "name": "Revenue by plan",
+      "description": "First-payment revenue per week, by plan.",
+      "kind": "trends",
+      "spec": {
+        "series": [
+          {
+            "event": "subscription_started",
+            "math": "sum",
+            "property": "amount",
+            "label": "Revenue"
+          }
+        ],
+        "interval": "week",
+        "breakdown": "plan",
+        "from": "-56d"
+      },
+      "updatedAt": "2026-11-04T21:04:44.041Z",
+      "dashboard": "http://127.0.0.1:55244/app#/insights/revenue-by-plan?project=demo"
+    },
+    {
+      "key": "signup-by-source",
+      "name": "Signup by source",
+      "description": "Which traffic sources turn visitors into accounts.",
+      "kind": "funnel",
+      "spec": {
+        "steps": [
+          {
+            "event": "$pageview"
+          },
+          {
+            "event": "signup_completed"
+          }
+        ],
+        "window": "1d",
+        "breakdown": "utm_source",
+        "from": "-30d"
+      },
+      "updatedAt": "2026-11-04T21:04:44.042Z",
+      "dashboard": "http://127.0.0.1:55244/app#/insights/signup-by-source?project=demo"
+    },
+    {
+      "key": "signups-by-plan",
+      "name": "Signups by plan",
+      "description": "New accounts each day, split by the plan they chose.",
+      "kind": "trends",
+      "spec": {
+        "series": [
+          {
+            "event": "signup_completed",
+            "math": "unique_persons",
+            "label": "Signups"
+          }
+        ],
+        "interval": "day",
+        "breakdown": "plan",
+        "from": "-30d"
+      },
+      "updatedAt": "2026-11-04T21:04:44.039Z",
+      "dashboard": "http://127.0.0.1:55244/app#/insights/signups-by-plan?project=demo"
+    },
+    {
+      "key": "visit-to-paid",
+      "name": "Visit to paid",
+      "description": "From any page view to a first payment, within a week.",
+      "kind": "funnel",
+      "spec": {
+        "steps": [
+          {
+            "event": "$pageview",
+            "label": "Visited"
+          },
+          {
+            "event": "signup_started",
+            "label": "Started signup"
+          },
+          {
+            "event": "signup_completed",
+            "label": "Signed up"
+          },
+          {
+            "event": "subscription_started",
+            "label": "Paid"
+          }
+        ],
+        "window": "7d",
+        "from": "-30d"
+      },
+      "updatedAt": "2026-11-04T21:04:44.040Z",
+      "dashboard": "http://127.0.0.1:55244/app#/insights/visit-to-paid?project=demo"
+    },
+    {
+      "key": "writer-retention",
+      "name": "Writer retention",
+      "description": "Of people who signed up each week, how many came back to write.",
+      "kind": "retention",
+      "spec": {
+        "cohortEvent": {
+          "event": "signup_completed"
+        },
+        "returnEvent": {
+          "event": "document_created"
+        },
+        "period": "week",
+        "periods": 7,
+        "from": "-56d"
+      },
+      "updatedAt": "2026-11-04T21:04:44.041Z",
+      "dashboard": "http://127.0.0.1:55244/app#/insights/writer-retention?project=demo"
+    }
+  ],
+  "summary": "6 saved analysises.",
+  "dashboard": "http://127.0.0.1:55244/app#/insights?project=demo"
+}

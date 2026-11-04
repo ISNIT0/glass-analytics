@@ -1,0 +1,161 @@
+{
+  "project": "demo",
+  "id": "user_1614",
+  "identified": true,
+  "properties": {
+    "signup_source": "pricing",
+    "plan": "pro",
+    "email": "user_1614@example.com",
+    "company_size": "200+"
+  },
+  "firstSeen": "2026-10-29T14:14:11.477Z",
+  "lastSeen": "2026-11-04T14:33:31.789Z",
+  "devices": [
+    "196f958a-3a65-404e-ae50-859c2057a34d"
+  ],
+  "recentEvents": [
+    {
+      "event": "document_created",
+      "time": "2026-11-04T14:33:26.789Z",
+      "path": "/app",
+      "session": "6773f613-7852-4477-ac20-6cccb41d2038",
+      "properties": {
+        "template": "newsletter",
+        "words": 2175
+      }
+    },
+    {
+      "event": "document_created",
+      "time": "2026-11-04T14:28:26.789Z",
+      "path": "/app",
+      "session": "6773f613-7852-4477-ac20-6cccb41d2038",
+      "properties": {
+        "template": "blank",
+        "words": 894
+      }
+    },
+    {
+      "event": "$pageview",
+      "time": "2026-11-04T14:23:26.789Z",
+      "path": "/app",
+      "session": "6773f613-7852-4477-ac20-6cccb41d2038",
+      "properties": {}
+    },
+    {
+      "event": "document_created",
+      "time": "2026-10-29T14:16:54.247Z",
+      "path": "/app",
+      "session": "cs_0d6a79683612286c0100_996268",
+      "properties": {
+        "template": "blank",
+        "words": 211
+      }
+    },
+    {
+      "event": "$exposure",
+      "time": "2026-10-29T14:14:12.477Z",
+      "path": "/app",
+      "session": "cs_0d6a79683612286c0100_996268",
+      "properties": {
+        "flag": "onboarding-checklist",
+        "variant": "test"
+      }
+    },
+    {
+      "event": "signup_completed",
+      "time": "2026-10-29T14:14:11.677Z",
+      "path": "/welcome",
+      "session": "af15c099-6247-4641-ab96-f7808b6f6580",
+      "properties": {
+        "plan": "pro",
+        "method": "google"
+      }
+    },
+    {
+      "event": "$identify",
+      "time": "2026-10-29T14:14:11.477Z",
+      "path": "",
+      "session": "af15c099-6247-4641-ab96-f7808b6f6580",
+      "properties": {
+        "$set": {
+          "plan": "pro",
+          "email": "user_1614@example.com",
+          "company_size": "200+"
+        },
+        "$set_once": {
+          "signup_source": "pricing"
+        }
+      }
+    },
+    {
+      "event": "signup_started",
+      "time": "2026-10-29T14:13:43.095Z",
+      "path": "/signup",
+      "session": "af15c099-6247-4641-ab96-f7808b6f6580",
+      "properties": {
+        "source": "pricing"
+      }
+    },
+    {
+      "event": "$exposure",
+      "time": "2026-10-29T14:13:39.095Z",
+      "path": "/pricing",
+      "session": "af15c099-6247-4641-ab96-f7808b6f6580",
+      "properties": {
+        "flag": "pricing-page-v2",
+        "variant": "test"
+      }
+    },
+    {
+      "event": "$pageview",
+      "time": "2026-10-29T14:12:47.224Z",
+      "path": "/",
+      "session": "af15c099-6247-4641-ab96-f7808b6f6580",
+      "properties": {}
+    },
+    {
+      "event": "$pageview",
+      "time": "2026-10-29T14:11:45.612Z",
+      "path": "/pricing",
+      "session": "af15c099-6247-4641-ab96-f7808b6f6580",
+      "properties": {}
+    },
+    {
+      "event": "$pageview",
+      "time": "2026-10-29T14:11:21.689Z",
+      "path": "/",
+      "session": "af15c099-6247-4641-ab96-f7808b6f6580",
+      "properties": {}
+    },
+    {
+      "event": "$pageview",
+      "time": "2026-10-29T14:10:40.755Z",
+      "path": "/templates",
+      "session": "af15c099-6247-4641-ab96-f7808b6f6580",
+      "properties": {}
+    },
+    {
+      "event": "$web_vitals",
+      "time": "2026-10-29T14:10:33.525Z",
+      "path": "/",
+      "session": "af15c099-6247-4641-ab96-f7808b6f6580",
+      "properties": {
+        "metric": "LCP",
+        "value": 1143.505
+      }
+    },
+    {
+      "event": "$pageview",
+      "time": "2026-10-29T14:10:31.025Z",
+      "path": "/",
+      "session": "af15c099-6247-4641-ab96-f7808b6f6580",
+      "properties": {}
+    }
+  ],
+  "replays": [],
+  "summary": "Identified person \"user_1614\": 15 events in 90 days.",
+  "sql": [
+    "WITH ev AS (\n  SELECT e.*,\n    CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid\n  FROM events e\n  LEFT JOIN (\n    SELECT distinct_id, MIN(person_id) AS person_id\n    FROM identities\n    WHERE project = 'demo'\n    GROUP BY distinct_id\n  ) i ON i.distinct_id = e.distinct_id\n  WHERE e.project = 'demo'\n    AND e.ts_ms >= 1786050457629\n    AND e.ts_ms < 1793826517629\n)\nSELECT event, ts_ms, path, session_id, props FROM ev WHERE pid = 'user_1614' OR distinct_id = 'user_1614'\nORDER BY ts_ms DESC LIMIT 100"
+  ],
+  "dashboard": "http://127.0.0.1:55244/app#/users/user_1614?project=demo"
+}

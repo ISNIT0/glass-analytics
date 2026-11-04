@@ -1,0 +1,24 @@
+{
+  "project": "demo",
+  "key": "documents-written",
+  "name": "Documents written",
+  "description": "Documents created per day, and how many people wrote them.",
+  "kind": "trends",
+  "spec": {
+    "series": [
+      {
+        "event": "document_created",
+        "label": "Documents"
+      },
+      {
+        "event": "document_created",
+        "math": "unique_persons",
+        "label": "Writers"
+      }
+    ],
+    "interval": "day",
+    "from": "-30d"
+  },
+  "updatedAt": "2026-11-04T21:04:44.042Z",
+  "dashboard": "http://127.0.0.1:55244/app#/insights/documents-written?project=demo"
+}
