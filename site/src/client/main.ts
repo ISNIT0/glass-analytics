@@ -129,7 +129,7 @@ if (seethrough) {
           }, 1800);
         }
       },
-      { threshold: 0.3 },
+      { threshold: 0.15 },
     );
     io.observe(seethrough);
   }

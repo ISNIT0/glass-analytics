@@ -26,7 +26,7 @@ import { GLASS_VERSION } from '../packages/core/src/version.ts';
 import { AGENT_PROMPT, INSTALL, REPO, SITE_URL } from './src/config.ts';
 import { COMPETITORS } from './src/content/compare.ts';
 import { GUIDES } from './src/content/guides.ts';
-import { FAQ, type Facts, homePage } from './src/home.ts';
+import { FAQ, type Facts, type HeroLayout, homePage } from './src/home.ts';
 import { metaPixel } from './src/layout.ts';
 import {
   changelogPage,
@@ -90,6 +90,14 @@ function heroSql(): string {
   return `SELECT bucket, COUNT(DISTINCT distinct_id) AS visitors\nFROM events\nWHERE project = 'demo' AND event = '$pageview'\n  AND ts_ms >= :from AND ts_ms < :to\nGROUP BY bucket\nORDER BY bucket`;
 }
 
+/** Where the screenshot's chart and SQL switch are, measured when it was taken. */
+function heroLayout(): HeroLayout {
+  const file = join(site, 'public', 'img', 'web-layout.json');
+  if (!existsSync(file))
+    throw new Error('Missing site/public/img/web-layout.json: run `pnpm site:assets`.');
+  return JSON.parse(readFileSync(file, 'utf8')) as HeroLayout;
+}
+
 const tools = mcpTools();
 const facts: Facts = {
   version: GLASS_VERSION,
@@ -97,6 +105,7 @@ const facts: Facts = {
   mcpTools: tools.length,
   mcpToolNames: tools,
   heroSql: heroSql(),
+  heroLayout: heroLayout(),
 };
 
 // ── Pages ────────────────────────────────────────────────────────────────────

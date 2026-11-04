@@ -206,7 +206,45 @@ const SHOTS: {
   dark?: boolean;
   prepare?: (page: Page) => Promise<void>;
 }[] = [
-  { name: 'web', hash: '#/reports?project=demo&from=-30d', dark: true },
+  {
+    name: 'web',
+    hash: '#/reports?project=demo&from=-30d',
+    dark: true,
+    prepare: async (page) => {
+      // The homepage hero: collapse the agent prompts so the chart sits high, then
+      // record where the chart and the SQL switch are, so the site can lay its
+      // "see-through" SQL pane exactly over them (site/public/img/web-layout.json).
+      await page
+        .getByRole('button', { name: 'Hide', exact: true })
+        .first()
+        .click()
+        .catch(() => undefined);
+      await page.waitForTimeout(600);
+      const layout = await page.evaluate(() => {
+        const vw = innerWidth;
+        const vh = innerHeight;
+        const pct = (el: Element | null | undefined) => {
+          if (!el) return null;
+          const r = el.getBoundingClientRect();
+          const top = Math.max(0, r.top);
+          const bottom = Math.min(vh, r.bottom);
+          return {
+            left: +((r.left / vw) * 100).toFixed(2),
+            top: +((top / vh) * 100).toFixed(2),
+            width: +((r.width / vw) * 100).toFixed(2),
+            height: +(((bottom - top) / vh) * 100).toFixed(2),
+          };
+        };
+        return {
+          sql: pct(document.querySelector('.sql-switch')),
+          chart: pct(document.querySelector('svg.chart')?.closest('.panel')),
+        };
+      });
+      if (!layout.sql || !layout.chart)
+        throw new Error('Hero layout: chart or SQL switch not found');
+      writeFileSync(join(site, 'img', 'web-layout.json'), `${JSON.stringify(layout, null, 2)}\n`);
+    },
+  },
   { name: 'funnel', hash: '#/insights/visit-to-paid?project=demo&from=-30d', dark: true },
   { name: 'retention', hash: '#/insights/writer-retention?project=demo&from=-56d', dark: true },
   { name: 'trends', hash: '#/insights/signups-by-plan?project=demo&from=-30d' },

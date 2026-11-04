@@ -11,6 +11,20 @@ export interface Facts {
   mcpToolNames: string[];
   /** The real query behind the demo's Visitors chart. */
   heroSql: string;
+  /** Where the chart and SQL switch sit in the hero screenshot, in % (from scripts/site-assets.ts). */
+  heroLayout: HeroLayout;
+}
+
+export interface Box {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+export interface HeroLayout {
+  sql: Box;
+  chart: Box;
 }
 
 export const FAQ: [string, string][] = [
@@ -146,11 +160,13 @@ const TOUR: {
   },
 ];
 
-function heroFigure(sql: string): string {
+function heroFigure(sql: string, layout: HeroLayout): string {
+  const vars = (name: string, b: Box) =>
+    `--${name}-l:${b.left}%;--${name}-t:${b.top}%;--${name}-w:${b.width}%;--${name}-h:${b.height}%`;
   return `<figure class="hero-shot" data-seethrough>
   <div class="frame">
     <div class="frame-bar" aria-hidden="true"><span></span><span></span><span></span><em>glass.your-domain.workers.dev/app</em></div>
-    <div class="frame-body">
+    <div class="frame-body" style="${vars('sql', layout.sql)};${vars('chart', layout.chart)}">
       ${shot('web', 'The Glass dashboard: a web analytics report with visitors, page views, sessions and bounce rate, a 30-day chart, and tables of pages, countries and devices.', { dark: true, eager: true })}
       <button type="button" class="sql-hotspot" aria-pressed="false" aria-controls="hero-sql" data-event="hero_sql_toggled"><span class="visually-hidden">Show the SQL behind this chart</span></button>
       <div class="sql-glass" id="hero-sql" hidden>
@@ -220,7 +236,7 @@ export function homePage(f: Facts): string {
       <p><span class="agent-label">Or paste this into your coding agent</span><span id="agent-prompt">${esc(AGENT_PROMPT)}</span></p>
       <button type="button" class="copy" data-copy-from="agent-prompt" data-event="agent_prompt_copied">Copy</button>
     </div>
-    ${heroFigure(f.heroSql)}
+    ${heroFigure(f.heroSql, f.heroLayout)}
   </div>
 </section>
 

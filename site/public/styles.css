@@ -596,10 +596,10 @@ h3 {
 /* The SQL switch over the screenshot's own switch (top right of the dashboard). */
 .sql-hotspot {
   position: absolute;
-  left: 91.6%;
-  top: 1.3%;
-  width: 6.2%;
-  height: 3.6%;
+  left: var(--sql-l);
+  top: var(--sql-t);
+  width: var(--sql-w);
+  height: var(--sql-h);
   border: 0;
   padding: 0;
   background: transparent;
@@ -644,10 +644,10 @@ h3 {
 /* The chart turns to glass: frosted, tinted, with its query on top. */
 .sql-glass {
   position: absolute;
-  left: 18.6%;
-  top: 32.1%;
-  width: 79.2%;
-  height: 44.2%;
+  left: var(--chart-l);
+  top: var(--chart-t);
+  width: var(--chart-w);
+  height: var(--chart-h);
   display: flex;
   flex-direction: column;
   text-align: left;
