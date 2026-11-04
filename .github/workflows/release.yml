@@ -1,14 +1,19 @@
 name: Release
 
+# Every push to main that carries a changeset is released, with no PR step:
+# version the packages, commit that to main, check, then publish to npm.
+# Pushes made with GITHUB_TOKEN never start another workflow run, so the
+# version commit can't trigger a second release.
+
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 concurrency: release
 
 permissions:
   contents: write
-  pull-requests: write
   id-token: write
 
 jobs:
@@ -24,17 +29,47 @@ jobs:
           registry-url: https://registry.npmjs.org
       # Switch to --frozen-lockfile once pnpm-lock.yaml is committed.
       - run: pnpm install --no-frozen-lockfile
-      - run: pnpm build
-      # Opens a "Version packages" PR from pending changesets; publishes when that PR is merged.
-      - uses: changesets/action@v1
-        with:
-          # changeset version, then copy the CLI version into GLASS_VERSION (pnpm build checks they match).
-          version: pnpm version-packages
-          publish: pnpm release
-          title: Version packages
+
+      - name: Version packages
+        id: version
+        run: |
+          if [ -z "$(find .changeset -name '*.md' ! -name README.md)" ]; then
+            echo "No changesets: nothing to version."
+            exit 0
+          fi
+          # changeset version, then GLASS_VERSION follows the CLI version.
+          pnpm version-packages
+          version=$(node -p "require('./packages/cli/package.json').version")
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Version packages ($version)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      # Don't publish a version the checks would reject. (CI runs on the same push, but not on this version commit.)
+      - name: Check
+        if: steps.version.outputs.version
+        run: pnpm build && pnpm typecheck && pnpm test
+
+      - name: Push version commit
+        if: steps.version.outputs.version
+        # Fails if main moved since checkout; re-run the workflow and it versions on top of the new main.
+        run: git push origin HEAD:main
+
+      # Publishes package versions that aren't on npm yet and tags them; does nothing when everything is published.
+      - name: Publish
+        run: pnpm release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           # setup-node's registry-url writes an .npmrc that reads NODE_AUTH_TOKEN; without it npm publishes anonymously (E404).
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: true
+
+      - name: Push tags and create the GitHub release
+        if: steps.version.outputs.version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git push origin --tags
+          awk -v v="## $VERSION" '$0==v{on=1;next} /^## /{if(on)exit} on' packages/cli/CHANGELOG.md > notes.md
+          gh release create "@glassanalytics/cli@$VERSION" --title "Glass $VERSION" --notes-file notes.md --verify-tag || echo "GitHub release not created (tag missing?)"
