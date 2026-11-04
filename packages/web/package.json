@@ -1,6 +1,6 @@
 {
   "name": "@glassanalytics/web",
-  "version": "0.1.1",
+  "version": "0.3.0",
   "description": "Glass browser SDK: pageviews, custom events, identify, feature flags and session replay.",
   "license": "MIT",
   "type": "module",
