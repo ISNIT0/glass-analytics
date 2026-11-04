@@ -3,6 +3,7 @@
  * agent would, so anything you can see here, an agent can query too.
  */
 
+import { fixtureName } from './demo.ts';
 import { config, prefs } from './state.ts';
 
 export class ApiError extends Error {
@@ -17,6 +18,28 @@ export class ApiError extends Error {
 
 type Params = Record<string, string | number | boolean | undefined | null>;
 
+/** POST endpoints that only read, so the demo can answer them from recordings. */
+const READ_POSTS = /\/api\/(query|sql|cohorts\/count|reports\/[a-z-]+)$/;
+
+async function demoRequest<T>(method: string, url: URL, body?: unknown): Promise<T> {
+  if (method !== 'GET' && !(method === 'POST' && READ_POSTS.test(url.pathname)))
+    throw new ApiError(
+      403,
+      'The demo is read-only.',
+      'Install Glass with `npx @glassanalytics/cli init` to save insights, flags and experiments.',
+    );
+  const path = url.pathname.slice(config.base.length) + url.search;
+  const name = fixtureName(method, path, body === undefined ? null : JSON.stringify(body));
+  const res = await fetch(`${config.demo}/${name}.json`);
+  if (!res.ok)
+    throw new ApiError(
+      404,
+      "This view isn't part of the demo.",
+      'The demo has a fixed set of views. Install Glass to explore your own data any way you like.',
+    );
+  return (await res.json()) as T;
+}
+
 async function request<T>(
   method: string,
   path: string,
@@ -26,6 +49,7 @@ async function request<T>(
   const url = new URL(`${config.base}${path}`, location.origin);
   for (const [k, v] of Object.entries(params ?? {}))
     if (v !== undefined && v !== null && v !== '') url.searchParams.set(k, String(v));
+  if (config.demo) return demoRequest<T>(method, url, body);
   const res = await fetch(url, {
     method,
     headers: {

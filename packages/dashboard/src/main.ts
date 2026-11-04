@@ -19,7 +19,7 @@ import { replaysPage } from './pages/replays.ts';
 import { keyScreen, settingsPage } from './pages/settings.ts';
 import { usagePage } from './pages/usage.ts';
 import { webPage } from './pages/web.ts';
-import { currentRoute, go, href, prefs, type Route } from './state.ts';
+import { config, currentRoute, go, href, prefs, type Route } from './state.ts';
 
 interface PageDef {
   label: string;
@@ -239,6 +239,23 @@ function topBar(route: Route): HTMLElement {
 }
 
 function upgradeNotice(): HTMLElement | null {
+  if (config.demo)
+    return h(
+      'div',
+      { class: 'upgrade-banner demo-banner', role: 'status' },
+      icon('eye', 16),
+      h(
+        'p',
+        {},
+        'A read-only demo with sample data from a made-up writing app. Your own Glass runs in your Cloudflare account: ',
+        h('code', {}, 'npx @glassanalytics/cli init'),
+      ),
+      h(
+        'a',
+        { class: 'button small', href: '/docs/getting-started/', target: '_top' },
+        'Get started',
+      ),
+    );
   if (!upgradeBanner) return null;
   const dismissedKey = `upgrade-dismissed:${upgradeBanner.latest}`;
   try {

@@ -5,9 +5,17 @@
 
 const base = document.querySelector<HTMLMetaElement>('meta[name="glass-base"]')?.content ?? '';
 
+/**
+ * Demo mode: the public site serves the dashboard with recorded API responses
+ * (`<meta name="glass-demo" content="/demo/data">`), so nothing needs a key or a Worker.
+ */
+const demo = document.querySelector<HTMLMetaElement>('meta[name="glass-demo"]')?.content ?? '';
+
 export const config = {
   /** Path prefix of the Worker, '' or '/_glass'. */
   base,
+  /** URL of the recorded responses, when this is the public demo. */
+  demo,
 };
 
 function stored(key: string): string | null {
@@ -29,7 +37,7 @@ function store(key: string, value: string | null): void {
 
 export const prefs = {
   get key(): string | null {
-    return stored('key');
+    return demo ? 'demo' : stored('key');
   },
   set key(value: string | null) {
     store('key', value);
