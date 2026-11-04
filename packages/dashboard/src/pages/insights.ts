@@ -29,6 +29,7 @@ import { cleanFilters, type FilterRow, filterEditor } from '../components/filter
 import { type IconName, icon } from '../components/icons.ts';
 import { modal, popover, selectMenu } from '../components/menu.ts';
 import { eventPicker, propertyPicker } from '../components/picker.ts';
+import { INSIGHT_PROMPT } from '../components/prompts.ts';
 import {
   copyButton,
   empty,
@@ -616,6 +617,39 @@ function newMenu(label = 'New analysis'): HTMLElement {
             ),
           ),
         ),
+        h('div', { class: 'menu-divider', role: 'separator' }),
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'menu-item menu-item-rich agent-item',
+            onclick: async (e: Event) => {
+              const button = e.currentTarget as HTMLElement;
+              try {
+                await navigator.clipboard.writeText(INSIGHT_PROMPT);
+                button.querySelector('strong')!.textContent = 'Prompt copied';
+                setTimeout(close, 900);
+              } catch {
+                toast(
+                  'Could not copy. Use "Ask your agent to build analyses" on the Insights page.',
+                  'error',
+                );
+              }
+            },
+          },
+          h('span', { class: 'menu-icon' }, icon('bot', 18)),
+          h(
+            'span',
+            { class: 'menu-rich-text' },
+            h('strong', {}, 'Ask your coding agent'),
+            h(
+              'span',
+              { class: 'muted small' },
+              'Copy a prompt that has your agent read the product, then build and save the funnel, retention and trends it needs.',
+            ),
+          ),
+          icon('copy', 14),
+        ),
       ),
     { width: 320, align: 'end' },
   );
@@ -762,7 +796,7 @@ function listView(route: Route): Node[] {
     pageHeader(
       'Insights',
       'Saved analyses you and your agents can reopen. New projects start with DAU, WAU, retention and a few other defaults.',
-      newMenu(),
+      [copyButton(INSIGHT_PROMPT, 'Ask your agent to build analyses', 'bot'), newMenu()],
     ),
     h(
       'div',

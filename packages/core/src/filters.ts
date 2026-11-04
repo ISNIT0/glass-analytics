@@ -55,6 +55,14 @@ export interface Filter {
 /** Pseudo-property that filters on saved-cohort membership. */
 export const COHORT_PROPERTY = 'cohort';
 
+/**
+ * Prefix for session-level filters: `session.utm_source = google` keeps every
+ * event of sessions with a pageview where utm_source is google. Sources (UTM
+ * tags, referrer) are only on the landing pageview, so an event-level filter
+ * would drop the rest of the visit, including its conversions.
+ */
+export const SESSION_PREFIX = 'session.';
+
 /** Who is in a cohort: people with a matching event in [from, to). */
 export interface CohortMembers {
   project: string;

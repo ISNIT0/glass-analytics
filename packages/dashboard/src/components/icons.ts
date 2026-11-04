@@ -139,6 +139,7 @@ const PATHS: Record<string, string[]> = {
     'M15 3h6v6',
     'M10 14L21 3',
   ],
+  dollar: ['M12 1v22', 'M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6'],
   clock: ['M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z', 'M12 6v6l4 2'],
   zap: ['M13 2L3 14h9l-1 8 10-12h-9l1-8z'],
   table: ['M3 3h18v18H3z', 'M3 9h18', 'M3 15h18', 'M9 3v18'],

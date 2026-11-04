@@ -68,6 +68,16 @@ export function apiRouter(service: GlassService, env: Env, request: Request): Ro
         'GET /api/insights/:key': 'One saved analysis',
         'POST /api/insights': 'Create or update a saved analysis (admin)',
         'DELETE /api/insights/:key': 'Delete a saved analysis (admin)',
+        'PUT /api/events/:name/role':
+          'Mark an event as a conversion or important: { "role": "conversion" | "important" | "none" } (admin)',
+        'POST /api/reports/conversions':
+          'Key events: counts, converting visitors and rates vs the previous period',
+        'POST /api/reports/sources':
+          'Visitors by channel, referrer, campaign or landing page (first touch) with conversion rates: { "dimension": "channel" }',
+        'POST /api/reports/health':
+          'Errors over time, sessions affected, likely 404 pages and the slowest pages',
+        'GET /api/usage':
+          'What Glass adds to the Cloudflare bill, projected per month, with ways to cut it',
         'GET /api/replays?has=rage_clicks&url=/checkout&not_event=purchase&sort=most_frustrated':
           'Find recorded sessions',
         'GET /api/replays/analyse?from=-7d':
@@ -180,6 +190,21 @@ export function apiRouter(service: GlassService, env: Env, request: Request): Ro
     admin();
     return json(await service.deleteInsight({ ...params(url), key: p.key }));
   });
+
+  r.put('/api/events/:name/role', async ({ url, params: p }) => {
+    admin();
+    return json(await service.markEvent({ ...params(url), ...(await body()), event: p.name }));
+  });
+  r.post('/api/reports/conversions', async ({ url }) =>
+    json(await service.reportConversions({ ...params(url), ...(await body()) })),
+  );
+  r.post('/api/reports/sources', async ({ url }) =>
+    json(await service.reportSources({ ...params(url), ...(await body()) })),
+  );
+  r.post('/api/reports/health', async ({ url }) =>
+    json(await service.reportHealth({ ...params(url), ...(await body()) })),
+  );
+  r.get('/api/usage', async ({ url }) => json(await service.usage(params(url))));
 
   r.get('/api/replays', async ({ url }) => json(await service.listReplays(params(url))));
   r.get('/api/replays/analyse', async ({ url }) => json(await service.analyseReplays(params(url))));

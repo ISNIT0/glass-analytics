@@ -1034,6 +1034,135 @@ describe('session replay', () => {
   });
 });
 
+describe('key events, reports and usage', () => {
+  beforeEach(() => setup());
+
+  it('marks key events and reports their conversion rates overall and by channel', async () => {
+    await t.ingest([
+      wire('$pageview', {
+        distinct_id: 'a',
+        session_id: 'sa',
+        referrer: 'https://www.google.com/',
+      }),
+      wire('$pageview', {
+        distinct_id: 'b',
+        session_id: 'sb',
+        url: 'https://acme.com/?utm_source=meta&utm_medium=paid_social',
+      }),
+      wire('signup_completed', { distinct_id: 'a', session_id: 'sa' }),
+      wire('shared_result', { distinct_id: 'b', session_id: 'sb' }),
+    ]);
+    const marked = await t.json<{ role: string; keyEvents: unknown[] }>(
+      'PUT',
+      '/api/events/signup_completed/role',
+      { body: { role: 'conversion' } },
+    );
+    assert.equal(marked.role, 'conversion');
+    await t.json('PUT', '/api/events/shared_result/role', { body: { role: 'important' } });
+    assert.equal(
+      (await t.call('PUT', '/api/events/x/role', { key: READ, body: { role: 'conversion' } }))
+        .status,
+      403,
+    );
+
+    const events = await t.json<{ events: { event: string; role: string | null }[] }>(
+      'GET',
+      '/api/events',
+    );
+    assert.equal(events.events.find((e) => e.event === 'signup_completed')?.role, 'conversion');
+
+    const conv = await t.json<{
+      visitors: number;
+      goals: { event: string; rate: number }[];
+      converted: { rate: number };
+    }>('POST', '/api/reports/conversions', { body: {} });
+    assert.equal(conv.visitors, 2);
+    assert.deepEqual(
+      conv.goals.map((g) => [g.event, g.rate]),
+      [
+        ['signup_completed', 0.5],
+        ['shared_result', 0.5],
+      ],
+    );
+    assert.equal(conv.converted.rate, 0.5);
+
+    const channels = await t.json<{ rows: { value: string; converted: number }[] }>(
+      'POST',
+      '/api/reports/sources',
+      { body: { dimension: 'channel' } },
+    );
+    assert.deepEqual(Object.fromEntries(channels.rows.map((r) => [r.value, r.converted])), {
+      'Organic search': 1,
+      Paid: 0,
+    });
+    const filtered = await t.json<{ visitors: number }>('POST', '/api/reports/conversions', {
+      body: { filters: [{ property: 'utm_source', value: 'meta' }] },
+    });
+    assert.equal(filtered.visitors, 1);
+
+    const overview = await t.json<{ keyEvents: { event: string }[]; summary: string }>(
+      'GET',
+      '/api/overview',
+    );
+    assert.equal(overview.keyEvents[0]?.event, 'signup_completed');
+    assert.match(overview.summary, /Key events:/);
+
+    await t.json('PUT', '/api/events/shared_result/role', { body: { role: 'none' } });
+    assert.equal(
+      (await t.json<{ goals: unknown[] }>('POST', '/api/reports/conversions', { body: {} })).goals
+        .length,
+      1,
+    );
+  });
+
+  it('reports site health', async () => {
+    await t.ingest([
+      wire('$pageview', {
+        distinct_id: 'a',
+        session_id: 's1',
+        url: 'https://acme.com/old',
+        title: 'Page not found',
+      }),
+      wire('$exception', {
+        distinct_id: 'a',
+        session_id: 's1',
+        url: 'https://acme.com/old',
+        props: { message: 'boom' },
+      }),
+    ]);
+    const h = await t.json<{
+      errors: { total: number; sessionRate: number };
+      notFound: { path: string }[];
+    }>('POST', '/api/reports/health', { body: {} });
+    assert.equal(h.errors.total, 1);
+    assert.equal(h.errors.sessionRate, 1);
+    assert.equal(h.notFound[0]?.path, '/old');
+  });
+
+  it('estimates usage and cost with recommendations', async () => {
+    await t.ingest(
+      Array.from({ length: 40 }, (_, i) =>
+        wire(i % 4 ? '$click' : '$pageview', { distinct_id: `d${i % 5}` }),
+      ),
+    );
+    const u = await t.json<{
+      monthly: { events: number };
+      lines: { resource: string; overageUsd: number }[];
+      overageUsd: number;
+      summary: string;
+      projects: { project: string }[];
+    }>('GET', '/api/usage');
+    assert.equal(u.monthly.events, Math.round((40 * 30) / 7));
+    assert.ok(u.lines.some((l) => l.resource === 'D1 rows written'));
+    assert.equal(u.overageUsd, 0);
+    assert.match(u.summary, /Within the Workers Paid allowances/);
+    assert.deepEqual(
+      u.projects.map((p) => p.project),
+      ['acme'],
+    );
+  });
+});
+
 describe('MCP server', () => {
   beforeEach(() => setup());
   const rpc = (body: unknown, key?: string) =>

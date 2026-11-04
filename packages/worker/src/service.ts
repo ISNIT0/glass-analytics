@@ -21,6 +21,15 @@ import {
   webSpec,
 } from '@glassanalytics/core/insights';
 import { runExperiment } from '@glassanalytics/core/insights/experiment';
+import {
+  type EventRole,
+  type KeyEvent,
+  runConversions,
+  runHealth,
+  runSources,
+  SOURCE_DIMENSIONS,
+  type SourceDimension,
+} from '@glassanalytics/core/insights/report';
 import type { QueryContext, ResultBase } from '@glassanalytics/core/insights/types';
 import { runWeb } from '@glassanalytics/core/insights/web';
 import {
@@ -43,6 +52,7 @@ import { propertyText } from '@glassanalytics/core/sql/filters';
 import { assertReadOnlySql } from '@glassanalytics/core/sql/guard';
 import { eventsCte, num, text } from '@glassanalytics/core/sql/source';
 import { DAY_MS, resolveRange } from '@glassanalytics/core/time';
+import { estimateUsage } from '@glassanalytics/core/usage';
 import {
   GLASS_VERSION,
   isNewerThan,
@@ -172,11 +182,52 @@ const replayFilters = {
     ),
 };
 
+/** Date range and filters shared by the Reports queries. */
+const reportRange = {
+  project,
+  from: z.union([z.string(), z.number()]).optional().describe('Start, e.g. "-30d". Default -30d.'),
+  to: z.union([z.string(), z.number()]).optional(),
+  filters: z
+    .preprocess(jsonValue, z.array(filterSchema))
+    .optional()
+    .describe('Only events matching these, e.g. [{"property":"utm_source","value":"google"}].'),
+};
+
 export const inputs = {
   overview: z.object({
     project,
     from: z.union([z.string(), z.number()]).optional(),
     to: z.union([z.string(), z.number()]).optional(),
+  }),
+  markEvent: z.object({
+    project,
+    event: z.string().describe('Event name, e.g. "signup_completed".'),
+    role: z
+      .enum(['conversion', 'important', 'none'])
+      .describe(
+        '"conversion": a goal the site exists for (signup, purchase, pledge, lead); Reports show its conversion rate overall and per source. "important": worth watching but not a goal (share, search, download). "none" clears it.',
+      ),
+  }),
+  reportConversions: z.object(reportRange),
+  reportSources: z.object({
+    ...reportRange,
+    dimension: z
+      .enum(Object.keys(SOURCE_DIMENSIONS) as [SourceDimension, ...SourceDimension[]])
+      .optional()
+      .describe(
+        'Group visitors by this, attributed to their first visit in the range. Default "channel".',
+      ),
+    limit: z.number().int().min(1).max(100).optional(),
+  }),
+  reportHealth: z.object(reportRange),
+  usage: z.object({
+    days: z
+      .number()
+      .int()
+      .min(1)
+      .max(30)
+      .optional()
+      .describe('Days of history to project from. Default 7.'),
   }),
   listEvents: z.object({
     project,
@@ -556,7 +607,13 @@ GROUP BY event ORDER BY cur DESC LIMIT 50`;
       .sort((a, b) => Math.abs(b.change!) - Math.abs(a.change!))
       .slice(0, 5);
     const top = (k: keyof typeof web.breakdowns) => web.breakdowns[k].slice(0, 5);
-    const health = await this.health();
+    const [health, goals] = await Promise.all([this.health(), this.keyEvents(ctx.project)]);
+    const conversions = goals.length
+      ? await runConversions(
+          { from: spec.from ?? '-30d', to: spec.to, goals },
+          { ...ctx, execute: (q) => this.store.query(q) },
+        )
+      : null;
     const baseSummary =
       `${web.summary} ` +
       (movers.length
@@ -569,6 +626,21 @@ GROUP BY event ORDER BY cur DESC LIMIT 50`;
       topPages: top('pages'),
       topReferrers: top('referrers'),
       topErrors: top('errors'),
+      keyEvents: conversions
+        ? conversions.goals.map((g) => ({
+            event: g.event,
+            role: g.role,
+            count: g.count,
+            visitors: g.visitors,
+            rate: g.rate,
+            previous: g.previous,
+          }))
+        : [],
+      ...(goals.length
+        ? {}
+        : {
+            hint: 'No conversion events are marked. Use list_events, then mark_event with role "conversion" on the events that mean success (signup, purchase).',
+          }),
       events: events.slice(0, 15),
       movers,
       upgradeAvailable: health.upgradeAvailable,
@@ -581,13 +653,187 @@ GROUP BY event ORDER BY cur DESC LIMIT 50`;
             },
           }
         : {}),
-      summary:
-        health.upgradeAvailable && health.latest
-          ? `${baseSummary} ${upgradeMessage(health.version, health.latest)}`
-          : baseSummary,
+      summary: `${conversions ? `${baseSummary} Key events: ${conversions.summary}` : baseSummary}${health.upgradeAvailable && health.latest ? ` ${upgradeMessage(health.version, health.latest)}` : ''}`,
       sql: [...web.sql, sql],
       dashboard: this.link('reports', { project: ctx.project, from: spec.from, to: spec.to }),
     };
+  }
+
+  // ── Key events and report queries ───────────────────────────────────────
+
+  /** Events marked as conversions or important, conversions first. */
+  async keyEvents(project: string): Promise<KeyEvent[]> {
+    const { results } = await this.env.DB.prepare(
+      "SELECT event, role, description FROM event_definitions WHERE project = ? AND role IN ('conversion', 'important') ORDER BY role, event",
+    )
+      .bind(project)
+      .all<{ event: string; role: EventRole; description: string }>();
+    return results;
+  }
+
+  async markEvent(input: unknown) {
+    const spec = inputs.markEvent.parse(input);
+    const ctx = await this.context(spec.project);
+    const role = spec.role === 'none' ? '' : spec.role;
+    await this.env.DB.prepare(
+      `INSERT INTO event_definitions (project, event, role, updated_at) VALUES (?, ?, ?, ?)
+       ON CONFLICT (project, event) DO UPDATE SET role = excluded.role, updated_at = excluded.updated_at`,
+    )
+      .bind(ctx.project, spec.event, role, Date.now())
+      .run();
+    const all = await this.keyEvents(ctx.project);
+    return {
+      project: ctx.project,
+      event: spec.event,
+      role: role || null,
+      keyEvents: all,
+      summary: role
+        ? `"${spec.event}" is now ${role === 'conversion' ? 'a conversion' : 'an important event'}. Reports show it with its rate${role === 'conversion' ? ' overall and per traffic source' : ''}.`
+        : `"${spec.event}" is no longer a key event.`,
+      dashboard: this.link('reports', { project: ctx.project }),
+    };
+  }
+
+  private async reportContext(spec: { project?: string; filters?: unknown }) {
+    const ctx = await this.context(spec.project);
+    const { filters } = await this.resolveCohorts(ctx.project, {
+      filters: (spec.filters ?? []) as Filter[],
+    });
+    return { ctx, filters: filters as Filter[] };
+  }
+
+  /** Counts and rates of key events, for the Reports pages. */
+  async reportConversions(input: unknown) {
+    const spec = inputs.reportConversions.parse(input);
+    const { ctx, filters } = await this.reportContext(spec);
+    const goals = await this.keyEvents(ctx.project);
+    const r = await runConversions({ from: spec.from, to: spec.to, filters, goals }, ctx);
+    return { project: ctx.project, ...r };
+  }
+
+  /** Visitors by channel, referrer, campaign or landing page (first touch), with conversion rates. */
+  async reportSources(input: unknown) {
+    const spec = inputs.reportSources.parse(input);
+    const { ctx, filters } = await this.reportContext(spec);
+    const goals = await this.keyEvents(ctx.project);
+    const conversions = goals.filter((g) => g.role === 'conversion').map((g) => g.event);
+    const r = await runSources(
+      {
+        from: spec.from,
+        to: spec.to,
+        filters,
+        dimension: spec.dimension ?? 'channel',
+        conversions,
+        limit: spec.limit,
+      },
+      ctx,
+    );
+    return {
+      project: ctx.project,
+      conversions,
+      ...r,
+      summary: r.rows.length
+        ? `Top ${SOURCE_DIMENSIONS[r.dimension].toLowerCase()}s by visitors: ${r.rows
+            .slice(0, 5)
+            .map(
+              (x) =>
+                `${x.value} ${x.visitors}${conversions.length ? ` (${(x.rate * 100).toFixed(1)}% converted)` : ''}`,
+            )
+            .join(', ')}.`
+        : 'No visitors in this range.',
+    };
+  }
+
+  /** Errors over time and sessions affected, likely 404 pages, and the slowest pages. */
+  async reportHealth(input: unknown) {
+    const spec = inputs.reportHealth.parse(input);
+    const { ctx, filters } = await this.reportContext(spec);
+    const r = await runHealth({ from: spec.from, to: spec.to, filters }, ctx);
+    let frustration: {
+      rageClicks: number;
+      deadClicks: number;
+      failedRequests: number;
+      consoleErrors: number;
+      sessions: number;
+    } | null = null;
+    if (replaysEnabled(this.env)) {
+      const range = resolveRange(spec.from ?? '-30d', spec.to);
+      frustration = await this.env.DB.prepare(
+        `SELECT COUNT(*) AS sessions, COALESCE(SUM(rage_clicks), 0) AS rageClicks, COALESCE(SUM(dead_clicks), 0) AS deadClicks,
+          COALESCE(SUM(failed_requests), 0) AS failedRequests, COALESCE(SUM(console_errors), 0) AS consoleErrors
+         FROM replays WHERE project = ? AND started_at >= ? AND started_at < ?`,
+      )
+        .bind(ctx.project, range.from, range.to)
+        .first();
+    }
+    return { project: ctx.project, ...r, replays: frustration };
+  }
+
+  // ── Usage and cost ──────────────────────────────────────────────────────
+
+  /** What this deployment adds to the Cloudflare bill, projected to a month, with ways to cut it. */
+  async usage(input: unknown) {
+    const spec = inputs.usage.parse(input ?? {});
+    const days = spec.days ?? 7;
+    const since = Date.now() - days * DAY_MS;
+    const d = this.store.dialect;
+    const PV = "'$pageview'";
+    const [perProject, topEvents, replayRows, storedReplays, storedEvents, sizeProbe] =
+      await Promise.all([
+        this.store.query(`SELECT project, COUNT(*) AS n, SUM(CASE WHEN event = ${PV} THEN 1 ELSE 0 END) AS pv, COUNT(DISTINCT session_id) AS sessions
+FROM ${d.table('events')} WHERE ts_ms >= ${since} GROUP BY project`),
+        this.store.query(
+          `SELECT event, COUNT(*) AS n FROM ${d.table('events')} WHERE ts_ms >= ${since} GROUP BY event ORDER BY n DESC LIMIT 10`,
+        ),
+        replaysEnabled(this.env)
+          ? this.env.DB.prepare(
+              'SELECT project, COUNT(*) AS sessions, SUM(chunks) AS chunks, SUM(bytes) AS bytes FROM replays WHERE started_at >= ? GROUP BY project',
+            )
+              .bind(since)
+              .all<{ project: string; sessions: number; chunks: number; bytes: number }>()
+          : Promise.resolve({
+              results: [] as { project: string; sessions: number; chunks: number; bytes: number }[],
+            }),
+        replaysEnabled(this.env)
+          ? this.env.DB.prepare('SELECT COALESCE(SUM(bytes), 0) AS bytes FROM replays').first<{
+              bytes: number;
+            }>()
+          : Promise.resolve({ bytes: 0 }),
+        this.store.kind === 'd1'
+          ? this.env.DB.prepare('SELECT COUNT(*) AS n FROM events').first<{ n: number }>()
+          : Promise.resolve({ n: 0 }),
+        this.env.DB.prepare('SELECT 1 AS one').run(),
+      ]);
+    const replays = new Map(replayRows.results.map((r) => [r.project, r]));
+    const projects = new Set([...perProject.map((r) => text(r.project)), ...replays.keys()]);
+    const sizeAfter = Number((sizeProbe.meta as { size_after?: number }).size_after);
+    const report = estimateUsage({
+      days,
+      store: this.store.kind === 'lake' ? 'lake' : 'd1',
+      projects: [...projects].map((project) => {
+        const e = perProject.find((r) => text(r.project) === project);
+        const r = replays.get(project);
+        return {
+          project,
+          events: num(e?.n),
+          pageviews: num(e?.pv),
+          sessions: num(e?.sessions),
+          replaySessions: Number(r?.sessions ?? 0),
+          replayChunks: Number(r?.chunks ?? 0),
+          replayBytes: Number(r?.bytes ?? 0),
+        };
+      }),
+      topEvents: topEvents.map((r) => ({ event: text(r.event), count: num(r.n) })),
+      stored: {
+        events: Number(storedEvents?.n ?? 0),
+        replayBytes: Number(storedReplays?.bytes ?? 0),
+        d1Bytes: Number.isFinite(sizeAfter) && sizeAfter > 0 ? sizeAfter : null,
+      },
+      retentionDays:
+        Number(this.env.GLASS_RETENTION_DAYS) > 0 ? Number(this.env.GLASS_RETENTION_DAYS) : null,
+      replayRetentionDays: Number(this.env.GLASS_REPLAY_RETENTION_DAYS ?? 30) || 30,
+    });
+    return { store: this.store.kind, ...report, dashboard: this.link('usage') };
   }
 
   // ── Event taxonomy ───────────────────────────────────────────────────────
@@ -603,10 +849,10 @@ GROUP BY event ORDER BY n DESC LIMIT 500`;
     const [rows, defs] = await Promise.all([
       this.store.query(sql),
       this.env.DB.prepare(
-        'SELECT event, description, owner FROM event_definitions WHERE project = ?',
+        'SELECT event, description, owner, role FROM event_definitions WHERE project = ?',
       )
         .bind(ctx.project)
-        .all<{ event: string; description: string; owner: string }>(),
+        .all<{ event: string; description: string; owner: string; role: string }>(),
     ]);
     const described = new Map(defs.results.map((r) => [r.event, r]));
     const events = rows.map((r) => ({
@@ -614,15 +860,17 @@ GROUP BY event ORDER BY n DESC LIMIT 500`;
       count: num(r.n),
       lastSeen: new Date(num(r.last_seen)).toISOString(),
       description: described.get(text(r.event))?.description ?? '',
+      role: (described.get(text(r.event))?.role || null) as EventRole | null,
       system: text(r.event).startsWith('$'),
     }));
     const undocumented = events.filter((e) => !e.system && !e.description).map((e) => e.event);
+    const keyCount = events.filter((e) => e.role).length;
     return {
       project: ctx.project,
       days: spec.days ?? 30,
       events,
       undocumented,
-      summary: `${events.length} distinct events in the last ${spec.days ?? 30} days${undocumented.length ? `; ${undocumented.length} custom events have no description (use define_event)` : ''}.`,
+      summary: `${events.length} distinct events in the last ${spec.days ?? 30} days${undocumented.length ? `; ${undocumented.length} custom events have no description (use define_event)` : ''}${keyCount ? '' : '; no key events are marked yet (use mark_event to mark conversions such as signups)'}.`,
       namingGuide: EVENT_NAMING_GUIDE,
       documentationGuide: EVENT_DOCUMENTATION_GUIDE,
       sql: [sql],

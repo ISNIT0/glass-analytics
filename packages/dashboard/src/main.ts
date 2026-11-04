@@ -17,6 +17,7 @@ import { insightsPage } from './pages/insights.ts';
 import { peoplePage } from './pages/people.ts';
 import { replaysPage } from './pages/replays.ts';
 import { keyScreen, settingsPage } from './pages/settings.ts';
+import { usagePage } from './pages/usage.ts';
 import { webPage } from './pages/web.ts';
 import { currentRoute, go, href, prefs, type Route } from './state.ts';
 
@@ -37,13 +38,14 @@ const PAGES: Record<string, PageDef> = {
   experiments: { label: 'Experiments', icon: 'flask', render: experimentsPage },
   events: { label: 'Events', icon: 'events', render: eventsPage },
   sql: { label: 'SQL', icon: 'database', render: sqlPage },
+  usage: { label: 'Usage & cost', icon: 'dollar', render: usagePage },
   settings: { label: 'Settings', icon: 'settings', render: settingsPage },
 };
 
 const GROUPS: { label: string; pages: string[] }[] = [
   { label: 'Analytics', pages: ['reports', 'insights', 'users', 'replays'] },
   { label: 'Release', pages: ['flags', 'experiments'] },
-  { label: 'Data', pages: ['events', 'sql'] },
+  { label: 'Data', pages: ['events', 'sql', 'usage'] },
 ];
 
 const root = document.getElementById('app')!;

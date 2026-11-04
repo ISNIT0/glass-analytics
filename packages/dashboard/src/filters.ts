@@ -56,7 +56,9 @@ export function filterChips(): HTMLElement | null {
             go([route.page, ...route.rest].join('/'), Object.fromEntries(params), false);
           },
         },
-        `${f.property} is ${f.value}`,
+        f.property.startsWith('session.')
+          ? `visits where ${f.property.slice(8)} is ${f.value}`
+          : `${f.property} is ${f.value}`,
         h('span', { 'aria-hidden': 'true' }, ' ×'),
       ),
     ),

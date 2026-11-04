@@ -9,7 +9,7 @@ What Glass does today, and what's next. Items marked _good first issue_ are self
 - Web analytics, trends, funnels, retention, raw SQL; filters and breakdowns on any event or person property
 - Session replay with sampling, error-triggered buffering, console and network capture, frustration signals (rage, dead and error clicks), search, cross-session patterns, notes and text transcripts with what-was-on-screen snapshots
 - Feature flags with targeting; experiments with Bayesian readout and SRM checks
-- MCP server (37 tools), CLI, HTTP API, `llms.txt`
+- MCP server (41 tools), CLI, HTTP API, `llms.txt`
 - D1 event store (default) and the lake store (beta)
 
 ## Next
@@ -20,7 +20,7 @@ What Glass does today, and what's next. Items marked _good first issue_ are self
 - **Alerts:** threshold and anomaly alerts on any insight, via email or webhook, run from the Worker's cron.
 - **Current person properties in lake mode:** mirror D1 `persons` to an Iceberg table (today, lake queries use the per-event snapshot).
 - **Lake-mode erasure:** an Iceberg delete job for GDPR requests (D1 mode deletes events today).
-- **Goals in the web view:** mark an event or URL as a goal and show conversion in every breakdown. _good first issue_
+- **URL goals:** mark a URL (not just an event) as a conversion. _good first issue_
 - **Timezone support** beyond fixed UTC offsets (DST-aware bucketing).
 - **Cloudflare Access** support for the dashboard, as an alternative to API keys.
 - **Lake schema migrations:** versioned streams (`glass_events_v2`) and queries across old and new tables, for when built-in columns change.

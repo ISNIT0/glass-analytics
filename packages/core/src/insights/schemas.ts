@@ -21,7 +21,7 @@ export const filterSchema = z
     property: z
       .string()
       .describe(
-        'Property to test. Built-in columns: path, url, host, referrer_host, utm_source, utm_medium, utm_campaign, country, region, city, device, browser, os, event, session_id, user_id. Anything else is an event property ("plan" or "props.plan"); prefix with "person." for person properties ("person.plan"). Use "cohort" with a saved cohort key as the value (ops eq/in or neq/not_in) to keep only people in (or not in) that cohort; list keys with list_cohorts.',
+        'Property to test. Built-in columns: path, url, host, referrer_host, utm_source, utm_medium, utm_campaign, country, region, city, device, browser, os, event, session_id, user_id. Anything else is an event property ("plan" or "props.plan"); prefix with "person." for person properties ("person.plan"). Use "cohort" with a saved cohort key as the value (ops eq/in or neq/not_in) to keep only people in (or not in) that cohort; list keys with list_cohorts. Prefix with "session." to keep whole visits: "session.utm_source" = "google" keeps every event of sessions that landed from Google, so their later pages and conversions count.',
       ),
     op: z.enum(FILTER_OPS).optional().describe('Comparison operator. Defaults to "eq".'),
     value: z

@@ -85,6 +85,7 @@ Glass is deployed at ${o.host} (project \`${o.project}\`). Prefer the \`glass\` 
 2. ${EVENT_NAMING_GUIDE}
 3. After deploying, \`describe_event\` (or \`npx @glassanalytics/cli events <name>\`) confirms events arrive with the expected properties.
 4. Always \`define_event\` next. ${EVENT_DOCUMENTATION_GUIDE}
+5. If the event means a visitor succeeded (signup, purchase, pledge, lead), \`mark_event\` with role "conversion"; for engagement worth watching (share, search, download), role "important". Reports show conversion rates overall and per traffic source.
 
 ## First session on a project
 

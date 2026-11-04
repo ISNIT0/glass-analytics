@@ -28,7 +28,47 @@ interface EventRow {
   count: number;
   lastSeen: string;
   description: string;
+  role: 'conversion' | 'important' | null;
   system: boolean;
+}
+
+const ROLE_NEXT = { none: 'conversion', conversion: 'important', important: 'none' } as const;
+
+/** A button that cycles an event through conversion → important → none. Reports show key events. */
+function roleButton(
+  e: EventRow,
+  project: string | undefined,
+  repaint: () => void,
+): HTMLButtonElement {
+  const role = e.role ?? 'none';
+  const label = role === 'conversion' ? 'Conversion' : role === 'important' ? 'Important' : 'Mark';
+  const title =
+    role === 'none'
+      ? 'Mark as a conversion: Reports show its conversion rate overall and per source'
+      : role === 'conversion'
+        ? 'Conversion. Click to mark as important instead'
+        : 'Important. Click to clear';
+  return h(
+    'button',
+    {
+      type: 'button',
+      class: `role-toggle ${role}`,
+      title,
+      'aria-label': `${e.event}: ${title}`,
+      onclick: async () => {
+        const next = ROLE_NEXT[role];
+        try {
+          await api.put(`/api/events/${encodeURIComponent(e.event)}/role`, { project, role: next });
+          e.role = next === 'none' ? null : next;
+          repaint();
+        } catch (err) {
+          toast(err instanceof Error ? err.message : String(err), 'error');
+        }
+      },
+    },
+    icon(role === 'important' ? 'zap' : 'flag', 13),
+    label,
+  );
 }
 
 interface EventDetail {
@@ -194,13 +234,16 @@ export function eventsPage(route: Route): Node[] {
       holder,
       shown.length
         ? table(
-            ['Event', 'Volume', 'Last seen', 'Description'],
+            ['Event', 'Key event', 'Volume', 'Last seen', 'Description'],
             shown.map((e) => [
               h(
                 'a',
                 { class: 'event-link', href: href(`events/${encodeURIComponent(e.event)}`) },
                 h('span', { class: `event-pill ${e.system ? 'system' : ''}` }, e.event),
               ),
+              e.event === '$pageview' || e.event.startsWith('$web')
+                ? h('span', {})
+                : roleButton(e, project, paint),
               h(
                 'div',
                 { class: 'volume' },
@@ -245,7 +288,7 @@ export function eventsPage(route: Route): Node[] {
   return [
     pageHeader(
       'Events',
-      `Everything tracked in ${rangeLabel(sc.from, sc.to).toLowerCase()}. Describe custom events and their properties: agents read those descriptions before they query.`,
+      `Everything tracked in ${rangeLabel(sc.from, sc.to).toLowerCase()}. Describe custom events and their properties (agents read them before they query), and mark the ones that mean success as conversions: Reports show their rates.`,
     ),
     h(
       'div',

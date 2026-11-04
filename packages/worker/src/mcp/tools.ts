@@ -196,6 +196,42 @@ export const TOOLS: ToolDefinition[] = [
     run: (s, a) => s.deleteCohort(a),
   },
   {
+    name: 'mark_event',
+    title: 'Mark a key event',
+    description:
+      'Mark an event as a "conversion" (a goal the site exists for: signup, purchase, pledge, lead) or "important" (worth watching: share, search, download), or "none" to clear it. The Reports pages then show its count and rate, conversion rates per traffic source and campaign, and overview includes it. Mark conversions right after instrumenting them.',
+    input: inputs.markEvent,
+    scope: 'admin',
+    run: (s, a) => s.markEvent(a),
+  },
+  {
+    name: 'query_sources',
+    title: 'Traffic sources and conversion',
+    description:
+      'Visitors grouped by channel (Organic search, Social, Paid, Email, AI assistants, Referral, Direct), referrer, UTM source/medium/campaign, landing page, country or device, attributed to their first visit in the range, with how many converted (did a conversion event) and bounced. Use it to judge which campaigns and channels work.',
+    input: inputs.reportSources,
+    scope: 'read',
+    run: (s, a) => s.reportSources(a),
+  },
+  {
+    name: 'site_health',
+    title: 'Site health',
+    description:
+      'Errors over time and the share of sessions they affect, pages where errors happen, pages that look like "not found" pages (with where visitors came from), the slowest pages by LCP, and frustration signals from replays. Start here to find what is broken.',
+    input: inputs.reportHealth,
+    scope: 'read',
+    run: (s, a) => s.reportHealth(a),
+  },
+  {
+    name: 'usage_and_cost',
+    title: 'Usage and cost',
+    description:
+      'What this Glass deployment adds to the Cloudflare bill: events, requests, D1 writes and storage, replay storage, projected per month and priced against Workers Paid allowances, with recommendations (replay sampling, the lake store, retention, noisy events) and a prompt for each.',
+    input: inputs.usage,
+    scope: 'read',
+    run: (s, a) => s.usage(a),
+  },
+  {
     name: 'list_replays',
     title: 'Find session replays',
     description:

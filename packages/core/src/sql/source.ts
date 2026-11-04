@@ -2,7 +2,7 @@
  * Building blocks shared by all insight compilers.
  */
 
-import { COHORT_PROPERTY, type CohortMembers, type Filter } from '../filters.ts';
+import { COHORT_PROPERTY, type CohortMembers, type Filter, SESSION_PREFIX } from '../filters.ts';
 import { DAY_MS, HOUR_MS, type Interval, WEEK_MS } from '../time.ts';
 import type { Dialect } from './dialect.ts';
 import { filtersSql } from './filters.ts';
@@ -59,7 +59,24 @@ function resolvedEvents(d: Dialect, o: SourceOptions): string {
     const unique = [...new Set(o.events)];
     where.push(`e.event IN (${unique.map((n) => d.str(n)).join(', ')})`);
   }
-  if (o.filters && o.filters.length > 0) where.push(filtersSql(o.filters, d, 'e'));
+  const sessionFilters = (o.filters ?? []).filter((f) => f.property.startsWith(SESSION_PREFIX));
+  const eventFilters = (o.filters ?? []).filter((f) => !f.property.startsWith(SESSION_PREFIX));
+  if (eventFilters.length > 0) where.push(filtersSql(eventFilters, d, 'e'));
+  if (sessionFilters.length > 0) {
+    // Sessions with a pageview matching the conditions. A session's landing can precede the range by a little.
+    const inner = sessionFilters.map((f) => ({
+      ...f,
+      property: f.property.slice(SESSION_PREFIX.length),
+    }));
+    where.push(`e.session_id IN (
+      SELECT sf.session_id FROM ${d.table('events')} sf
+      WHERE sf.project = ${d.str(o.project)}
+        AND sf.ts_ms >= ${d.num(Math.floor(o.from) - 86_400_000)}
+        AND sf.ts_ms < ${d.num(Math.ceil(o.to))}
+        AND sf.event = '$pageview'
+        AND ${filtersSql(inner, d, 'sf')}
+    )`);
+  }
   return `SELECT e.*,
     CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid
   FROM ${d.table('events')} e
