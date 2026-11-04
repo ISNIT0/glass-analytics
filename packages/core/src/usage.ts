@@ -22,6 +22,13 @@ export const PRICES = {
     perMillionCpuMs: 0.02,
     freeRequestsPerDay: 100_000,
   },
+  /** Workers Free daily limits and the per-database cap (developers.cloudflare.com/d1/platform/limits). */
+  free: {
+    requestsPerDay: 100_000,
+    d1RowsReadPerDay: 5_000_000,
+    d1RowsWrittenPerDay: 100_000,
+    d1MaxDatabaseGb: 0.5,
+  },
   d1: {
     includedRowsRead: 25e9,
     perMillionRowsRead: 0.001,
@@ -29,6 +36,8 @@ export const PRICES = {
     perMillionRowsWritten: 1,
     includedStorageGb: 5,
     perGbMonth: 0.75,
+    /** Largest a single D1 database can grow on Workers Paid. */
+    maxDatabaseGb: 10,
   },
   r2: {
     includedStorageGb: 10,
