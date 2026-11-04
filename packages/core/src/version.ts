@@ -3,7 +3,7 @@
  * compared to the latest `@glassanalytics/cli` on npm. Must match
  * `packages/cli/package.json` — `pnpm build` enforces that.
  */
-export const GLASS_VERSION = '0.3.0';
+export const GLASS_VERSION = '0.4.0';
 
 /** Canonical command to bring a deployment up to date. */
 export const UPGRADE_COMMAND = 'npx @glassanalytics/cli@latest upgrade';
