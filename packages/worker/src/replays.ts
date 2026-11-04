@@ -40,7 +40,11 @@ export function replaysEnabled(env: Env): env is Env & { REPLAYS: R2Bucket } {
 
 function requireBucket(env: Env): R2Bucket {
   if (!env.REPLAYS) {
-    throw new HttpError(501, 'Session replay is not enabled on this deployment', 'Enable R2 on your Cloudflare account, then run `glass upgrade`.');
+    throw new HttpError(
+      501,
+      'Session replay is not enabled on this deployment',
+      'Enable R2 on your Cloudflare account, then run `glass upgrade`.',
+    );
   }
   return env.REPLAYS;
 }
@@ -64,19 +68,28 @@ export async function handleReplayChunk(request: Request, env: Env, url: URL): P
   const project = q.get('project') ?? '';
   const session = q.get('session') ?? '';
   const seq = Number(q.get('seq'));
-  if (!(await getProject(env.DB, project))) throw new HttpError(404, `Unknown project "${project}"`);
-  if (!SAFE_ID.test(session) || !Number.isInteger(seq) || seq < 0) throw new HttpError(400, 'Invalid session or seq');
+  if (!(await getProject(env.DB, project)))
+    throw new HttpError(404, `Unknown project "${project}"`);
+  if (!SAFE_ID.test(session) || !Number.isInteger(seq) || seq < 0)
+    throw new HttpError(400, 'Invalid session or seq');
 
   const raw = new Uint8Array(await request.arrayBuffer());
   if (raw.byteLength === 0) return;
   if (raw.byteLength > MAX_CHUNK_BYTES) throw new HttpError(413, 'Replay chunk too large');
   const body = q.get('enc') === 'gzip' ? raw : await gzip(raw);
   // Keys sort by start time; the page id keeps chunks from different page loads apart.
-  const startKey = String(Math.max(0, Math.floor(Number(q.get('start')) || Date.now()))).padStart(15, '0');
+  const startKey = String(Math.max(0, Math.floor(Number(q.get('start')) || Date.now()))).padStart(
+    15,
+    '0',
+  );
   const page = /^[a-z0-9]{1,16}$/i.test(q.get('page') ?? '') ? q.get('page') : 'p';
-  await bucket.put(`${chunkPrefix(project, session)}${startKey}-${page}-${String(seq).padStart(6, '0')}.json.gz`, body, {
-    httpMetadata: { contentType: 'application/json', contentEncoding: 'gzip' },
-  });
+  await bucket.put(
+    `${chunkPrefix(project, session)}${startKey}-${page}-${String(seq).padStart(6, '0')}.json.gz`,
+    body,
+    {
+      httpMetadata: { contentType: 'application/json', contentEncoding: 'gzip' },
+    },
+  );
 
   const info = requestInfo(request);
   const ua = parseUserAgent(info.userAgent);
@@ -166,7 +179,8 @@ const SORTS = {
   longest: '(ended_at - started_at) DESC',
   most_active: 'COALESCE(active_ms, ended_at - started_at) DESC',
   most_errors: '(errors + console_errors + failed_requests) DESC, started_at DESC',
-  most_frustrated: '(rage_clicks * 3 + dead_clicks * 2 + errors * 2 + console_errors + failed_requests) DESC, started_at DESC',
+  most_frustrated:
+    '(rage_clicks * 3 + dead_clicks * 2 + errors * 2 + console_errors + failed_requests) DESC, started_at DESC',
 } as const;
 export type ReplaySort = keyof typeof SORTS;
 
@@ -192,15 +206,24 @@ export interface ReplayQuery {
 
 const like = (text: string) => `%${text.toLowerCase().replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
 
-export async function listReplays(db: D1Database, project: string, options: ReplayQuery = {}): Promise<{ rows: ReplayRow[]; total: number }> {
+export async function listReplays(
+  db: D1Database,
+  project: string,
+  options: ReplayQuery = {},
+): Promise<{ rows: ReplayRow[]; total: number }> {
   const where = ['project = ?'];
   const args: unknown[] = [project];
   if (options.person) {
-    where.push('(user_id = ? OR distinct_id = ? OR distinct_id IN (SELECT distinct_id FROM identities WHERE project = ? AND person_id = ?))');
+    where.push(
+      '(user_id = ? OR distinct_id = ? OR distinct_id IN (SELECT distinct_id FROM identities WHERE project = ? AND person_id = ?))',
+    );
     args.push(options.person, options.person, project, options.person);
   }
   for (const signal of options.has ?? []) {
-    if (signal === 'frustration') where.push('(rage_clicks > 0 OR dead_clicks > 0 OR errors > 0 OR console_errors > 0 OR failed_requests > 0)');
+    if (signal === 'frustration')
+      where.push(
+        '(rage_clicks > 0 OR dead_clicks > 0 OR errors > 0 OR console_errors > 0 OR failed_requests > 0)',
+      );
     else if (signal in SIGNALS) where.push(`${SIGNALS[signal]} > 0`);
   }
   if (options.from) {
@@ -216,12 +239,21 @@ export async function listReplays(db: D1Database, project: string, options: Repl
     args.push(options.minDurationMs);
   }
   if (options.search) {
-    where.push(`(session_id = ? OR user_id = ? OR distinct_id = ? OR LOWER(start_url) LIKE ? ESCAPE '\\' OR LOWER(digest) LIKE ? ESCAPE '\\')`);
-    args.push(options.search, options.search, options.search, like(options.search), like(options.search));
+    where.push(
+      `(session_id = ? OR user_id = ? OR distinct_id = ? OR LOWER(start_url) LIKE ? ESCAPE '\\' OR LOWER(digest) LIKE ? ESCAPE '\\')`,
+    );
+    args.push(
+      options.search,
+      options.search,
+      options.search,
+      like(options.search),
+      like(options.search),
+    );
   }
   // Session lists are inlined: D1 allows 100 bound parameters, and these come from our own query (escaped anyway).
   const inline = (ids: string[]) => ids.map((s) => `'${s.replace(/'/g, "''")}'`).join(',') || "''";
-  if (options.excludeSessions?.length) where.push(`session_id NOT IN (${inline(options.excludeSessions)})`);
+  if (options.excludeSessions?.length)
+    where.push(`session_id NOT IN (${inline(options.excludeSessions)})`);
   if (options.sessions) {
     const list = inline(options.sessions);
     if (options.startUrl) {
@@ -238,24 +270,41 @@ export async function listReplays(db: D1Database, project: string, options: Repl
   const limit = Math.min(options.limit ?? 50, 500);
   const [page, count] = await Promise.all([
     db
-      .prepare(`SELECT * FROM replays WHERE ${clause} ORDER BY ${SORTS[options.sort ?? 'newest']} LIMIT ? OFFSET ?`)
+      .prepare(
+        `SELECT * FROM replays WHERE ${clause} ORDER BY ${SORTS[options.sort ?? 'newest']} LIMIT ? OFFSET ?`,
+      )
       .bind(...args, limit, Math.max(0, options.offset ?? 0))
       .all<ReplayRow>(),
-    db.prepare(`SELECT COUNT(*) AS n FROM replays WHERE ${clause}`).bind(...args).first<{ n: number }>(),
+    db
+      .prepare(`SELECT COUNT(*) AS n FROM replays WHERE ${clause}`)
+      .bind(...args)
+      .first<{ n: number }>(),
   ]);
   return { rows: page.results, total: Number(count?.n ?? 0) };
 }
 
-export async function getReplay(db: D1Database, project: string, session: string): Promise<ReplayRow | null> {
-  return db.prepare('SELECT * FROM replays WHERE project = ? AND session_id = ?').bind(project, session).first<ReplayRow>();
+export async function getReplay(
+  db: D1Database,
+  project: string,
+  session: string,
+): Promise<ReplayRow | null> {
+  return db
+    .prepare('SELECT * FROM replays WHERE project = ? AND session_id = ?')
+    .bind(project, session)
+    .first<ReplayRow>();
 }
 
 // ── Cached summaries ──────────────────────────────────────────────────────
 
-export const summaryKey = (project: string, session: string) => `summaries/${project}/${session}.json`;
+export const summaryKey = (project: string, session: string) =>
+  `summaries/${project}/${session}.json`;
 
 /** The cached summary of a session, if it still covers every chunk. */
-export async function readCachedSummary<T>(env: Env, project: string, row: ReplayRow): Promise<T | null> {
+export async function readCachedSummary<T>(
+  env: Env,
+  project: string,
+  row: ReplayRow,
+): Promise<T | null> {
   if (!env.REPLAYS || row.summary_chunks == null || row.summary_chunks !== row.chunks) return null;
   const object = await env.REPLAYS.get(summaryKey(project, row.session_id));
   if (!object) return null;
@@ -272,18 +321,42 @@ export interface SummaryIndex {
   digest: string;
 }
 
-export async function writeCachedSummary(env: Env, project: string, row: ReplayRow, summary: unknown, index: SummaryIndex): Promise<void> {
+export async function writeCachedSummary(
+  env: Env,
+  project: string,
+  row: ReplayRow,
+  summary: unknown,
+  index: SummaryIndex,
+): Promise<void> {
   const bucket = requireBucket(env);
-  await bucket.put(summaryKey(project, row.session_id), JSON.stringify(summary), { httpMetadata: { contentType: 'application/json' } });
-  await env.DB.prepare('UPDATE replays SET dead_clicks = ?, active_ms = ?, digest = ?, summary_chunks = ? WHERE project = ? AND session_id = ? AND chunks = ?')
-    .bind(index.deadClicks, index.activeMs, index.digest.slice(0, 4000), row.chunks, project, row.session_id, row.chunks)
+  await bucket.put(summaryKey(project, row.session_id), JSON.stringify(summary), {
+    httpMetadata: { contentType: 'application/json' },
+  });
+  await env.DB.prepare(
+    'UPDATE replays SET dead_clicks = ?, active_ms = ?, digest = ?, summary_chunks = ? WHERE project = ? AND session_id = ? AND chunks = ?',
+  )
+    .bind(
+      index.deadClicks,
+      index.activeMs,
+      index.digest.slice(0, 4000),
+      row.chunks,
+      project,
+      row.session_id,
+      row.chunks,
+    )
     .run();
 }
 
 /** Sessions that ended a while ago and have no up-to-date cached summary. */
-export async function sessionsToSummarise(db: D1Database, endedBefore: number, limit: number): Promise<(ReplayRow & { project: string })[]> {
+export async function sessionsToSummarise(
+  db: D1Database,
+  endedBefore: number,
+  limit: number,
+): Promise<(ReplayRow & { project: string })[]> {
   const { results } = await db
-    .prepare('SELECT * FROM replays WHERE ended_at < ? AND (summary_chunks IS NULL OR summary_chunks <> chunks) ORDER BY ended_at DESC LIMIT ?')
+    .prepare(
+      'SELECT * FROM replays WHERE ended_at < ? AND (summary_chunks IS NULL OR summary_chunks <> chunks) ORDER BY ended_at DESC LIMIT ?',
+    )
     .bind(endedBefore, limit)
     .all<ReplayRow & { project: string }>();
   return results;
@@ -299,25 +372,46 @@ export interface NoteRow {
   created_at: number;
 }
 
-export async function listNotes(db: D1Database, project: string, session: string): Promise<NoteRow[]> {
+export async function listNotes(
+  db: D1Database,
+  project: string,
+  session: string,
+): Promise<NoteRow[]> {
   const { results } = await db
-    .prepare('SELECT id, ts_ms, text, author, created_at FROM replay_notes WHERE project = ? AND session_id = ? ORDER BY ts_ms')
+    .prepare(
+      'SELECT id, ts_ms, text, author, created_at FROM replay_notes WHERE project = ? AND session_id = ? ORDER BY ts_ms',
+    )
     .bind(project, session)
     .all<NoteRow>();
   return results;
 }
 
-export async function addNote(db: D1Database, project: string, session: string, note: Omit<NoteRow, 'id' | 'created_at'>): Promise<NoteRow> {
+export async function addNote(
+  db: D1Database,
+  project: string,
+  session: string,
+  note: Omit<NoteRow, 'id' | 'created_at'>,
+): Promise<NoteRow> {
   const row = { ...note, id: crypto.randomUUID().slice(0, 8), created_at: Date.now() };
   await db
-    .prepare('INSERT INTO replay_notes (project, session_id, id, ts_ms, text, author, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .prepare(
+      'INSERT INTO replay_notes (project, session_id, id, ts_ms, text, author, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    )
     .bind(project, session, row.id, row.ts_ms, row.text, row.author, row.created_at)
     .run();
   return row;
 }
 
-export async function deleteNote(db: D1Database, project: string, session: string, id: string): Promise<boolean> {
-  const res = await db.prepare('DELETE FROM replay_notes WHERE project = ? AND session_id = ? AND id = ?').bind(project, session, id).run();
+export async function deleteNote(
+  db: D1Database,
+  project: string,
+  session: string,
+  id: string,
+): Promise<boolean> {
+  const res = await db
+    .prepare('DELETE FROM replay_notes WHERE project = ? AND session_id = ? AND id = ?')
+    .bind(project, session, id)
+    .run();
   return (res.meta.changes ?? 0) > 0;
 }
 
@@ -330,7 +424,11 @@ export interface ReplayPage {
 const byTime = (a: RrwebEvent, b: RrwebEvent) => a.timestamp - b.timestamp;
 
 /** A session's recording as one event list per page load, each in time order, earliest page first. */
-export async function loadReplayPages(env: Env, project: string, session: string): Promise<ReplayPage[]> {
+export async function loadReplayPages(
+  env: Env,
+  project: string,
+  session: string,
+): Promise<ReplayPage[]> {
   const bucket = requireBucket(env);
   if (!SAFE_ID.test(session)) throw new HttpError(400, 'Invalid session id');
   const prefix = chunkPrefix(project, session);
@@ -379,27 +477,46 @@ export async function loadReplayPages(env: Env, project: string, session: string
 }
 
 /** All rrweb events of a session in time order, for playback. */
-export async function loadReplayEvents(env: Env, project: string, session: string): Promise<RrwebEvent[]> {
+export async function loadReplayEvents(
+  env: Env,
+  project: string,
+  session: string,
+): Promise<RrwebEvent[]> {
   return (await loadReplayPages(env, project, session)).flatMap((p) => p.events).sort(byTime);
 }
 
 /** Delete replays (R2 chunks and index rows) matching a SQL condition on the replays table. */
-export async function deleteReplays(env: Env, project: string, where: string, args: unknown[]): Promise<number> {
-  const { results } = await env.DB.prepare(`SELECT session_id FROM replays WHERE project = ? AND ${where} LIMIT 500`)
+export async function deleteReplays(
+  env: Env,
+  project: string,
+  where: string,
+  args: unknown[],
+): Promise<number> {
+  const { results } = await env.DB.prepare(
+    `SELECT session_id FROM replays WHERE project = ? AND ${where} LIMIT 500`,
+  )
     .bind(project, ...args)
     .all<{ session_id: string }>();
   for (const { session_id } of results) {
     if (env.REPLAYS) {
       let cursor: string | undefined;
       do {
-        const page = await env.REPLAYS.list({ prefix: chunkPrefix(project, session_id), limit: 1000, cursor });
+        const page = await env.REPLAYS.list({
+          prefix: chunkPrefix(project, session_id),
+          limit: 1000,
+          cursor,
+        });
         if (page.objects.length) await env.REPLAYS.delete(page.objects.map((o) => o.key));
         cursor = page.truncated ? page.cursor : undefined;
       } while (cursor);
       await env.REPLAYS.delete(summaryKey(project, session_id));
     }
-    await env.DB.prepare('DELETE FROM replays WHERE project = ? AND session_id = ?').bind(project, session_id).run();
-    await env.DB.prepare('DELETE FROM replay_notes WHERE project = ? AND session_id = ?').bind(project, session_id).run();
+    await env.DB.prepare('DELETE FROM replays WHERE project = ? AND session_id = ?')
+      .bind(project, session_id)
+      .run();
+    await env.DB.prepare('DELETE FROM replay_notes WHERE project = ? AND session_id = ?')
+      .bind(project, session_id)
+      .run();
   }
   return results.length;
 }

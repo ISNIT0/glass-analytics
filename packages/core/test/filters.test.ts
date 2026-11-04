@@ -3,18 +3,25 @@ import { describe, it } from 'node:test';
 import { type Filter, matchFilter, parseProperty } from '../src/filters.ts';
 import { basin, sqlite } from '../src/sql/dialect.ts';
 import { filtersSql } from '../src/sql/filters.ts';
-import { UnsafeSqlError, assertReadOnlySql } from '../src/sql/guard.ts';
+import { assertReadOnlySql, UnsafeSqlError } from '../src/sql/guard.ts';
 import { createDb, insert } from './helpers.ts';
 
 function idsMatching(filters: Filter[]): string[] {
   const db = createDb();
   insert(db, [
-    { id: 'a', browser: 'Chrome', props: { plan: 'pro', seats: 5, beta: true, tags: { team: 'core' } }, person_props: { tier: 'gold' } },
+    {
+      id: 'a',
+      browser: 'Chrome',
+      props: { plan: 'pro', seats: 5, beta: true, tags: { team: 'core' } },
+      person_props: { tier: 'gold' },
+    },
     { id: 'b', browser: 'Firefox', props: { plan: 'free', seats: 1, beta: false } },
     { id: 'c', browser: 'Safari', props: {} },
     { id: 'd', browser: 'Chrome', props: { plan: "o'brien" } },
   ]);
-  const rows = db.prepare(`SELECT id FROM events WHERE ${filtersSql(filters, sqlite)} ORDER BY id`).all() as { id: string }[];
+  const rows = db
+    .prepare(`SELECT id FROM events WHERE ${filtersSql(filters, sqlite)} ORDER BY id`)
+    .all() as { id: string }[];
   return rows.map((r) => r.id);
 }
 
@@ -36,7 +43,11 @@ describe('filters compiled to SQL (executed on SQLite)', () => {
 
   it('treats neq and not_contains as including missing values', () => {
     assert.deepEqual(idsMatching([{ property: 'plan', op: 'neq', value: 'pro' }]), ['b', 'c', 'd']);
-    assert.deepEqual(idsMatching([{ property: 'plan', op: 'not_contains', value: 'PR' }]), ['b', 'c', 'd']);
+    assert.deepEqual(idsMatching([{ property: 'plan', op: 'not_contains', value: 'PR' }]), [
+      'b',
+      'c',
+      'd',
+    ]);
   });
 
   it('handles numbers, booleans, lists and presence', () => {
@@ -44,7 +55,10 @@ describe('filters compiled to SQL (executed on SQLite)', () => {
     assert.deepEqual(idsMatching([{ property: 'seats', value: 1 }]), ['b']);
     assert.deepEqual(idsMatching([{ property: 'beta', value: true }]), ['a']);
     assert.deepEqual(idsMatching([{ property: 'beta', value: false }]), ['b']);
-    assert.deepEqual(idsMatching([{ property: 'plan', op: 'in', value: ['pro', 'free'] }]), ['a', 'b']);
+    assert.deepEqual(idsMatching([{ property: 'plan', op: 'in', value: ['pro', 'free'] }]), [
+      'a',
+      'b',
+    ]);
     assert.deepEqual(idsMatching([{ property: 'plan', op: 'is_set' }]), ['a', 'b', 'd']);
     assert.deepEqual(idsMatching([{ property: 'plan', op: 'is_not_set' }]), ['c']);
     assert.deepEqual(idsMatching([{ property: 'person.tier', value: 'gold' }]), ['a']);
@@ -56,12 +70,24 @@ describe('filters compiled to SQL (executed on SQLite)', () => {
   });
 
   it('rejects property keys that could break out of a JSON path', () => {
-    assert.throws(() => filtersSql([{ property: 'pl"an', value: 'x' }], sqlite), /Invalid property key/);
-    assert.throws(() => filtersSql([{ property: "plan')--", value: 'x' }], basin()), /Invalid property key/);
+    assert.throws(
+      () => filtersSql([{ property: 'pl"an', value: 'x' }], sqlite),
+      /Invalid property key/,
+    );
+    assert.throws(
+      () => filtersSql([{ property: "plan')--", value: 'x' }], basin()),
+      /Invalid property key/,
+    );
   });
 
   it('uses Basin JSON functions in the lake dialect', () => {
-    const sql = filtersSql([{ property: 'plan', value: 'pro' }, { property: 'person.seats', op: 'gte', value: 3 }], basin('glass'));
+    const sql = filtersSql(
+      [
+        { property: 'plan', value: 'pro' },
+        { property: 'person.seats', op: 'gte', value: 3 },
+      ],
+      basin('glass'),
+    );
     assert.match(sql, /json_as_text\(props, 'plan'\) = 'pro'/);
     assert.match(sql, /json_get_float\(person_props, 'seats'\) >= 3/);
     assert.doesNotMatch(sql, /json_extract/);
@@ -83,7 +109,11 @@ describe('filters evaluated in JavaScript (flag targeting)', () => {
 describe('read-only SQL guard', () => {
   it('allows SELECT and WITH queries, including replace()', () => {
     assert.equal(assertReadOnlySql('SELECT 1;'), 'SELECT 1');
-    assert.ok(assertReadOnlySql("WITH x AS (SELECT replace(path, '/', '') AS p FROM events) SELECT * FROM x"));
+    assert.ok(
+      assertReadOnlySql(
+        "WITH x AS (SELECT replace(path, '/', '') AS p FROM events) SELECT * FROM x",
+      ),
+    );
     assert.ok(assertReadOnlySql("SELECT 'delete from events' AS harmless"));
   });
 

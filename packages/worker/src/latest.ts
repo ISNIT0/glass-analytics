@@ -15,7 +15,9 @@ let inflight: Promise<string | null> | null = null;
 let fetcher: Fetcher = fetch;
 
 /** Test hook: swap the fetcher and/or clear the cache. */
-export function configureLatestCheck(options: { fetch?: Fetcher; clearCache?: boolean } = {}): void {
+export function configureLatestCheck(
+  options: { fetch?: Fetcher; clearCache?: boolean } = {},
+): void {
   if (options.fetch) fetcher = options.fetch;
   if (options.clearCache) {
     cache = null;

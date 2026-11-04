@@ -25,7 +25,11 @@ export interface GlassConfig {
   store: 'd1' | 'lake';
   d1: { name: string; id: string };
   replay: { bucket: string } | null;
-  lake: { bucket: string; namespace: string; streams: { events: string; identities: string } } | null;
+  lake: {
+    bucket: string;
+    namespace: string;
+    streams: { events: string; identities: string };
+  } | null;
   /** Optional route on your own domain, e.g. "acme.com/_glass/*". */
   route: string | null;
   eu: boolean;
@@ -102,7 +106,11 @@ export function connection(): { host: string; key: string; project: string | und
       'Run `npx @glassanalytics/cli init` in your project, or set GLASS_HOST and GLASS_API_KEY.',
     );
   }
-  return { host: host.replace(/\/+$/, ''), key, project: process.env.GLASS_PROJECT ?? config?.project };
+  return {
+    host: host.replace(/\/+$/, ''),
+    key,
+    project: process.env.GLASS_PROJECT ?? config?.project,
+  };
 }
 
 /** An error with a suggestion, printed without a stack trace. */

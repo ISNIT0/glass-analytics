@@ -40,7 +40,9 @@ export class D1Store implements EventStore {
     if (ids.length === 0) return true;
     const marks = ids.map(() => '?').join(', ');
     await this.db
-      .prepare(`DELETE FROM events WHERE project = ? AND (person_id IN (${marks}) OR distinct_id IN (${marks}) OR user_id IN (${marks}))`)
+      .prepare(
+        `DELETE FROM events WHERE project = ? AND (person_id IN (${marks}) OR distinct_id IN (${marks}) OR user_id IN (${marks}))`,
+      )
       .bind(project, ...ids, ...ids, ...ids)
       .run();
     return true;

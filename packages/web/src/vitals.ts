@@ -23,7 +23,11 @@ export function observeVitals(report: (metric: VitalName, value: number) => void
   const values: Partial<Record<VitalName, number>> = {};
   const observers: PerformanceObserver[] = [];
 
-  const observe = (type: string, onEntry: (entry: PerformanceEntry) => void, extra: Record<string, unknown> = {}) => {
+  const observe = (
+    type: string,
+    onEntry: (entry: PerformanceEntry) => void,
+    extra: Record<string, unknown> = {},
+  ) => {
     try {
       const po = new PerformanceObserver((list) => {
         for (const entry of list.getEntries()) onEntry(entry);
@@ -55,7 +59,9 @@ export function observeVitals(report: (metric: VitalName, value: number) => void
   });
 
   try {
-    const nav = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined;
+    const nav = performance.getEntriesByType('navigation')[0] as
+      | PerformanceNavigationTiming
+      | undefined;
     if (nav && nav.responseStart > 0) values.TTFB = nav.responseStart;
   } catch {
     // ignore
@@ -68,7 +74,10 @@ export function observeVitals(report: (metric: VitalName, value: number) => void
     for (const po of observers) po.disconnect();
     for (const [metric, value] of Object.entries(values)) {
       if (typeof value === 'number' && Number.isFinite(value)) {
-        report(metric as VitalName, metric === 'CLS' ? Math.round(value * 1000) / 1000 : Math.round(value));
+        report(
+          metric as VitalName,
+          metric === 'CLS' ? Math.round(value * 1000) / 1000 : Math.round(value),
+        );
       }
     }
   };

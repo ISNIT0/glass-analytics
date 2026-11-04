@@ -18,21 +18,30 @@ export const DEFAULT_INSIGHTS: readonly DefaultInsight[] = [
     name: 'Daily active users',
     description: 'Unique people who viewed a page each day.',
     kind: 'trends',
-    spec: { series: [{ event: '$pageview', math: 'unique_persons', label: 'DAU' }], interval: 'day' },
+    spec: {
+      series: [{ event: '$pageview', math: 'unique_persons', label: 'DAU' }],
+      interval: 'day',
+    },
   },
   {
     key: 'wau',
     name: 'Weekly active users',
     description: 'Unique people who viewed a page each week.',
     kind: 'trends',
-    spec: { series: [{ event: '$pageview', math: 'unique_persons', label: 'WAU' }], interval: 'week' },
+    spec: {
+      series: [{ event: '$pageview', math: 'unique_persons', label: 'WAU' }],
+      interval: 'week',
+    },
   },
   {
     key: 'mau',
     name: 'Monthly active users',
     description: 'Unique people who viewed a page each month.',
     kind: 'trends',
-    spec: { series: [{ event: '$pageview', math: 'unique_persons', label: 'MAU' }], interval: 'month' },
+    spec: {
+      series: [{ event: '$pageview', math: 'unique_persons', label: 'MAU' }],
+      interval: 'month',
+    },
   },
   {
     key: 'daily-pageviews',
@@ -44,7 +53,8 @@ export const DEFAULT_INSIGHTS: readonly DefaultInsight[] = [
   {
     key: 'daily-retention',
     name: 'Daily retention',
-    description: 'Of people who first viewed a page on a given day, how many came back on later days.',
+    description:
+      'Of people who first viewed a page on a given day, how many came back on later days.',
     kind: 'retention',
     spec: {
       cohortEvent: { event: '$pageview' },
@@ -56,7 +66,8 @@ export const DEFAULT_INSIGHTS: readonly DefaultInsight[] = [
   {
     key: 'weekly-retention',
     name: 'Weekly retention',
-    description: 'Of people who first viewed a page in a given week, how many came back in later weeks.',
+    description:
+      'Of people who first viewed a page in a given week, how many came back in later weeks.',
     kind: 'retention',
     spec: {
       cohortEvent: { event: '$pageview' },

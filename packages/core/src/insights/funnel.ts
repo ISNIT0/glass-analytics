@@ -11,7 +11,7 @@ import { breakdownExpr, breakdownProperties, filtersSql } from '../sql/filters.t
 import { eventsCte, num, text } from '../sql/source.ts';
 import { iso, parseDuration, resolveRange } from '../time.ts';
 import type { FunnelSpec } from './schemas.ts';
-import { type QueryContext, type ResultBase, fmt } from './types.ts';
+import { fmt, type QueryContext, type ResultBase } from './types.ts';
 
 export interface FunnelStepResult {
   label: string;
@@ -33,7 +33,12 @@ export interface FunnelResult extends ResultBase {
   breakdowns?: { value: string; steps: FunnelStepResult[] }[];
 }
 
-export function compileFunnel(spec: FunnelSpec, ctx: QueryContext, range: { from: number; to: number }, windowMs: number): string[] {
+export function compileFunnel(
+  spec: FunnelSpec,
+  ctx: QueryContext,
+  range: { from: number; to: number },
+  windowMs: number,
+): string[] {
   const d = ctx.dialect;
   const steps = spec.steps;
   const cte = eventsCte(d, {
@@ -99,7 +104,10 @@ export function compileFunnel(spec: FunnelSpec, ctx: QueryContext, range: { from
   return chunks;
 }
 
-function shapeSteps(spec: FunnelSpec, counts: Map<number, { n: number; dt: number }>): FunnelStepResult[] {
+function shapeSteps(
+  spec: FunnelSpec,
+  counts: Map<number, { n: number; dt: number }>,
+): FunnelStepResult[] {
   const firstCount = counts.get(1)?.n ?? 0;
   return spec.steps.map((step, i) => {
     const c = counts.get(i + 1) ?? { n: 0, dt: 0 };
@@ -149,8 +157,12 @@ export async function runFunnel(spec: FunnelSpec, ctx: QueryContext): Promise<Fu
 
   if (breakdownProperties(spec.breakdown).length) {
     const limit = spec.breakdownLimit ?? 10;
-    const ranked = [...byValue.entries()].sort((a, b) => (b[1].get(1)?.n ?? 0) - (a[1].get(1)?.n ?? 0));
-    const top = ranked.slice(0, limit).map(([value, steps]) => ({ value, steps: shapeSteps(spec, steps) }));
+    const ranked = [...byValue.entries()].sort(
+      (a, b) => (b[1].get(1)?.n ?? 0) - (a[1].get(1)?.n ?? 0),
+    );
+    const top = ranked
+      .slice(0, limit)
+      .map(([value, steps]) => ({ value, steps: shapeSteps(spec, steps) }));
     const rest = ranked.slice(limit);
     if (rest.length > 0) {
       const other = new Map<number, { n: number; dt: number }>();
@@ -167,7 +179,12 @@ export async function runFunnel(spec: FunnelSpec, ctx: QueryContext): Promise<Fu
 
   const s = result.steps;
   const last = s[s.length - 1]!;
-  const worst = s.slice(1).reduce((w, step) => (step.conversionFromPrevious < w.conversionFromPrevious ? step : w), s[1]!);
+  const worst = s
+    .slice(1)
+    .reduce(
+      (w, step) => (step.conversionFromPrevious < w.conversionFromPrevious ? step : w),
+      s[1]!,
+    );
   const people = (n: number) => `${fmt(n)} ${n === 1 ? 'person' : 'people'}`;
   result.summary =
     s[0]!.count === 0

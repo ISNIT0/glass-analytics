@@ -162,5 +162,11 @@ export const FILTERABLE_COLUMNS = new Set<string>([
 
 /** Event names: printable, no control characters, sensible length. */
 export function isValidEventName(name: unknown): name is string {
-  return typeof name === 'string' && name.length > 0 && name.length <= 200 && !/[\u0000-\u001f]/.test(name);
+  return (
+    typeof name === 'string' &&
+    name.length > 0 &&
+    name.length <= 200 &&
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: rejecting control characters is the point
+    !/[\u0000-\u001f]/.test(name)
+  );
 }

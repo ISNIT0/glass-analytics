@@ -6,7 +6,7 @@
  */
 
 import type { EvaluationContext } from '@glassanalytics/core/filters';
-import { type FlagDefinition, evaluateFlags, validateFlag } from '@glassanalytics/core/flags';
+import { evaluateFlags, type FlagDefinition, validateFlag } from '@glassanalytics/core/flags';
 import { parseUserAgent } from '@glassanalytics/core/ua';
 import type { D1Database, Env } from './env.ts';
 import { HttpError, readJson } from './http.ts';
@@ -16,22 +16,40 @@ import { getProject } from './projects.ts';
 const cache = new Map<string, { flags: FlagDefinition[]; until: number }>();
 const TTL_MS = 10_000;
 
-export async function listFlags(db: D1Database, project: string, fresh = false): Promise<FlagDefinition[]> {
+export async function listFlags(
+  db: D1Database,
+  project: string,
+  fresh = false,
+): Promise<FlagDefinition[]> {
   const hit = cache.get(project);
   if (!fresh && hit && hit.until > Date.now()) return hit.flags;
-  const { results } = await db.prepare('SELECT definition FROM flags WHERE project = ? ORDER BY key').bind(project).all<{ definition: string }>();
+  const { results } = await db
+    .prepare('SELECT definition FROM flags WHERE project = ? ORDER BY key')
+    .bind(project)
+    .all<{ definition: string }>();
   const flags = results.map((r) => JSON.parse(r.definition) as FlagDefinition);
   cache.set(project, { flags, until: Date.now() + TTL_MS });
   return flags;
 }
 
-export async function getFlag(db: D1Database, project: string, key: string): Promise<FlagDefinition | null> {
-  const row = await db.prepare('SELECT definition FROM flags WHERE project = ? AND key = ?').bind(project, key).first<{ definition: string }>();
+export async function getFlag(
+  db: D1Database,
+  project: string,
+  key: string,
+): Promise<FlagDefinition | null> {
+  const row = await db
+    .prepare('SELECT definition FROM flags WHERE project = ? AND key = ?')
+    .bind(project, key)
+    .first<{ definition: string }>();
   return row ? (JSON.parse(row.definition) as FlagDefinition) : null;
 }
 
 /** Create or replace a flag. Returns the stored definition and what changed. */
-export async function saveFlag(db: D1Database, project: string, input: Partial<FlagDefinition> & { key: string }) {
+export async function saveFlag(
+  db: D1Database,
+  project: string,
+  input: Partial<FlagDefinition> & { key: string },
+) {
   const existing = await getFlag(db, project, input.key);
   const flag: FlagDefinition = {
     key: input.key,
@@ -54,13 +72,18 @@ export async function saveFlag(db: D1Database, project: string, input: Partial<F
     .run();
   cache.delete(project);
   const changed = Object.keys(flag).filter(
-    (k) => JSON.stringify((flag as unknown as Record<string, unknown>)[k]) !== JSON.stringify((existing as unknown as Record<string, unknown> | null)?.[k]),
+    (k) =>
+      JSON.stringify((flag as unknown as Record<string, unknown>)[k]) !==
+      JSON.stringify((existing as unknown as Record<string, unknown> | null)?.[k]),
   );
   return { flag, created: !existing, changed };
 }
 
 export async function deleteFlag(db: D1Database, project: string, key: string): Promise<boolean> {
-  const res = await db.prepare('DELETE FROM flags WHERE project = ? AND key = ?').bind(project, key).run();
+  const res = await db
+    .prepare('DELETE FROM flags WHERE project = ? AND key = ?')
+    .bind(project, key)
+    .run();
   cache.delete(project);
   return (res.meta.changes ?? 0) > 0;
 }
@@ -75,11 +98,17 @@ export async function flagContext(
 ): Promise<EvaluationContext> {
   let personId = userId;
   if (!personId) {
-    const link = await db.prepare('SELECT person_id FROM identities WHERE project = ? AND distinct_id = ?').bind(project, distinctId).first<{ person_id: string }>();
+    const link = await db
+      .prepare('SELECT person_id FROM identities WHERE project = ? AND distinct_id = ?')
+      .bind(project, distinctId)
+      .first<{ person_id: string }>();
     personId = link?.person_id ?? null;
   }
   const row = personId
-    ? await db.prepare('SELECT props FROM persons WHERE project = ? AND person_id = ?').bind(project, personId).first<{ props: string }>()
+    ? await db
+        .prepare('SELECT props FROM persons WHERE project = ? AND person_id = ?')
+        .bind(project, personId)
+        .first<{ props: string }>()
     : null;
   const info = request ? requestInfo(request) : null;
   const ua = info ? parseUserAgent(info.userAgent) : null;
@@ -95,13 +124,27 @@ export async function flagContext(
 }
 
 /** `POST /f` — { project, distinct_id, user_id } → { flags }. Public, like ingest. */
-export async function handleFlagEvaluation(request: Request, env: Env): Promise<{ flags: Record<string, string> }> {
-  const body = await readJson<{ project?: string; distinct_id?: string | null; user_id?: string | null }>(request, 10_000);
-  if (!body.project || !(await getProject(env.DB, body.project))) throw new HttpError(404, 'Unknown project');
+export async function handleFlagEvaluation(
+  request: Request,
+  env: Env,
+): Promise<{ flags: Record<string, string> }> {
+  const body = await readJson<{
+    project?: string;
+    distinct_id?: string | null;
+    user_id?: string | null;
+  }>(request, 10_000);
+  if (!body.project || !(await getProject(env.DB, body.project)))
+    throw new HttpError(404, 'Unknown project');
   // Cookieless visitors have no stable id, so they can't be bucketed consistently.
   if (!body.distinct_id) return { flags: {} };
   const flags = await listFlags(env.DB, body.project);
   if (flags.length === 0) return { flags: {} };
-  const ctx = await flagContext(env.DB, body.project, String(body.distinct_id), body.user_id ? String(body.user_id) : null, request);
+  const ctx = await flagContext(
+    env.DB,
+    body.project,
+    String(body.distinct_id),
+    body.user_id ? String(body.user_id) : null,
+    request,
+  );
   return { flags: evaluateFlags(flags, ctx) };
 }

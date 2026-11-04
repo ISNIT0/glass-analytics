@@ -1,6 +1,6 @@
 # Instructions for coding agents working on Glass
 
-Glass is open-source, agent-first analytics that runs in the user's own Cloudflare account. This file is for agents changing Glass itself. (Agents *using* Glass in another project get instructions from `glass init`.)
+Glass is open-source, agent-first analytics that runs in the user's own Cloudflare account. This file is for agents changing Glass itself. (Agents _using_ Glass in another project get instructions from `glass init`.)
 
 ## Commands
 

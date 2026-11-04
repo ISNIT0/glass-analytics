@@ -35,9 +35,17 @@ export interface R2ObjectBody extends R2Object {
 }
 
 export interface R2Bucket {
-  put(key: string, value: ArrayBuffer | Uint8Array | string, options?: { httpMetadata?: { contentType?: string; contentEncoding?: string } }): Promise<unknown>;
+  put(
+    key: string,
+    value: ArrayBuffer | Uint8Array | string,
+    options?: { httpMetadata?: { contentType?: string; contentEncoding?: string } },
+  ): Promise<unknown>;
   get(key: string): Promise<R2ObjectBody | null>;
-  list(options: { prefix: string; cursor?: string; limit?: number }): Promise<{ objects: R2Object[]; truncated: boolean; cursor?: string }>;
+  list(options: {
+    prefix: string;
+    cursor?: string;
+    limit?: number;
+  }): Promise<{ objects: R2Object[]; truncated: boolean; cursor?: string }>;
   delete(keys: string | string[]): Promise<void>;
 }
 

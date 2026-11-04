@@ -4,13 +4,13 @@ Glass runs entirely in your Cloudflare account. There is no Glass service: event
 
 ## What is stored
 
-| Data | Where | Notes |
-| --- | --- | --- |
-| Events | D1 `events` (or the lake) | URL without query string (except UTM tags), referrer without query string, title, country/region/city from Cloudflare, browser/OS/device family, your properties |
-| IP addresses | Nowhere | Used only in memory, to derive cookieless ids |
-| People | D1 `persons` | The properties you send with `identify()` / `setPersonProperties()` |
-| Device links | D1 `identities` | Anonymous device id → your user id |
-| Replays | R2, gzipped | rrweb recordings; deleted after 30 days by default (`GLASS_REPLAY_RETENTION_DAYS`) |
+| Data         | Where                     | Notes                                                                                                                                                            |
+| ------------ | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Events       | D1 `events` (or the lake) | URL without query string (except UTM tags), referrer without query string, title, country/region/city from Cloudflare, browser/OS/device family, your properties |
+| IP addresses | Nowhere                   | Used only in memory, to derive cookieless ids                                                                                                                    |
+| People       | D1 `persons`              | The properties you send with `identify()` / `setPersonProperties()`                                                                                              |
+| Device links | D1 `identities`           | Anonymous device id → your user id                                                                                                                               |
+| Replays      | R2, gzipped               | rrweb recordings; deleted after 30 days by default (`GLASS_REPLAY_RETENTION_DAYS`)                                                                               |
 
 Set `GLASS_RETENTION_DAYS` (a Worker variable) to delete events older than that many days.
 

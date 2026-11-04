@@ -9,19 +9,39 @@ import { color, line, pct, printJson, table } from '../output.ts';
 import type { Flags } from './data.ts';
 
 const str = (v: string | boolean | undefined) => (typeof v === 'string' ? v : undefined);
-const projectQuery = (flags: Flags) => (str(flags.project) ? `?project=${encodeURIComponent(str(flags.project)!)}` : '');
+const projectQuery = (flags: Flags) =>
+  str(flags.project) ? `?project=${encodeURIComponent(str(flags.project)!)}` : '';
 
-export async function flags(sub: string | undefined, key: string | undefined, flags: Flags): Promise<void> {
+export async function flags(
+  sub: string | undefined,
+  key: string | undefined,
+  flags: Flags,
+): Promise<void> {
   if (!sub || sub === 'list') {
-    const r = await call<{ summary: string; flags: { key: string; enabled: boolean; rollout: number; variants?: { key: string }[] }[] }>('GET', `/api/flags${projectQuery(flags)}`);
+    const r = await call<{
+      summary: string;
+      flags: { key: string; enabled: boolean; rollout: number; variants?: { key: string }[] }[];
+    }>('GET', `/api/flags${projectQuery(flags)}`);
     if (flags.json) return printJson(r);
-    if (!r.flags.length) return line('No flags yet. Create one: glass flags set new-checkout --rollout 10');
-    table(['Flag', 'On', 'Rollout', 'Variants'], r.flags.map((f) => [f.key, f.enabled ? 'yes' : 'no', `${f.rollout}%`, (f.variants ?? []).map((v) => v.key).join(', ')]));
+    if (!r.flags.length)
+      return line('No flags yet. Create one: glass flags set new-checkout --rollout 10');
+    table(
+      ['Flag', 'On', 'Rollout', 'Variants'],
+      r.flags.map((f) => [
+        f.key,
+        f.enabled ? 'yes' : 'no',
+        `${f.rollout}%`,
+        (f.variants ?? []).map((v) => v.key).join(', '),
+      ]),
+    );
     return;
   }
   if (!key) throw new UsageError(`Pass a flag key: glass flags ${sub} <key>`);
   if (sub === 'delete') {
-    const r = await call<{ summary: string }>('DELETE', `/api/flags/${encodeURIComponent(key)}${projectQuery(flags)}`);
+    const r = await call<{ summary: string }>(
+      'DELETE',
+      `/api/flags/${encodeURIComponent(key)}${projectQuery(flags)}`,
+    );
     return flags.json ? printJson(r) : line(r.summary);
   }
   if (sub === 'set') {
@@ -37,18 +57,39 @@ export async function flags(sub: string | undefined, key: string | undefined, fl
       });
     }
     if (typeof flags.rules === 'string') body.rules = JSON.parse(flags.rules);
-    const r = await call<{ summary: string }>('PUT', `/api/flags/${encodeURIComponent(key)}`, withProject(body));
+    const r = await call<{ summary: string }>(
+      'PUT',
+      `/api/flags/${encodeURIComponent(key)}`,
+      withProject(body),
+    );
     return flags.json ? printJson(r) : line(r.summary);
   }
-  throw new UsageError(`Unknown subcommand "flags ${sub}".`, 'Use: glass flags [list | set <key> | delete <key>]');
+  throw new UsageError(
+    `Unknown subcommand "flags ${sub}".`,
+    'Use: glass flags [list | set <key> | delete <key>]',
+  );
 }
 
-export async function experiments(sub: string | undefined, key: string | undefined, rest: string[], flags: Flags): Promise<void> {
+export async function experiments(
+  sub: string | undefined,
+  key: string | undefined,
+  rest: string[],
+  flags: Flags,
+): Promise<void> {
   if (!sub || sub === 'list') {
-    const r = await call<{ summary: string; experiments: { key: string; status: string; goal: { event: string } }[] }>('GET', `/api/experiments${projectQuery(flags)}`);
+    const r = await call<{
+      summary: string;
+      experiments: { key: string; status: string; goal: { event: string } }[];
+    }>('GET', `/api/experiments${projectQuery(flags)}`);
     if (flags.json) return printJson(r);
-    if (!r.experiments.length) return line('No experiments yet. Create one: glass experiments create pricing-v2 --goal signup_completed');
-    table(['Experiment', 'Status', 'Goal'], r.experiments.map((e) => [e.key, e.status, e.goal.event]));
+    if (!r.experiments.length)
+      return line(
+        'No experiments yet. Create one: glass experiments create pricing-v2 --goal signup_completed',
+      );
+    table(
+      ['Experiment', 'Status', 'Goal'],
+      r.experiments.map((e) => [e.key, e.status, e.goal.event]),
+    );
     return;
   }
   if (!key) throw new UsageError(`Pass an experiment key: glass experiments ${sub} <key>`);
@@ -58,26 +99,49 @@ export async function experiments(sub: string | undefined, key: string | undefin
     const r = await call<{ summary: string }>(
       'POST',
       '/api/experiments',
-      withProject({ key, goal: { event: goal, value: str(flags.value) }, flag: str(flags.flag), hypothesis: str(flags.hypothesis), project: str(flags.project) }),
+      withProject({
+        key,
+        goal: { event: goal, value: str(flags.value) },
+        flag: str(flags.flag),
+        hypothesis: str(flags.hypothesis),
+        project: str(flags.project),
+      }),
     );
     return flags.json ? printJson(r) : line(r.summary);
   }
   if (sub === 'start' || sub === 'stop' || sub === 'ship') {
     const variant = rest[0] ?? str(flags.variant);
-    if (sub === 'ship' && !variant) throw new UsageError('Pass the variant to ship: glass experiments ship <key> <variant>');
-    const r = await call<{ summary: string }>('POST', `/api/experiments/${encodeURIComponent(key)}/${sub}`, withProject({ variant, project: str(flags.project) }));
+    if (sub === 'ship' && !variant)
+      throw new UsageError('Pass the variant to ship: glass experiments ship <key> <variant>');
+    const r = await call<{ summary: string }>(
+      'POST',
+      `/api/experiments/${encodeURIComponent(key)}/${sub}`,
+      withProject({ variant, project: str(flags.project) }),
+    );
     return flags.json ? printJson(r) : line(r.summary);
   }
   if (sub === 'results' || sub === 'show') {
-    const r = await call<{ summary: string; results: ExperimentResult }>('GET', `/api/experiments/${encodeURIComponent(key)}${projectQuery(flags)}`);
+    const r = await call<{ summary: string; results: ExperimentResult }>(
+      'GET',
+      `/api/experiments/${encodeURIComponent(key)}${projectQuery(flags)}`,
+    );
     if (flags.json) return printJson(r);
     line(color.bold(r.summary));
     line();
     table(
       ['Variant', 'Exposed', 'Converted', 'Rate', 'P(beat control)'],
-      r.results.variants.map((v) => [v.variant, v.exposures, v.conversions, pct(v.conversionRate), v.vsControl ? pct(v.vsControl.probabilityToBeatControl) : 'control']),
+      r.results.variants.map((v) => [
+        v.variant,
+        v.exposures,
+        v.conversions,
+        pct(v.conversionRate),
+        v.vsControl ? pct(v.vsControl.probabilityToBeatControl) : 'control',
+      ]),
     );
     return;
   }
-  throw new UsageError(`Unknown subcommand "experiments ${sub}".`, 'Use: glass experiments [list | create | start | stop | ship | results]');
+  throw new UsageError(
+    `Unknown subcommand "experiments ${sub}".`,
+    'Use: glass experiments [list | create | start | stop | ship | results]',
+  );
 }

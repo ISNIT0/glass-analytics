@@ -12,7 +12,7 @@
 import { GLASS_VERSION, upgradeMessage } from '@glassanalytics/core/version';
 import { z } from 'zod/v4';
 import type { Scope } from '../auth.ts';
-import { HttpError, describeIssues, isValidationError, json } from '../http.ts';
+import { describeIssues, HttpError, isValidationError, json } from '../http.ts';
 import type { GlassService } from '../service.ts';
 import { TOOLS, TOOLS_BY_NAME } from './tools.ts';
 
@@ -35,14 +35,29 @@ interface JsonRpcRequest {
   params?: Record<string, unknown>;
 }
 
-const rpcError = (id: JsonRpcRequest['id'], code: number, message: string) => ({ jsonrpc: '2.0', id: id ?? null, error: { code, message } });
+const rpcError = (id: JsonRpcRequest['id'], code: number, message: string) => ({
+  jsonrpc: '2.0',
+  id: id ?? null,
+  error: { code, message },
+});
 const rpcResult = (id: JsonRpcRequest['id'], result: unknown) => ({ jsonrpc: '2.0', id, result });
 
-let schemaCache: { name: string; title: string; description: string; inputSchema: unknown; annotations: object }[] | null = null;
+let schemaCache:
+  | {
+      name: string;
+      title: string;
+      description: string;
+      inputSchema: unknown;
+      annotations: object;
+    }[]
+  | null = null;
 
 function toolList() {
   schemaCache ??= TOOLS.map((t) => {
-    const schema = z.toJSONSchema(t.input, { io: 'input', unrepresentable: 'any' }) as Record<string, unknown>;
+    const schema = z.toJSONSchema(t.input, { io: 'input', unrepresentable: 'any' }) as Record<
+      string,
+      unknown
+    >;
     delete schema.$schema;
     return {
       name: t.name,
@@ -55,20 +70,35 @@ function toolList() {
   return schemaCache;
 }
 
-async function callTool(service: GlassService, scope: Scope, params: Record<string, unknown> | undefined) {
+async function callTool(
+  service: GlassService,
+  scope: Scope,
+  params: Record<string, unknown> | undefined,
+) {
   const name = String(params?.name ?? '');
   const tool = TOOLS_BY_NAME.get(name);
   if (!tool) return { content: [{ type: 'text', text: `Unknown tool "${name}".` }], isError: true };
   if (tool.scope === 'admin' && scope !== 'admin') {
-    return { content: [{ type: 'text', text: `"${name}" changes data and needs the admin key; this connection uses the read-only key.` }], isError: true };
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `"${name}" changes data and needs the admin key; this connection uses the read-only key.`,
+        },
+      ],
+      isError: true,
+    };
   }
   try {
     const result = await tool.run(service, params?.arguments ?? {});
     let text = JSON.stringify(result, null, 2);
-    if (text.length > MAX_TEXT) text = `${text.slice(0, MAX_TEXT)}\n… (truncated; narrow the query or lower limits)`;
+    if (text.length > MAX_TEXT)
+      text = `${text.slice(0, MAX_TEXT)}\n… (truncated; narrow the query or lower limits)`;
     return {
       content: [{ type: 'text', text }],
-      ...(result && typeof result === 'object' && !Array.isArray(result) ? { structuredContent: result } : {}),
+      ...(result && typeof result === 'object' && !Array.isArray(result)
+        ? { structuredContent: result }
+        : {}),
     };
   } catch (err) {
     // Tool errors go back to the model as readable text so it can correct itself.
@@ -85,7 +115,8 @@ async function callTool(service: GlassService, scope: Scope, params: Record<stri
 }
 
 async function handleMessage(msg: JsonRpcRequest, service: GlassService, scope: Scope) {
-  if (!msg || msg.jsonrpc !== '2.0' || typeof msg.method !== 'string') return rpcError(msg?.id, -32600, 'Invalid JSON-RPC request');
+  if (!msg || msg.jsonrpc !== '2.0' || typeof msg.method !== 'string')
+    return rpcError(msg?.id, -32600, 'Invalid JSON-RPC request');
   const isNotification = msg.id === undefined;
   switch (msg.method) {
     case 'initialize': {
@@ -118,12 +149,20 @@ async function handleMessage(msg: JsonRpcRequest, service: GlassService, scope: 
   }
 }
 
-export async function handleMcp(request: Request, service: GlassService, scope: Scope): Promise<Response> {
+export async function handleMcp(
+  request: Request,
+  service: GlassService,
+  scope: Scope,
+): Promise<Response> {
   if (request.method === 'GET') {
     // No server-initiated stream: every tool is request/response.
-    return new Response('This MCP server does not offer an SSE stream. POST JSON-RPC messages instead.', { status: 405, headers: { Allow: 'POST' } });
+    return new Response(
+      'This MCP server does not offer an SSE stream. POST JSON-RPC messages instead.',
+      { status: 405, headers: { Allow: 'POST' } },
+    );
   }
-  if (request.method === 'DELETE') return new Response(null, { status: 405, headers: { Allow: 'POST' } });
+  if (request.method === 'DELETE')
+    return new Response(null, { status: 405, headers: { Allow: 'POST' } });
   let body: unknown;
   try {
     body = await request.json();

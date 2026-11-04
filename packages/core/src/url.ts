@@ -31,7 +31,11 @@ export function parsePage(raw: string | null | undefined): ParsedPage {
   try {
     u = new URL(raw);
   } catch {
-    return { ...EMPTY, url: raw.slice(0, 2000), path: raw.startsWith('/') ? raw.split('?')[0]!.slice(0, 500) : '' };
+    return {
+      ...EMPTY,
+      url: raw.slice(0, 2000),
+      path: raw.startsWith('/') ? raw.split('?')[0]!.slice(0, 500) : '',
+    };
   }
   const q = u.searchParams;
   // `ref` and `source` are common untagged alternatives to utm_source.

@@ -40,7 +40,12 @@ if (script && data?.project) {
         ? {
             sampleRate,
             onErrorSampleRate,
-            console: data.replayConsole === 'false' ? false : data.replayConsole === 'all' ? true : undefined,
+            console:
+              data.replayConsole === 'false'
+                ? false
+                : data.replayConsole === 'all'
+                  ? true
+                  : undefined,
             network: data.replayNetwork !== 'false',
             maskAllText: data.replayMaskAllText === 'true',
           }

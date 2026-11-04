@@ -81,12 +81,60 @@ Docs: https://github.com/ISNIT0/glass-analytics`;
 
 // Every option must be declared: undeclared options would parse as booleans and lose their values.
 const STRING_OPTIONS = [
-  'token', 'account', 'project', 'name', 'route', 'branch', 'secret',
-  'from', 'to', 'event', 'math', 'property', 'interval', 'breakdown', 'steps', 'window',
-  'cohort', 'return', 'period', 'periods', 'spec', 'where', 'limit', 'days', 'describe', 'person',
-  'rollout', 'variants', 'rules', 'description', 'goal', 'flag', 'value', 'hypothesis', 'variant',
+  'token',
+  'account',
+  'project',
+  'name',
+  'route',
+  'branch',
+  'secret',
+  'from',
+  'to',
+  'event',
+  'math',
+  'property',
+  'interval',
+  'breakdown',
+  'steps',
+  'window',
+  'cohort',
+  'return',
+  'period',
+  'periods',
+  'spec',
+  'where',
+  'limit',
+  'days',
+  'describe',
+  'person',
+  'rollout',
+  'variants',
+  'rules',
+  'description',
+  'goal',
+  'flag',
+  'value',
+  'hypothesis',
+  'variant',
 ];
-const BOOLEAN_OPTIONS = ['json', 'lake', 'eu', 'no-replay', 'no-agent-files', 'no-ci', 'ci', 'local', 'allow-downgrade', 'dry-run', 'read', 'sql', 'errors', 'enable', 'disable', 'delete'];
+const BOOLEAN_OPTIONS = [
+  'json',
+  'lake',
+  'eu',
+  'no-replay',
+  'no-agent-files',
+  'no-ci',
+  'ci',
+  'local',
+  'allow-downgrade',
+  'dry-run',
+  'read',
+  'sql',
+  'errors',
+  'enable',
+  'disable',
+  'delete',
+];
 
 export async function main(argv: string[]): Promise<void> {
   const { values, positionals } = parseArgs({
@@ -107,7 +155,16 @@ export async function main(argv: string[]): Promise<void> {
   if (!command || command === 'help' || (flags.help && !command)) return line(HELP);
 
   // Surface an outdated Worker before the real command (skip setup/status/mcp noise).
-  const skipUpgradeWarn = new Set(['init', 'upgrade', 'deploy', 'ci', 'status', 'doctor', 'mcp', 'key']);
+  const skipUpgradeWarn = new Set([
+    'init',
+    'upgrade',
+    'deploy',
+    'ci',
+    'status',
+    'doctor',
+    'mcp',
+    'key',
+  ]);
   if (command && !skipUpgradeWarn.has(command)) {
     await warnIfOutdated({ json: Boolean(flags.json) });
   }
@@ -138,7 +195,11 @@ export async function main(argv: string[]): Promise<void> {
         allowDowngrade: Boolean(flags['allow-downgrade']),
       });
     case 'ci':
-      return ci({ branch: str(flags.branch), secret: str(flags.secret), json: Boolean(flags.json) });
+      return ci({
+        branch: str(flags.branch),
+        secret: str(flags.secret),
+        json: Boolean(flags.json),
+      });
     case 'status':
     case 'doctor':
       return status({ json: Boolean(flags.json) });
@@ -164,7 +225,10 @@ export async function main(argv: string[]): Promise<void> {
     case 'mcp':
       return mcpBridge();
     default:
-      throw new UsageError(`Unknown command "${command}".`, 'Run `glass help` for the list of commands.');
+      throw new UsageError(
+        `Unknown command "${command}".`,
+        'Run `glass help` for the list of commands.',
+      );
   }
 }
 

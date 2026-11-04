@@ -3,12 +3,12 @@
  * agents can discover everything from `GET /api`.
  */
 
-import { INSIGHTS, experimentSpec, filterSchema, sqlSpec } from '@glassanalytics/core/insights';
+import { experimentSpec, filterSchema, INSIGHTS, sqlSpec } from '@glassanalytics/core/insights';
 import { GLASS_VERSION } from '@glassanalytics/core/version';
 import { z } from 'zod/v4';
-import { type Scope, requireScope } from './auth.ts';
+import { requireScope, type Scope } from './auth.ts';
 import type { Env } from './env.ts';
-import { HttpError, Router, json, readJson } from './http.ts';
+import { HttpError, json, Router, readJson } from './http.ts';
 import { TOOLS } from './mcp/tools.ts';
 import type { GlassService } from './service.ts';
 
@@ -44,13 +44,17 @@ export function apiRouter(service: GlassService, env: Env, request: Request): Ro
       health: `${service.baseUrl}/health`,
       endpoints: {
         'GET /health': 'Deployment version, latest release, upgradeAvailable',
-        'GET /api/overview?from=-30d': 'Headline stats and movers (includes upgrade notice when outdated)',
-        'POST /api/query': `Run an insight: { "kind": ${Object.keys(INSIGHTS).map((k) => `"${k}"`).join(' | ')}, ...spec }`,
+        'GET /api/overview?from=-30d':
+          'Headline stats and movers (includes upgrade notice when outdated)',
+        'POST /api/query': `Run an insight: { "kind": ${Object.keys(INSIGHTS)
+          .map((k) => `"${k}"`)
+          .join(' | ')}, ...spec }`,
         'POST /api/sql': 'Read-only SQL: { "query": "SELECT ..." }',
         'GET /api/events': 'Tracked events',
         'GET /api/events/:name': 'Properties of an event',
         'PUT /api/events/:name': 'Document an event (admin)',
-        'GET /api/properties/values?property=&event=&query=': 'Most common values of a property (filter typeahead)',
+        'GET /api/properties/values?property=&event=&query=':
+          'Most common values of a property (filter typeahead)',
         'GET /api/person-properties': 'Person property names with types and examples',
         'GET /api/persons?query=': 'Search identified people (includes anonymous device count)',
         'GET /api/persons/:id': 'One person with events and replays',
@@ -64,12 +68,16 @@ export function apiRouter(service: GlassService, env: Env, request: Request): Ro
         'GET /api/insights/:key': 'One saved analysis',
         'POST /api/insights': 'Create or update a saved analysis (admin)',
         'DELETE /api/insights/:key': 'Delete a saved analysis (admin)',
-        'GET /api/replays?has=rage_clicks&url=/checkout&not_event=purchase&sort=most_frustrated': 'Find recorded sessions',
-        'GET /api/replays/analyse?from=-7d': 'Patterns across sessions: rage/dead clicks, errors, failing requests',
-        'GET /api/replays/:session/summary?format=json': 'Transcript of a session (json adds the structured timeline)',
+        'GET /api/replays?has=rage_clicks&url=/checkout&not_event=purchase&sort=most_frustrated':
+          'Find recorded sessions',
+        'GET /api/replays/analyse?from=-7d':
+          'Patterns across sessions: rage/dead clicks, errors, failing requests',
+        'GET /api/replays/:session/summary?format=json':
+          'Transcript of a session (json adds the structured timeline)',
         'GET /api/replays/:session/snapshot?at=01:24': 'What was on screen at a moment, as text',
         'GET /api/replays/:session/events': 'Raw rrweb events',
-        'POST /api/replays/:session/notes': 'Leave a note at a moment: { "at": "00:14", "text": "…" } (admin)',
+        'POST /api/replays/:session/notes':
+          'Leave a note at a moment: { "at": "00:14", "text": "…" } (admin)',
         'DELETE /api/replays/:session/notes/:id': 'Delete a note (admin)',
         'GET /api/flags': 'Feature flags',
         'PUT /api/flags/:key': 'Create/update a flag (admin)',
@@ -92,7 +100,10 @@ export function apiRouter(service: GlassService, env: Env, request: Request): Ro
       sql: z.toJSONSchema(sqlSpec, { io: 'input' }),
       experiment: z.toJSONSchema(experimentSpec, { io: 'input' }),
       insights: Object.fromEntries(
-        Object.entries(INSIGHTS).map(([kind, def]) => [kind, { description: def.description, schema: z.toJSONSchema(def.schema, { io: 'input' }) }]),
+        Object.entries(INSIGHTS).map(([kind, def]) => [
+          kind,
+          { description: def.description, schema: z.toJSONSchema(def.schema, { io: 'input' }) },
+        ]),
       ),
     }),
   );
@@ -111,21 +122,35 @@ export function apiRouter(service: GlassService, env: Env, request: Request): Ro
   r.post('/api/sql', async () => json(await service.sql(await body())));
 
   r.get('/api/events', async ({ url }) => json(await service.listEvents(params(url))));
-  r.get('/api/events/:name', async ({ url, params: p }) => json(await service.describeEvent({ ...params(url), event: p.name })));
+  r.get('/api/events/:name', async ({ url, params: p }) =>
+    json(await service.describeEvent({ ...params(url), event: p.name })),
+  );
   r.put('/api/events/:name', async ({ params: p }) => {
     admin();
     return json(await service.defineEvent({ ...(await body()), event: p.name }));
   });
 
-  r.get('/api/properties/values', async ({ url }) => json(await service.propertyValues(params(url))));
-  r.get('/api/person-properties', async ({ url }) => json(await service.listPersonProperties(params(url))));
+  r.get('/api/properties/values', async ({ url }) =>
+    json(await service.propertyValues(params(url))),
+  );
+  r.get('/api/person-properties', async ({ url }) =>
+    json(await service.listPersonProperties(params(url))),
+  );
 
   r.get('/api/persons', async ({ url }) => json(await service.searchPersons(params(url))));
-  r.get('/api/persons/:id', async ({ url, params: p }) => json(await service.getPerson({ ...params(url), person_id: p.id })));
+  r.get('/api/persons/:id', async ({ url, params: p }) =>
+    json(await service.getPerson({ ...params(url), person_id: p.id })),
+  );
   r.patch('/api/persons/:id', async ({ params: p }) => {
     admin();
     const b = await body();
-    return json(await service.setPersonProperties({ project: b.project, person_id: p.id, properties: b.properties ?? b }));
+    return json(
+      await service.setPersonProperties({
+        project: b.project,
+        person_id: p.id,
+        properties: b.properties ?? b,
+      }),
+    );
   });
   r.delete('/api/persons/:id', async ({ url, params: p }) => {
     admin();
@@ -144,7 +169,9 @@ export function apiRouter(service: GlassService, env: Env, request: Request): Ro
   });
 
   r.get('/api/insights', async ({ url }) => json(await service.listInsights(params(url))));
-  r.get('/api/insights/:key', async ({ url, params: p }) => json(await service.getInsight({ ...params(url), key: p.key })));
+  r.get('/api/insights/:key', async ({ url, params: p }) =>
+    json(await service.getInsight({ ...params(url), key: p.key })),
+  );
   r.post('/api/insights', async () => {
     admin();
     return json(await service.saveInsight(await body()), { status: 201 });
@@ -156,12 +183,21 @@ export function apiRouter(service: GlassService, env: Env, request: Request): Ro
 
   r.get('/api/replays', async ({ url }) => json(await service.listReplays(params(url))));
   r.get('/api/replays/analyse', async ({ url }) => json(await service.analyseReplays(params(url))));
-  r.get('/api/replays/:id/summary', async ({ url, params: p }) => json(await service.summariseReplay({ ...params(url), session_id: p.id })));
-  r.get('/api/replays/:id/events', async ({ url, params: p }) => json(await service.replayEvents({ ...params(url), session_id: p.id })));
-  r.get('/api/replays/:id/snapshot', async ({ url, params: p }) => json(await service.replaySnapshot({ ...params(url), session_id: p.id })));
+  r.get('/api/replays/:id/summary', async ({ url, params: p }) =>
+    json(await service.summariseReplay({ ...params(url), session_id: p.id })),
+  );
+  r.get('/api/replays/:id/events', async ({ url, params: p }) =>
+    json(await service.replayEvents({ ...params(url), session_id: p.id })),
+  );
+  r.get('/api/replays/:id/snapshot', async ({ url, params: p }) =>
+    json(await service.replaySnapshot({ ...params(url), session_id: p.id })),
+  );
   r.post('/api/replays/:id/notes', async ({ url, params: p }) => {
     admin();
-    return json(await service.annotateReplay({ ...params(url), ...(await body()), session_id: p.id }), { status: 201 });
+    return json(
+      await service.annotateReplay({ ...params(url), ...(await body()), session_id: p.id }),
+      { status: 201 },
+    );
   });
   r.delete('/api/replays/:id/notes/:note', async ({ url, params: p }) => {
     admin();
@@ -169,7 +205,9 @@ export function apiRouter(service: GlassService, env: Env, request: Request): Ro
   });
 
   r.get('/api/flags', async ({ url }) => json(await service.listFlags(params(url))));
-  r.get('/api/flags/:key', async ({ url, params: p }) => json(await service.getFlag({ ...params(url), key: p.key })));
+  r.get('/api/flags/:key', async ({ url, params: p }) =>
+    json(await service.getFlag({ ...params(url), key: p.key })),
+  );
   r.put('/api/flags/:key', async ({ params: p }) => {
     admin();
     return json(await service.saveFlag({ ...(await body()), key: p.key }));
@@ -184,11 +222,15 @@ export function apiRouter(service: GlassService, env: Env, request: Request): Ro
     admin();
     return json(await service.createExperiment(await body()), { status: 201 });
   });
-  r.get('/api/experiments/:key', async ({ url, params: p }) => json(await service.experimentResults({ ...params(url), key: p.key })));
+  r.get('/api/experiments/:key', async ({ url, params: p }) =>
+    json(await service.experimentResults({ ...params(url), key: p.key })),
+  );
   r.post('/api/experiments/:key/:action', async ({ url, params: p }) => {
     admin();
     const b = await body();
-    return json(await service.updateExperiment({ ...params(url), ...b, key: p.key, action: p.action }));
+    return json(
+      await service.updateExperiment({ ...params(url), ...b, key: p.key, action: p.action }),
+    );
   });
 
   r.get('/api/instrument', ({ url }) => json(service.instrument(params(url))));

@@ -1,4 +1,5 @@
 ---
+
 "@glassanalytics/cli": minor
 "@glassanalytics/web": minor
 ---

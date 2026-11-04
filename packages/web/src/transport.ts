@@ -80,9 +80,12 @@ export class Transport {
       typeof navigator.sendBeacon === 'function' &&
       navigator.sendBeacon(this.endpoint, new Blob([body], { type: 'text/plain' }));
     if (!sent) {
-      void fetch(this.endpoint, { method: 'POST', body, keepalive: true, headers: { 'Content-Type': 'text/plain' } }).catch(
-        () => {},
-      );
+      void fetch(this.endpoint, {
+        method: 'POST',
+        body,
+        keepalive: true,
+        headers: { 'Content-Type': 'text/plain' },
+      }).catch(() => {});
     }
   }
 }

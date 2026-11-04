@@ -28,6 +28,8 @@ jobs:
       # Opens a "Version packages" PR from pending changesets; publishes when that PR is merged.
       - uses: changesets/action@v1
         with:
+          # changeset version, then copy the CLI version into GLASS_VERSION (pnpm build checks they match).
+          version: pnpm version-packages
           publish: pnpm release
           title: Version packages
         env:

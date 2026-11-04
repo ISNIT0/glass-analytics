@@ -15,14 +15,19 @@ import { runTrends } from './trends.ts';
 import type { QueryContext, ResultBase } from './types.ts';
 import { runWeb } from './web.ts';
 
-export interface InsightDefinition<S extends z.ZodType = z.ZodType, R extends ResultBase = ResultBase> {
+export interface InsightDefinition<
+  S extends z.ZodType = z.ZodType,
+  R extends ResultBase = ResultBase,
+> {
   /** One sentence shown to agents and in the API index. */
   description: string;
   schema: S;
   run(spec: z.infer<S>, ctx: QueryContext): Promise<R>;
 }
 
-function define<S extends z.ZodType, R extends ResultBase>(def: InsightDefinition<S, R>): InsightDefinition<S, R> {
+function define<S extends z.ZodType, R extends ResultBase>(
+  def: InsightDefinition<S, R>,
+): InsightDefinition<S, R> {
   return def;
 }
 

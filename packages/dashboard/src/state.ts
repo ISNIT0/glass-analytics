@@ -88,10 +88,15 @@ export function currentRoute(): Route {
 }
 
 /** Navigate, keeping the shared project and date range parameters unless overridden. */
-export function go(page: string, params: Record<string, string | undefined | null> = {}, keep = true): void {
+export function go(
+  page: string,
+  params: Record<string, string | undefined | null> = {},
+  keep = true,
+): void {
   const current = currentRoute().params;
   const next = new URLSearchParams();
-  if (keep) for (const k of ['project', 'from', 'to']) if (current.get(k)) next.set(k, current.get(k)!);
+  if (keep)
+    for (const k of ['project', 'from', 'to']) if (current.get(k)) next.set(k, current.get(k)!);
   for (const [k, v] of Object.entries(params)) {
     if (v === undefined || v === null || v === '') next.delete(k);
     else next.set(k, v);

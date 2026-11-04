@@ -12,7 +12,8 @@ export interface ParsedUserAgent {
   device: 'desktop' | 'mobile' | 'tablet' | 'bot' | 'unknown';
 }
 
-const BOT = /bot|crawler|spider|crawling|headless|lighthouse|pagespeed|preview|slurp|facebookexternalhit|monitor|curl|wget|python-requests|go-http-client|httpclient/i;
+const BOT =
+  /bot|crawler|spider|crawling|headless|lighthouse|pagespeed|preview|slurp|facebookexternalhit|monitor|curl|wget|python-requests|go-http-client|httpclient/i;
 
 const BROWSERS: [RegExp, string][] = [
   [/Edg(e|A|iOS)?\//, 'Edge'],

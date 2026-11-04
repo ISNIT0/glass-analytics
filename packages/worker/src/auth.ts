@@ -25,12 +25,21 @@ export function authenticate(request: Request, env: Env): Scope | null {
 
 export function requireScope(request: Request, env: Env, needed: Scope): Scope {
   if (!env.GLASS_ADMIN_KEY) {
-    throw new HttpError(503, 'GLASS_ADMIN_KEY is not set on this Worker', 'Run `glass upgrade` or set it with `wrangler secret put GLASS_ADMIN_KEY`.');
+    throw new HttpError(
+      503,
+      'GLASS_ADMIN_KEY is not set on this Worker',
+      'Run `glass upgrade` or set it with `wrangler secret put GLASS_ADMIN_KEY`.',
+    );
   }
   const scope = authenticate(request, env);
   if (!scope) {
-    throw new HttpError(401, 'Missing or invalid API key', 'Send "Authorization: Bearer <key>". Keys are in .glass/credentials.json; run `glass key`.');
+    throw new HttpError(
+      401,
+      'Missing or invalid API key',
+      'Send "Authorization: Bearer <key>". Keys are in .glass/credentials.json; run `glass key`.',
+    );
   }
-  if (needed === 'admin' && scope !== 'admin') throw new HttpError(403, 'This action needs the admin key');
+  if (needed === 'admin' && scope !== 'admin')
+    throw new HttpError(403, 'This action needs the admin key');
   return scope;
 }

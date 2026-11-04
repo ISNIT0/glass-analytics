@@ -21,7 +21,15 @@ export interface FrameworkSnippet {
   capture: (event: string, props?: Record<string, unknown>) => string;
 }
 
-export type Framework = 'html' | 'nextjs' | 'astro' | 'sveltekit' | 'nuxt' | 'remix' | 'vite' | 'worker';
+export type Framework =
+  | 'html'
+  | 'nextjs'
+  | 'astro'
+  | 'sveltekit'
+  | 'nuxt'
+  | 'remix'
+  | 'vite'
+  | 'worker';
 
 const scriptTag = (o: SnippetOptions) =>
   `<script defer src="${o.host}/s.js" data-project="${o.project}"></script>`;
@@ -32,10 +40,17 @@ const browserCapture = (event: string, props?: Record<string, unknown>) =>
 const moduleCapture = (event: string, props?: Record<string, unknown>) =>
   `import { glass } from '@glassanalytics/web';\n\nglass.capture(${JSON.stringify(event)}${props && Object.keys(props).length ? `, ${JSON.stringify(props)}` : ''});`;
 
-export const FRAMEWORKS: Record<Framework, { name: string; snippet(o: SnippetOptions): FrameworkSnippet }> = {
+export const FRAMEWORKS: Record<
+  Framework,
+  { name: string; snippet(o: SnippetOptions): FrameworkSnippet }
+> = {
   html: {
     name: 'Plain HTML',
-    snippet: (o) => ({ file: 'index.html (inside <head>, on every page)', code: scriptTag(o), capture: browserCapture }),
+    snippet: (o) => ({
+      file: 'index.html (inside <head>, on every page)',
+      code: scriptTag(o),
+      capture: browserCapture,
+    }),
   },
   nextjs: {
     name: 'Next.js',
@@ -47,11 +62,19 @@ export const FRAMEWORKS: Record<Framework, { name: string; snippet(o: SnippetOpt
   },
   astro: {
     name: 'Astro',
-    snippet: (o) => ({ file: 'src/layouts/Layout.astro (inside <head>)', code: scriptTag(o).replace('<script', '<script is:inline'), capture: browserCapture }),
+    snippet: (o) => ({
+      file: 'src/layouts/Layout.astro (inside <head>)',
+      code: scriptTag(o).replace('<script', '<script is:inline'),
+      capture: browserCapture,
+    }),
   },
   sveltekit: {
     name: 'SvelteKit',
-    snippet: (o) => ({ file: 'src/app.html (inside <head>)', code: scriptTag(o), capture: browserCapture }),
+    snippet: (o) => ({
+      file: 'src/app.html (inside <head>)',
+      code: scriptTag(o),
+      capture: browserCapture,
+    }),
   },
   nuxt: {
     name: 'Nuxt',
@@ -63,7 +86,11 @@ export const FRAMEWORKS: Record<Framework, { name: string; snippet(o: SnippetOpt
   },
   remix: {
     name: 'Remix / React Router',
-    snippet: (o) => ({ file: 'app/root.tsx (inside <head>)', code: scriptTag(o).replace('defer ', 'defer={true} '), capture: browserCapture }),
+    snippet: (o) => ({
+      file: 'app/root.tsx (inside <head>)',
+      code: scriptTag(o).replace('defer ', 'defer={true} '),
+      capture: browserCapture,
+    }),
   },
   vite: {
     name: 'Vite (React, Vue, Svelte, Solid…)',
@@ -85,7 +112,9 @@ export const FRAMEWORKS: Record<Framework, { name: string; snippet(o: SnippetOpt
 };
 
 /** Guess the framework from a package.json's dependencies. */
-export function detectFramework(pkg: { dependencies?: Record<string, string>; devDependencies?: Record<string, string> } | null): Framework {
+export function detectFramework(
+  pkg: { dependencies?: Record<string, string>; devDependencies?: Record<string, string> } | null,
+): Framework {
   if (!pkg) return 'html';
   const deps = { ...pkg.dependencies, ...pkg.devDependencies };
   const has = (name: string) => Object.hasOwn(deps, name);

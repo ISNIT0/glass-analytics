@@ -4,7 +4,7 @@
  * value that has not been seen yet is always allowed.
  */
 
-import { type PropertyValue, loadPropertyValues } from '../catalog.ts';
+import { loadPropertyValues, type PropertyValue } from '../catalog.ts';
 import { h, mount } from '../dom.ts';
 import { count } from '../format.ts';
 import { scope } from '../state.ts';

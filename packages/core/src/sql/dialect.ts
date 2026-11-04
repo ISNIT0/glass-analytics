@@ -49,6 +49,7 @@ export interface Dialect {
 }
 
 /** Characters allowed in property keys. Excluding quotes and backslashes keeps JSON paths injection-proof. */
+// biome-ignore lint/suspicious/noControlCharactersInRegex: rejecting control characters is the point
 const SAFE_KEY = /^[^"'\\\u0000-\u001f]{1,200}$/;
 
 export function assertSafeKey(key: string): void {
@@ -91,7 +92,8 @@ export const sqlite: Dialect = {
   containsIgnoreCase: (expr, needle) => `(instr(lower(${expr}), lower(${sqlString(needle)})) > 0)`,
   monthIndex: (ts) =>
     `(CAST(strftime('%Y', (${ts}) / 1000, 'unixepoch') AS INTEGER) * 12 + CAST(strftime('%m', (${ts}) / 1000, 'unixepoch') AS INTEGER) - 1)`,
-  monthStartMs: (ts) => `(CAST(strftime('%s', (${ts}) / 1000, 'unixepoch', 'start of month') AS INTEGER) * 1000)`,
+  monthStartMs: (ts) =>
+    `(CAST(strftime('%s', (${ts}) / 1000, 'unixepoch', 'start of month') AS INTEGER) * 1000)`,
 };
 
 function sqlitePath(path: readonly string[]): string {
@@ -104,7 +106,8 @@ function sqlitePath(path: readonly string[]): string {
  * JSON functions: https://developers.cloudflare.com/basin-sql/sql-reference/scalar-functions/
  */
 export function basin(namespace = 'glass'): Dialect {
-  if (!/^[a-z_][a-z0-9_]*$/i.test(namespace)) throw new TypeError(`Invalid namespace "${namespace}"`);
+  if (!/^[a-z_][a-z0-9_]*$/i.test(namespace))
+    throw new TypeError(`Invalid namespace "${namespace}"`);
   const args = (column: string, path: readonly string[]) => {
     for (const key of path) assertSafeKey(key);
     return [column, ...path.map(sqlString)].join(', ');
@@ -119,7 +122,8 @@ export function basin(namespace = 'glass'): Dialect {
     jsonNumber: (column, path) => `json_get_float(${args(column, path)})`,
     jsonBool: (column, path) => `json_get_bool(${args(column, path)})`,
     jsonExists: (column, path) => `json_contains(${args(column, path)})`,
-    containsIgnoreCase: (expr, needle) => `(strpos(lower(${expr}), lower(${sqlString(needle)})) > 0)`,
+    containsIgnoreCase: (expr, needle) =>
+      `(strpos(lower(${expr}), lower(${sqlString(needle)})) > 0)`,
     monthIndex: (ts) =>
       `(CAST(date_part('year', to_timestamp_millis(${ts})) AS INT) * 12 + CAST(date_part('month', to_timestamp_millis(${ts})) AS INT) - 1)`,
     monthStartMs: (ts) => `(to_unixtime(date_trunc('month', to_timestamp_millis(${ts}))) * 1000)`,

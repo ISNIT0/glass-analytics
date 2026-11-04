@@ -16,7 +16,6 @@
 
 import { Glass } from './client.ts';
 
-export { Glass };
 export type {
   AutocaptureOptions,
   ConsoleLevel,
@@ -25,6 +24,7 @@ export type {
   ReplayOptions,
   WireEvent,
 } from './types.ts';
+export { Glass };
 
 /** The default client. Call `glass.init()` once, as early as possible. */
 export const glass = new Glass();

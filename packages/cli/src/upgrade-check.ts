@@ -23,7 +23,9 @@ export async function warnIfOutdated(options: { json?: boolean } = {}): Promise<
     const health = await call<Health>('GET', '/health');
     const command = health.upgradeCommand ?? UPGRADE_COMMAND;
     if (health.upgradeAvailable && health.latest) {
-      skip(`Glass ${health.latest} is available (this deployment is ${health.version}). Run: ${command}`);
+      skip(
+        `Glass ${health.latest} is available (this deployment is ${health.version}). Run: ${command}`,
+      );
       return;
     }
     if (health.version !== GLASS_VERSION) {

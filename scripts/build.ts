@@ -53,17 +53,46 @@ function clean(dir: string): void {
 // 1. Browser SDK ───────────────────────────────────────────────────────────
 const webDist = pkg('web', 'dist');
 clean(webDist);
-await bundle({ entryPoints: [pkg('web', 'src', 'index.ts')], outfile: join(webDist, 'index.js'), format: 'esm', target: 'es2020', platform: 'browser' });
-await bundle({ entryPoints: [pkg('web', 'src', 'script.ts')], outfile: join(webDist, 'glass.js'), format: 'iife', target: 'es2020', platform: 'browser', minify: true });
-await bundle({ entryPoints: [pkg('web', 'src', 'replay.ts')], outfile: join(webDist, 'replay.js'), format: 'iife', target: 'es2020', platform: 'browser', minify: true });
+await bundle({
+  entryPoints: [pkg('web', 'src', 'index.ts')],
+  outfile: join(webDist, 'index.js'),
+  format: 'esm',
+  target: 'es2020',
+  platform: 'browser',
+});
+await bundle({
+  entryPoints: [pkg('web', 'src', 'script.ts')],
+  outfile: join(webDist, 'glass.js'),
+  format: 'iife',
+  target: 'es2020',
+  platform: 'browser',
+  minify: true,
+});
+await bundle({
+  entryPoints: [pkg('web', 'src', 'replay.ts')],
+  outfile: join(webDist, 'replay.js'),
+  format: 'iife',
+  target: 'es2020',
+  platform: 'browser',
+  minify: true,
+});
 // Type declarations for the npm package. The SDK's public types are self-contained,
 // so the emitted .d.ts files never reference the private @glassanalytics/core package.
-execFileSync(process.execPath, [join(root, 'node_modules', 'typescript', 'bin', 'tsc'), '-p', pkg('web', 'tsconfig.build.json')], { stdio: 'inherit' });
+execFileSync(
+  process.execPath,
+  [join(root, 'node_modules', 'typescript', 'bin', 'tsc'), '-p', pkg('web', 'tsconfig.build.json')],
+  { stdio: 'inherit' },
+);
 for (const file of ['index.d.ts', 'client.d.ts', 'types.d.ts']) {
   // Declaration output keeps `.ts` specifiers; published files must point at `.js`.
-  const declaration = readFileSync(join(webDist, '.types', 'web', 'src', file), 'utf8').replace(/(from\s+'\.{1,2}\/[^']+)\.ts'/g, "$1.js'");
+  const declaration = readFileSync(join(webDist, '.types', 'web', 'src', file), 'utf8').replace(
+    /(from\s+'\.{1,2}\/[^']+)\.ts'/g,
+    "$1.js'",
+  );
   if (/^(import|export)\b[^\n]*'@glass\//m.test(declaration)) {
-    throw new Error(`${file} imports a private @glass package; keep the SDK's public types self-contained.`);
+    throw new Error(
+      `${file} imports a private @glass package; keep the SDK's public types self-contained.`,
+    );
   }
   writeFileSync(join(webDist, file), declaration);
 }
@@ -125,7 +154,9 @@ cpSync(workerDist, join(cliDist, 'worker'), { recursive: true });
 // Report ───────────────────────────────────────────────────────────────────
 const width = Math.max(...sizes.map(([f]) => f.length));
 for (const [file, raw, gz] of sizes) {
-  console.log(`${file.padEnd(width)}  ${(raw / 1024).toFixed(1).padStart(7)} KB  ${(gz / 1024).toFixed(1).padStart(6)} KB gzip`);
+  console.log(
+    `${file.padEnd(width)}  ${(raw / 1024).toFixed(1).padStart(7)} KB  ${(gz / 1024).toFixed(1).padStart(6)} KB gzip`,
+  );
 }
 console.log(`built in ${process.uptime().toFixed(1)}s`);
 statSync(join(cliDist, 'worker', 'worker.js'));

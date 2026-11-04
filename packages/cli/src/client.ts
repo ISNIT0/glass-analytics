@@ -2,7 +2,7 @@
  * HTTP client for a deployed Glass Worker.
  */
 
-import { UsageError, connection } from './config.ts';
+import { connection, UsageError } from './config.ts';
 
 export async function call<T = Record<string, unknown>>(
   method: string,
@@ -10,13 +10,20 @@ export async function call<T = Record<string, unknown>>(
   body?: unknown,
   options: { host?: string; key?: string; fetcher?: typeof fetch } = {},
 ): Promise<T> {
-  const conn = options.host && options.key ? { host: options.host, key: options.key } : connection();
+  const conn =
+    options.host && options.key ? { host: options.host, key: options.key } : connection();
   const res = await (options.fetcher ?? fetch)(`${conn.host}${path}`, {
     method,
-    headers: { Authorization: `Bearer ${conn.key}`, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
+    headers: {
+      Authorization: `Bearer ${conn.key}`,
+      ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+    },
     body: body === undefined ? undefined : JSON.stringify(body),
   }).catch((err: unknown) => {
-    throw new UsageError(`Could not reach ${conn.host}: ${err instanceof Error ? err.message : String(err)}`, 'Check your network, or run `glass status`.');
+    throw new UsageError(
+      `Could not reach ${conn.host}: ${err instanceof Error ? err.message : String(err)}`,
+      'Check your network, or run `glass status`.',
+    );
   });
   const data = (await res.json().catch(() => ({}))) as { error?: string; hint?: string };
   if (!res.ok) throw new UsageError(data.error ?? `HTTP ${res.status}`, data.hint);

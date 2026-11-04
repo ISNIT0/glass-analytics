@@ -40,12 +40,19 @@ export function hasCiWorkflow(root: string): boolean {
 export function defaultBranch(root: string): string {
   const git = (args: string[]) => {
     try {
-      return execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+      return execFileSync('git', args, {
+        cwd: root,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }).trim();
     } catch {
       return '';
     }
   };
-  const head = git(['symbolic-ref', '--short', 'refs/remotes/origin/HEAD']).replace(/^origin\//, '');
+  const head = git(['symbolic-ref', '--short', 'refs/remotes/origin/HEAD']).replace(
+    /^origin\//,
+    '',
+  );
   return head || git(['branch', '--show-current']) || 'main';
 }
 
@@ -95,14 +102,18 @@ jobs:
  * Write the workflow. Leaves a hand-edited workflow alone (one without the
  * generated marker) and reports it as kept. Returns what happened.
  */
-export function writeCiWorkflow(root: string, options: CiOptions = {}): { path: string; status: 'created' | 'updated' | 'kept'; branch: string; secret: string } {
+export function writeCiWorkflow(
+  root: string,
+  options: CiOptions = {},
+): { path: string; status: 'created' | 'updated' | 'kept'; branch: string; secret: string } {
   const branch = options.branch ?? defaultBranch(root);
   const secret = options.secret ?? CI_SECRET;
   const path = join(root, CI_WORKFLOW_PATH);
   const next = ciWorkflow({ branch, secret });
   if (existsSync(path)) {
     const current = readFileSync(path, 'utf8');
-    if (!current.startsWith(MARKER)) return { path: CI_WORKFLOW_PATH, status: 'kept', branch, secret };
+    if (!current.startsWith(MARKER))
+      return { path: CI_WORKFLOW_PATH, status: 'kept', branch, secret };
     if (current === next) return { path: CI_WORKFLOW_PATH, status: 'kept', branch, secret };
     writeFileSync(path, next);
     return { path: CI_WORKFLOW_PATH, status: 'updated', branch, secret };

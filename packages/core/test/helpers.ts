@@ -65,7 +65,10 @@ export function insert(db: DatabaseSync, events: TestEvent[]): void {
       os: e.os ?? 'macOS',
       flags: e.flags ?? '{}',
       props: typeof e.props === 'object' ? JSON.stringify(e.props) : (e.props ?? '{}'),
-      person_props: typeof e.person_props === 'object' ? JSON.stringify(e.person_props) : (e.person_props ?? '{}'),
+      person_props:
+        typeof e.person_props === 'object'
+          ? JSON.stringify(e.person_props)
+          : (e.person_props ?? '{}'),
       lib: e.lib ?? 'test',
       received_ms: e.received_ms ?? NOW,
     };
@@ -74,12 +77,9 @@ export function insert(db: DatabaseSync, events: TestEvent[]): void {
 }
 
 export function link(db: DatabaseSync, distinctId: string, personId: string, project = 'p'): void {
-  db.prepare('INSERT OR IGNORE INTO identities (project, distinct_id, person_id, created_at) VALUES (?, ?, ?, ?)').run(
-    project,
-    distinctId,
-    personId,
-    NOW,
-  );
+  db.prepare(
+    'INSERT OR IGNORE INTO identities (project, distinct_id, person_id, created_at) VALUES (?, ?, ?, ?)',
+  ).run(project, distinctId, personId, NOW);
 }
 
 export function context(db: DatabaseSync, project = 'p'): QueryContext & { queries: string[] } {

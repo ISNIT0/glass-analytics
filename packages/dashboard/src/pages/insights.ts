@@ -13,23 +13,53 @@ import type { FunnelResult } from '@glassanalytics/core/insights/funnel';
 import type { RetentionResult } from '@glassanalytics/core/insights/retention';
 import type { TrendsResult } from '@glassanalytics/core/insights/trends';
 import { api } from '../api.ts';
-import { type ChartType, SERIES, funnelChart, kpiStat, lineChart, periodReached, retentionCurve, retentionGrid, sparkline } from '../components/charts.ts';
+import {
+  type ChartType,
+  funnelChart,
+  kpiStat,
+  lineChart,
+  periodReached,
+  retentionCurve,
+  retentionGrid,
+  SERIES,
+  sparkline,
+} from '../components/charts.ts';
 import { previousRange } from '../components/date-range.ts';
-import { type FilterRow, cleanFilters, filterEditor } from '../components/filter-editor.ts';
+import { cleanFilters, type FilterRow, filterEditor } from '../components/filter-editor.ts';
 import { type IconName, icon } from '../components/icons.ts';
 import { modal, popover, selectMenu } from '../components/menu.ts';
 import { eventPicker, propertyPicker } from '../components/picker.ts';
-import { copyButton, empty, errorState, iconButton, later, loading, pageHeader, panel, table, tabs, toast } from '../components/ui.ts';
+import {
+  copyButton,
+  empty,
+  errorState,
+  iconButton,
+  later,
+  loading,
+  pageHeader,
+  panel,
+  table,
+  tabs,
+  toast,
+} from '../components/ui.ts';
 import { type Child, h, mount } from '../dom.ts';
 import { ago, count, percent } from '../format.ts';
-import { type Route, go, href, prefs, scope } from '../state.ts';
+import { go, href, prefs, type Route, scope } from '../state.ts';
 
 type Kind = 'trends' | 'funnel' | 'retention';
 type Spec = Record<string, unknown>;
 
 const KINDS: Kind[] = ['trends', 'funnel', 'retention'];
-const KIND_LABEL: Record<Kind, string> = { trends: 'Trends', funnel: 'Funnel', retention: 'Retention' };
-const KIND_ICON: Record<Kind, IconName> = { trends: 'lineChart', funnel: 'funnel', retention: 'retention' };
+const KIND_LABEL: Record<Kind, string> = {
+  trends: 'Trends',
+  funnel: 'Funnel',
+  retention: 'Retention',
+};
+const KIND_ICON: Record<Kind, IconName> = {
+  trends: 'lineChart',
+  funnel: 'funnel',
+  retention: 'retention',
+};
 const KIND_BLURB: Record<Kind, string> = {
   trends: 'Counts, uniques or sums of any event over time.',
   funnel: 'How many people complete a sequence of steps.',
@@ -39,7 +69,12 @@ const KIND_BLURB: Record<Kind, string> = {
 const DEFAULTS: Record<Kind, Spec> = {
   trends: { series: [{ event: '$pageview', math: 'total' }], interval: 'day' },
   funnel: { steps: [{ event: '$pageview' }, { event: '' }], window: '7d' },
-  retention: { cohortEvent: { event: '$pageview' }, returnEvent: { event: '$pageview' }, period: 'week', periods: 8 },
+  retention: {
+    cohortEvent: { event: '$pageview' },
+    returnEvent: { event: '$pageview' },
+    period: 'week',
+    periods: 8,
+  },
 };
 
 interface SavedInsight {
@@ -62,10 +97,21 @@ function section(title: string, ...children: Child[]): HTMLElement {
 }
 
 function addButton(label: string, onClick: () => void): HTMLElement {
-  return h('button', { type: 'button', class: 'link-button add-button', onclick: onClick }, icon('plus', 14), label);
+  return h(
+    'button',
+    { type: 'button', class: 'link-button add-button', onclick: onClick },
+    icon('plus', 14),
+    label,
+  );
 }
 
-type SeriesSpec = { event: string; math?: string; property?: string; filters?: FilterRow[]; label?: string };
+type SeriesSpec = {
+  event: string;
+  math?: string;
+  property?: string;
+  filters?: FilterRow[];
+  label?: string;
+};
 type StepSpec = { event: string; filters?: FilterRow[]; label?: string };
 
 function readBreakdowns(spec: Spec): string[] {
@@ -85,7 +131,12 @@ function ensureFilters(target: { filters?: FilterRow[] }): FilterRow[] {
   return target.filters;
 }
 
-function breakdownEditor(spec: Spec, event: string | undefined, project: string | undefined, update: () => void): HTMLElement {
+function breakdownEditor(
+  spec: Spec,
+  event: string | undefined,
+  project: string | undefined,
+  update: () => void,
+): HTMLElement {
   const values = readBreakdowns(spec);
   return h(
     'div',
@@ -121,7 +172,9 @@ function breakdownEditor(spec: Spec, event: string | undefined, project: string 
           update();
         })
       : null,
-    values.length > 1 ? h('p', { class: 'muted small' }, 'Values are combined with “ · ”, e.g. Chrome · google.') : null,
+    values.length > 1
+      ? h('p', { class: 'muted small' }, 'Values are combined with “ · ”, e.g. Chrome · google.')
+      : null,
   );
 }
 
@@ -162,7 +215,13 @@ const MEASURES: { value: string; label: string }[] = [
   { value: 'avg', label: 'Average of property' },
 ];
 
-const WINDOWS = ['1h', '1d', '3d', '7d', '14d', '30d', '90d'].map((w) => ({ value: w, label: w.replace(/^(\d+)h$/, '$1 hour').replace(/^1d$/, '1 day').replace(/^(\d+)d$/, '$1 days') }));
+const WINDOWS = ['1h', '1d', '3d', '7d', '14d', '30d', '90d'].map((w) => ({
+  value: w,
+  label: w
+    .replace(/^(\d+)h$/, '$1 hour')
+    .replace(/^1d$/, '1 day')
+    .replace(/^(\d+)d$/, '$1 days'),
+}));
 
 function builder(kind: Kind, spec: Spec, update: () => void, project?: string): HTMLElement {
   if (!Array.isArray(spec.filters)) spec.filters = [];
@@ -235,13 +294,22 @@ function builder(kind: Kind, spec: Spec, update: () => void, project?: string): 
         }),
       ),
       section('Break down by', breakdownEditor(spec, series[0]?.event, project, update)),
-      section('Filters on all series', filterEditor(spec.filters as FilterRow[], update, { event: series[0]?.event, project, cohorts: true })),
+      section(
+        'Filters on all series',
+        filterEditor(spec.filters as FilterRow[], update, {
+          event: series[0]?.event,
+          project,
+          cohorts: true,
+        }),
+      ),
     );
   }
   if (kind === 'funnel') {
     const steps = spec.steps as StepSpec[];
     const windowValue = String(spec.window ?? '7d');
-    const windows = WINDOWS.some((w) => w.value === windowValue) ? WINDOWS : [...WINDOWS, { value: windowValue, label: windowValue }];
+    const windows = WINDOWS.some((w) => w.value === windowValue)
+      ? WINDOWS
+      : [...WINDOWS, { value: windowValue, label: windowValue }];
     return h(
       'div',
       { class: 'builder-stack' },
@@ -299,7 +367,14 @@ function builder(kind: Kind, spec: Spec, update: () => void, project?: string): 
         }),
       ),
       section('Break down by', breakdownEditor(spec, steps[0]?.event, project, update)),
-      section('Filters on every step', filterEditor(spec.filters as FilterRow[], update, { event: steps[0]?.event, project, cohorts: true })),
+      section(
+        'Filters on every step',
+        filterEditor(spec.filters as FilterRow[], update, {
+          event: steps[0]?.event,
+          project,
+          cohorts: true,
+        }),
+      ),
     );
   }
   const cohort = spec.cohortEvent as StepSpec;
@@ -315,7 +390,20 @@ function builder(kind: Kind, spec: Spec, update: () => void, project?: string): 
       h(
         'div',
         { class: 'query-card' },
-        h('div', { class: 'query-card-head' }, seriesTag(0), eventPicker({ value: cohort.event, project, label: 'Cohort event', onChange: (v) => { cohort.event = v; update(); } })),
+        h(
+          'div',
+          { class: 'query-card-head' },
+          seriesTag(0),
+          eventPicker({
+            value: cohort.event,
+            project,
+            label: 'Cohort event',
+            onChange: (v) => {
+              cohort.event = v;
+              update();
+            },
+          }),
+        ),
         filterEditor(cohort.filters!, update, { event: cohort.event, project, cohorts: true }),
       ),
     ),
@@ -324,7 +412,20 @@ function builder(kind: Kind, spec: Spec, update: () => void, project?: string): 
       h(
         'div',
         { class: 'query-card' },
-        h('div', { class: 'query-card-head' }, seriesTag(1), eventPicker({ value: ret.event, project, label: 'Return event', onChange: (v) => { ret.event = v; update(); } })),
+        h(
+          'div',
+          { class: 'query-card-head' },
+          seriesTag(1),
+          eventPicker({
+            value: ret.event,
+            project,
+            label: 'Return event',
+            onChange: (v) => {
+              ret.event = v;
+              update();
+            },
+          }),
+        ),
         filterEditor(ret.filters!, update, { event: ret.event, project, cohorts: true }),
       ),
     ),
@@ -349,7 +450,10 @@ function builder(kind: Kind, spec: Spec, update: () => void, project?: string): 
         selectMenu({
           value: String(periods),
           label: 'Number of periods',
-          options: [4, 6, 8, 10, 12, 16, 24].map((n) => ({ value: String(n), label: `${n} periods` })),
+          options: [4, 6, 8, 10, 12, 16, 24].map((n) => ({
+            value: String(n),
+            label: `${n} periods`,
+          })),
           fallback: `${periods} periods`,
           width: 160,
           onChange: (v) => {
@@ -359,7 +463,14 @@ function builder(kind: Kind, spec: Spec, update: () => void, project?: string): 
         }),
       ),
     ),
-    section('Filters on both events', filterEditor(spec.filters as FilterRow[], update, { event: cohort.event, project, cohorts: true })),
+    section(
+      'Filters on both events',
+      filterEditor(spec.filters as FilterRow[], update, {
+        event: cohort.event,
+        project,
+        cohorts: true,
+      }),
+    ),
   );
 }
 
@@ -368,7 +479,11 @@ interface RunResult extends Record<string, unknown> {
   sql: string[];
 }
 
-function trendsView(r: TrendsResult, previous: TrendsResult | null, chartType: ChartType | 'number'): HTMLElement {
+function trendsView(
+  r: TrendsResult,
+  previous: TrendsResult | null,
+  chartType: ChartType | 'number',
+): HTMLElement {
   const stats = h(
     'div',
     { class: `stats ${chartType === 'number' ? 'stats-large' : ''}` },
@@ -380,7 +495,12 @@ function trendsView(r: TrendsResult, previous: TrendsResult | null, chartType: C
         count(s.total),
         c === null
           ? `by ${r.interval}`
-          : h('span', { class: `delta ${Math.abs(c) < 0.005 ? '' : c > 0 ? 'good' : 'bad'}` }, c > 0 ? icon('arrowUp', 12) : icon('arrowDown', 12), `${Math.abs(c * 100).toFixed(0)}% vs previous`),
+          : h(
+              'span',
+              { class: `delta ${Math.abs(c) < 0.005 ? '' : c > 0 ? 'good' : 'bad'}` },
+              c > 0 ? icon('arrowUp', 12) : icon('arrowDown', 12),
+              `${Math.abs(c * 100).toFixed(0)}% vs previous`,
+            ),
         { tag: letter(i), color: SERIES[i % SERIES.length] },
       );
     }),
@@ -388,7 +508,11 @@ function trendsView(r: TrendsResult, previous: TrendsResult | null, chartType: C
   if (chartType === 'number') return h('div', { class: 'insight-result' }, stats);
   const chart = lineChart(
     r.buckets,
-    r.series.map((s, i) => ({ label: s.label, values: s.values, previous: previous?.series[i]?.values })),
+    r.series.map((s, i) => ({
+      label: s.label,
+      values: s.values,
+      previous: previous?.series[i]?.values,
+    })),
     r.interval,
     { height: 320, type: chartType },
   );
@@ -399,7 +523,13 @@ function trendsView(r: TrendsResult, previous: TrendsResult | null, chartType: C
       sparkline(s.values, { color: SERIES[i % SERIES.length], height: 22 }),
       count(s.total),
       before === undefined ? '–' : count(before),
-      before ? h('span', { class: `delta ${s.total >= before ? 'good' : 'bad'}` }, `${s.total >= before ? '+' : '−'}${Math.abs(((s.total - before) / before) * 100).toFixed(0)}%`) : '–',
+      before
+        ? h(
+            'span',
+            { class: `delta ${s.total >= before ? 'good' : 'bad'}` },
+            `${s.total >= before ? '+' : '−'}${Math.abs(((s.total - before) / before) * 100).toFixed(0)}%`,
+          )
+        : '–',
     ];
   });
   return h(
@@ -407,12 +537,18 @@ function trendsView(r: TrendsResult, previous: TrendsResult | null, chartType: C
     { class: 'insight-result' },
     stats,
     chart,
-    r.series.length > 1 || previous ? table(['Series', 'Trend', 'Total', 'Previous', 'Change'], rows, { numeric: [2, 3, 4], class: 'series-table' }) : null,
+    r.series.length > 1 || previous
+      ? table(['Series', 'Trend', 'Total', 'Previous', 'Change'], rows, {
+          numeric: [2, 3, 4],
+          class: 'series-table',
+        })
+      : null,
   );
 }
 
 function retentionView(r: RetentionResult): HTMLElement {
-  if (!r.cohorts.length) return empty('No one in any cohort for this period.', undefined, { icon: 'retention' });
+  if (!r.cohorts.length)
+    return empty('No one in any cohort for this period.', undefined, { icon: 'retention' });
   const now = Date.now();
   let last = r.average.length - 1;
   while (last > 0 && !r.cohorts.some((c) => periodReached(c.start, last, r.period, now))) last--;
@@ -423,9 +559,23 @@ function retentionView(r: RetentionResult): HTMLElement {
     h(
       'div',
       { class: 'stats' },
-      kpiStat(`Retained at ${p}1`, r.average.length > 1 && last >= 1 ? percent(r.average[1] ?? 0, 1) : '–', `of people come back the next ${r.period}`),
-      last > 1 ? kpiStat(`Retained at ${p}${last}`, percent(r.average[last] ?? 0, 1), `latest ${r.period} any cohort has reached`) : null,
-      kpiStat('People in cohorts', count(r.cohorts.reduce((n, c) => n + c.size, 0)), `${r.cohorts.length} ${r.period}ly cohorts`),
+      kpiStat(
+        `Retained at ${p}1`,
+        r.average.length > 1 && last >= 1 ? percent(r.average[1] ?? 0, 1) : '–',
+        `of people come back the next ${r.period}`,
+      ),
+      last > 1
+        ? kpiStat(
+            `Retained at ${p}${last}`,
+            percent(r.average[last] ?? 0, 1),
+            `latest ${r.period} any cohort has reached`,
+          )
+        : null,
+      kpiStat(
+        'People in cohorts',
+        count(r.cohorts.reduce((n, c) => n + c.size, 0)),
+        `${r.cohorts.length} ${r.period}ly cohorts`,
+      ),
     ),
     retentionCurve(r.cohorts, r.average, r.period, now),
     retentionGrid(r.cohorts, r.average, r.period, now),
@@ -433,7 +583,13 @@ function retentionView(r: RetentionResult): HTMLElement {
 }
 
 function newMenu(label = 'New analysis'): HTMLElement {
-  const trigger = h('button', { type: 'button', class: 'primary' }, icon('plus', 15), label, icon('chevronDown', 14));
+  const trigger = h(
+    'button',
+    { type: 'button', class: 'primary' },
+    icon('plus', 15),
+    label,
+    icon('chevronDown', 14),
+  );
   popover(
     trigger,
     (close) =>
@@ -452,7 +608,12 @@ function newMenu(label = 'New analysis'): HTMLElement {
               },
             },
             h('span', { class: 'menu-icon' }, icon(KIND_ICON[k], 18)),
-            h('span', { class: 'menu-rich-text' }, h('strong', {}, KIND_LABEL[k]), h('span', { class: 'muted small' }, KIND_BLURB[k])),
+            h(
+              'span',
+              { class: 'menu-rich-text' },
+              h('strong', {}, KIND_LABEL[k]),
+              h('span', { class: 'muted small' }, KIND_BLURB[k]),
+            ),
           ),
         ),
       ),
@@ -466,13 +627,29 @@ function cardPreview(insight: SavedInsight): HTMLElement {
   const sc = scope();
   return later(
     async () => {
-      const body = { kind: insight.kind, ...insight.spec, from: (insight.spec.from as string) ?? sc.from, to: (insight.spec.to as string) ?? sc.to, project: sc.project };
+      const body = {
+        kind: insight.kind,
+        ...insight.spec,
+        from: (insight.spec.from as string) ?? sc.from,
+        to: (insight.spec.to as string) ?? sc.to,
+        project: sc.project,
+      };
       const r = await api.post<Record<string, unknown>>('/api/query', body);
       if (insight.kind === 'trends') {
         const t = r as unknown as TrendsResult;
         const s = t.series[0];
         if (!s) return h('div', { class: 'card-preview muted small' }, 'No data');
-        return h('div', { class: 'card-preview' }, h('div', { class: 'card-number' }, count(s.total), h('span', { class: 'muted small' }, ` ${s.label}`)), sparkline(s.values, { height: 44 }));
+        return h(
+          'div',
+          { class: 'card-preview' },
+          h(
+            'div',
+            { class: 'card-number' },
+            count(s.total),
+            h('span', { class: 'muted small' }, ` ${s.label}`),
+          ),
+          sparkline(s.values, { height: 44 }),
+        );
       }
       if (insight.kind === 'funnel') {
         const f = r as unknown as FunnelResult;
@@ -481,19 +658,38 @@ function cardPreview(insight: SavedInsight): HTMLElement {
         return h(
           'div',
           { class: 'card-preview' },
-          h('div', { class: 'card-number' }, percent(first ? lastStep / first : 0, 1), h('span', { class: 'muted small' }, ' converted')),
-          h('div', { class: 'mini-funnel' }, f.steps.map((st) => h('span', { style: `height:${first ? Math.max(4, (st.count / first) * 100) : 4}%` }))),
+          h(
+            'div',
+            { class: 'card-number' },
+            percent(first ? lastStep / first : 0, 1),
+            h('span', { class: 'muted small' }, ' converted'),
+          ),
+          h(
+            'div',
+            { class: 'mini-funnel' },
+            f.steps.map((st) =>
+              h('span', { style: `height:${first ? Math.max(4, (st.count / first) * 100) : 4}%` }),
+            ),
+          ),
         );
       }
       const rr = r as unknown as RetentionResult;
       const now = Date.now();
       let last = rr.average.length - 1;
-      while (last > 0 && !rr.cohorts.some((c) => periodReached(c.start, last, rr.period, now))) last--;
+      while (last > 0 && !rr.cohorts.some((c) => periodReached(c.start, last, rr.period, now)))
+        last--;
       return h(
         'div',
         { class: 'card-preview' },
-        h('div', { class: 'card-number' }, last >= 1 ? percent(rr.average[1] ?? 0, 0) : '–', h('span', { class: 'muted small' }, ` back after 1 ${rr.period}`)),
-        last >= 1 ? sparkline(rr.average.slice(0, last + 1), { height: 44 }) : h('div', { class: 'sparkline' }),
+        h(
+          'div',
+          { class: 'card-number' },
+          last >= 1 ? percent(rr.average[1] ?? 0, 0) : '–',
+          h('span', { class: 'muted small' }, ` back after 1 ${rr.period}`),
+        ),
+        last >= 1
+          ? sparkline(rr.average.slice(0, last + 1), { height: 44 })
+          : h('div', { class: 'sparkline' }),
       );
     },
     'Loading preview',
@@ -509,9 +705,20 @@ function listView(route: Route): Node[] {
   let all: SavedInsight[] = [];
   const paint = () => {
     const q = query.trim().toLowerCase();
-    const shown = all.filter((i) => (!filterKind || i.kind === filterKind) && (!q || `${i.name} ${i.description}`.toLowerCase().includes(q)));
+    const shown = all.filter(
+      (i) =>
+        (!filterKind || i.kind === filterKind) &&
+        (!q || `${i.name} ${i.description}`.toLowerCase().includes(q)),
+    );
     if (!shown.length) {
-      mount(grid, empty(q ? `Nothing matches “${query}”.` : 'No saved analyses of this type yet.', undefined, { icon: 'search' }));
+      mount(
+        grid,
+        empty(
+          q ? `Nothing matches “${query}”.` : 'No saved analyses of this type yet.',
+          undefined,
+          { icon: 'search' },
+        ),
+      );
       return;
     }
     mount(
@@ -523,8 +730,17 @@ function listView(route: Route): Node[] {
           h(
             'div',
             { class: 'insight-card-head' },
-            h('span', { class: `kind-chip kind-${insight.kind}` }, icon(KIND_ICON[insight.kind], 14), KIND_LABEL[insight.kind]),
-            h('span', { class: 'muted small' }, insight.updatedAt ? `Updated ${ago(insight.updatedAt)}` : ''),
+            h(
+              'span',
+              { class: `kind-chip kind-${insight.kind}` },
+              icon(KIND_ICON[insight.kind], 14),
+              KIND_LABEL[insight.kind],
+            ),
+            h(
+              'span',
+              { class: 'muted small' },
+              insight.updatedAt ? `Updated ${ago(insight.updatedAt)}` : '',
+            ),
           ),
           h('h2', {}, insight.name),
           h('p', { class: 'muted insight-card-desc' }, insight.description || 'No description'),
@@ -533,13 +749,21 @@ function listView(route: Route): Node[] {
       ),
     );
   };
-  const search = h('input', { type: 'search', placeholder: 'Search analyses', 'aria-label': 'Search analyses' });
+  const search = h('input', {
+    type: 'search',
+    placeholder: 'Search analyses',
+    'aria-label': 'Search analyses',
+  });
   search.addEventListener('input', () => {
     query = search.value;
     paint();
   });
   return [
-    pageHeader('Insights', 'Saved analyses you and your agents can reopen. New projects start with DAU, WAU, retention and a few other defaults.', newMenu()),
+    pageHeader(
+      'Insights',
+      'Saved analyses you and your agents can reopen. New projects start with DAU, WAU, retention and a few other defaults.',
+      newMenu(),
+    ),
     h(
       'div',
       { class: 'toolbar' },
@@ -557,7 +781,11 @@ function listView(route: Route): Node[] {
       async () => {
         const r = await api.get<{ insights: SavedInsight[] }>('/api/insights', { project });
         if (r.insights.length === 0) {
-          return empty('Build a trends, funnel or retention chart, then save it here so you and your agents can reopen it.', newMenu('Create your first analysis'), { icon: 'insights', title: 'No saved analyses yet' });
+          return empty(
+            'Build a trends, funnel or retention chart, then save it here so you and your agents can reopen it.',
+            newMenu('Create your first analysis'),
+            { icon: 'insights', title: 'No saved analyses yet' },
+          );
         }
         all = r.insights;
         paint();
@@ -569,50 +797,86 @@ function listView(route: Route): Node[] {
   ];
 }
 
-function editorView(options: { mode: 'new' | 'saved' | 'ephemeral'; kind: Kind; key?: string; name?: string; description?: string; spec: Spec; route: Route }): Node[] {
+function editorView(options: {
+  mode: 'new' | 'saved' | 'ephemeral';
+  kind: Kind;
+  key?: string;
+  name?: string;
+  description?: string;
+  spec: Spec;
+  route: Route;
+}): Node[] {
   const kind = options.kind;
   const spec = structuredClone(options.spec);
   const sc = scope();
   const form = h('form', { class: 'builder' });
   const output = h('div', { class: 'insight-output' });
   const status = h('span', { class: 'run-status muted small', 'aria-live': 'polite' });
-  let chartType: ChartType | 'number' = (options.route.params.get('chart') as ChartType | 'number' | null) ?? 'line';
+  let chartType: ChartType | 'number' =
+    (options.route.params.get('chart') as ChartType | 'number' | null) ?? 'line';
   let runId = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
 
   const fullSpec = () => {
     const cleaned = sanitizeSpec(kind, spec);
-    return { kind, ...cleaned, from: cleaned.from ?? sc.from, to: cleaned.to ?? sc.to, project: sc.project };
+    return {
+      kind,
+      ...cleaned,
+      from: cleaned.from ?? sc.from,
+      to: cleaned.to ?? sc.to,
+      project: sc.project,
+    };
   };
   const shareable = () => {
     const { kind: _k, project: _p, ...rest } = fullSpec();
     return rest;
   };
-  const agentPrompt = () => `Using the Glass MCP tool query_${kind}, run ${JSON.stringify(shareable())} and explain what it shows.`;
+  const agentPrompt = () =>
+    `Using the Glass MCP tool query_${kind}, run ${JSON.stringify(shareable())} and explain what it shows.`;
 
   const ready = () => {
     if (kind === 'funnel') return (spec.steps as StepSpec[]).every((s) => s.event);
-    if (kind === 'trends') return (spec.series as SeriesSpec[]).every((s) => s.event && ((s.math !== 'sum' && s.math !== 'avg') || s.property));
+    if (kind === 'trends')
+      return (spec.series as SeriesSpec[]).every(
+        (s) => s.event && ((s.math !== 'sum' && s.math !== 'avg') || s.property),
+      );
     return Boolean((spec.cohortEvent as StepSpec).event && (spec.returnEvent as StepSpec).event);
   };
 
   const run = async () => {
     clearTimeout(timer);
     if (!ready()) {
-      mount(output, empty(kind === 'funnel' ? 'Pick an event for every step to see the funnel.' : 'Pick an event to see results.', undefined, { icon: KIND_ICON[kind], title: 'Almost there' }));
+      mount(
+        output,
+        empty(
+          kind === 'funnel'
+            ? 'Pick an event for every step to see the funnel.'
+            : 'Pick an event to see results.',
+          undefined,
+          { icon: KIND_ICON[kind], title: 'Almost there' },
+        ),
+      );
       status.textContent = '';
       return;
     }
     const id = ++runId;
     status.textContent = 'Running…';
     output.classList.add('running');
-    if (!output.firstChild || output.querySelector('.state.empty')) mount(output, loading('Running query', 'chart'));
+    if (!output.firstChild || output.querySelector('.state.empty'))
+      mount(output, loading('Running query', 'chart'));
     try {
       const body = fullSpec();
-      const prev = kind === 'trends' && prefs.compare ? previousRange(String(body.from), body.to ? String(body.to) : null) : null;
+      const prev =
+        kind === 'trends' && prefs.compare
+          ? previousRange(String(body.from), body.to ? String(body.to) : null)
+          : null;
       const [result, previous] = await Promise.all([
         api.post<RunResult>('/api/query', body),
-        prev ? api.post<TrendsResult>('/api/query', { ...body, from: prev.from, to: prev.to }).catch(() => null) : Promise.resolve(null),
+        prev
+          ? api
+              .post<TrendsResult>('/api/query', { ...body, from: prev.from, to: prev.to })
+              .catch(() => null)
+          : Promise.resolve(null),
       ]);
       if (id !== runId) return;
       const view =
@@ -620,10 +884,20 @@ function editorView(options: { mode: 'new' | 'saved' | 'ephemeral'; kind: Kind; 
           ? trendsView(result as unknown as TrendsResult, previous, chartType)
           : kind === 'funnel'
             ? (result as unknown as FunnelResult).steps[0]?.count
-              ? funnelChart((result as unknown as FunnelResult).steps, { windowSeconds: (result as unknown as FunnelResult).windowSeconds, breakdowns: (result as unknown as FunnelResult).breakdowns })
+              ? funnelChart((result as unknown as FunnelResult).steps, {
+                  windowSeconds: (result as unknown as FunnelResult).windowSeconds,
+                  breakdowns: (result as unknown as FunnelResult).breakdowns,
+                })
               : empty('No one did the first step in this period.', undefined, { icon: 'funnel' })
             : retentionView(result as unknown as RetentionResult);
-      mount(output, panel('', [h('p', { class: 'summary' }, icon('bot', 15), h('span', {}, result.summary)), view], { sql: result.sql, class: 'result-panel' }));
+      mount(
+        output,
+        panel(
+          '',
+          [h('p', { class: 'summary' }, icon('bot', 15), h('span', {}, result.summary)), view],
+          { sql: result.sql, class: 'result-panel' },
+        ),
+      );
       status.textContent = `Updated ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
       if (options.mode === 'ephemeral' || options.mode === 'new') {
         const params = new URLSearchParams(Object.fromEntries(options.route.params));
@@ -657,8 +931,23 @@ function editorView(options: { mode: 'new' | 'saved' | 'ephemeral'; kind: Kind; 
   });
 
   const openSave = () => {
-    const titleInput = h('input', { type: 'text', value: options.name ?? '', placeholder: 'e.g. Daily active users', 'aria-label': 'Title', required: true });
-    const descriptionInput = h('textarea', { rows: 3, placeholder: 'What question does this answer? Agents read this too.', 'aria-label': 'Description', class: 'prose' }, options.description ?? '');
+    const titleInput = h('input', {
+      type: 'text',
+      value: options.name ?? '',
+      placeholder: 'e.g. Daily active users',
+      'aria-label': 'Title',
+      required: true,
+    });
+    const descriptionInput = h(
+      'textarea',
+      {
+        rows: 3,
+        placeholder: 'What question does this answer? Agents read this too.',
+        'aria-label': 'Description',
+        class: 'prose',
+      },
+      options.description ?? '',
+    );
     const save = async () => {
       if (!titleInput.value.trim()) {
         toast('Add a title', 'error');
@@ -681,7 +970,12 @@ function editorView(options: { mode: 'new' | 'saved' | 'ephemeral'; kind: Kind; 
         toast(err instanceof Error ? err.message : String(err), 'error');
       }
     };
-    const formEl = h('form', { class: 'stack modal-form' }, h('label', { class: 'field' }, h('span', {}, 'Title'), titleInput), h('label', { class: 'field' }, h('span', {}, 'Description'), descriptionInput));
+    const formEl = h(
+      'form',
+      { class: 'stack modal-form' },
+      h('label', { class: 'field' }, h('span', {}, 'Title'), titleInput),
+      h('label', { class: 'field' }, h('span', {}, 'Description'), descriptionInput),
+    );
     formEl.addEventListener('submit', (e) => {
       e.preventDefault();
       void save();
@@ -689,7 +983,15 @@ function editorView(options: { mode: 'new' | 'saved' | 'ephemeral'; kind: Kind; 
     const close = modal({
       title: options.mode === 'saved' ? 'Save changes' : 'Save analysis',
       body: formEl,
-      actions: [h('button', { type: 'button', class: 'ghost', onclick: () => close() }, 'Cancel'), h('button', { type: 'button', class: 'primary', onclick: () => void save() }, icon('save', 14), options.mode === 'saved' ? 'Save changes' : 'Save to library')],
+      actions: [
+        h('button', { type: 'button', class: 'ghost', onclick: () => close() }, 'Cancel'),
+        h(
+          'button',
+          { type: 'button', class: 'primary', onclick: () => void save() },
+          icon('save', 14),
+          options.mode === 'saved' ? 'Save changes' : 'Save to library',
+        ),
+      ],
     });
   };
 
@@ -699,24 +1001,40 @@ function editorView(options: { mode: 'new' | 'saved' | 'ephemeral'; kind: Kind; 
     options.mode === 'saved'
       ? iconButton('trash', 'Delete analysis', () => {
           if (!confirm('Delete this saved analysis?')) return;
-          void api.delete(`/api/insights/${encodeURIComponent(options.key!)}`, { project: sc.project }).then(() => {
-            toast('Deleted');
-            go('insights');
-          });
+          void api
+            .delete(`/api/insights/${encodeURIComponent(options.key!)}`, { project: sc.project })
+            .then(() => {
+              toast('Deleted');
+              go('insights');
+            });
         })
       : null,
-    h('button', { type: 'button', class: 'primary', onclick: openSave }, icon('save', 15), options.mode === 'saved' ? 'Save changes' : 'Save'),
+    h(
+      'button',
+      { type: 'button', class: 'primary', onclick: openSave },
+      icon('save', 15),
+      options.mode === 'saved' ? 'Save changes' : 'Save',
+    ),
   ];
 
-  const title = options.mode === 'new' ? `New ${KIND_LABEL[kind].toLowerCase()} analysis` : options.mode === 'saved' ? (options.name ?? 'Analysis') : `${KIND_LABEL[kind]} query`;
-  const blurb = options.mode === 'saved' ? options.description || KIND_BLURB[kind] : KIND_BLURB[kind];
+  const title =
+    options.mode === 'new'
+      ? `New ${KIND_LABEL[kind].toLowerCase()} analysis`
+      : options.mode === 'saved'
+        ? (options.name ?? 'Analysis')
+        : `${KIND_LABEL[kind]} query`;
+  const blurb =
+    options.mode === 'saved' ? options.description || KIND_BLURB[kind] : KIND_BLURB[kind];
 
   const kindSwitch =
     options.mode === 'new' || options.mode === 'ephemeral'
       ? tabs(
           KINDS.map((k) => ({ value: k, label: KIND_LABEL[k], icon: KIND_ICON[k] })),
           kind,
-          (next) => go(options.mode === 'new' ? `insights/new/${next}` : `insights/${next}`, { spec: null }),
+          (next) =>
+            go(options.mode === 'new' ? `insights/new/${next}` : `insights/${next}`, {
+              spec: null,
+            }),
           'tabs-block',
         )
       : h('span', { class: `kind-chip kind-${kind}` }, icon(KIND_ICON[kind], 14), KIND_LABEL[kind]);
@@ -758,7 +1076,13 @@ function editorView(options: { mode: 'new' | 'saved' | 'ephemeral'; kind: Kind; 
               'tabs-small',
             ),
           ]
-        : h('span', { class: 'muted small' }, kind === 'funnel' ? 'Counts unique people who did each step in order.' : 'Cohorts by the period of each person’s first event.'),
+        : h(
+            'span',
+            { class: 'muted small' },
+            kind === 'funnel'
+              ? 'Counts unique people who did each step in order.'
+              : 'Cohorts by the period of each person’s first event.',
+          ),
       h('span', { class: 'toolbar-spacer' }),
       status,
     );
@@ -772,7 +1096,20 @@ function editorView(options: { mode: 'new' | 'saved' | 'ephemeral'; kind: Kind; 
     h(
       'div',
       { class: 'analysis' },
-      h('aside', { class: 'query-rail', 'aria-label': 'Query' }, h('div', { class: 'rail-kind' }, kindSwitch), form, options.mode !== 'saved' ? null : h('a', { class: 'link-button rail-back', href: href('insights') }, icon('chevronLeft', 14), 'Back to library')),
+      h(
+        'aside',
+        { class: 'query-rail', 'aria-label': 'Query' },
+        h('div', { class: 'rail-kind' }, kindSwitch),
+        form,
+        options.mode !== 'saved'
+          ? null
+          : h(
+              'a',
+              { class: 'link-button rail-back', href: href('insights') },
+              icon('chevronLeft', 14),
+              'Back to library',
+            ),
+      ),
       h('section', { class: 'query-canvas' }, toolbar, output),
     ),
   ];
@@ -784,7 +1121,9 @@ export function insightsPage(route: Route): Node[] {
 
   const parseSpec = (kind: Kind): Spec => {
     try {
-      return route.params.get('spec') ? (JSON.parse(route.params.get('spec')!) as Spec) : structuredClone(DEFAULTS[kind]);
+      return route.params.get('spec')
+        ? (JSON.parse(route.params.get('spec')!) as Spec)
+        : structuredClone(DEFAULTS[kind]);
     } catch {
       return structuredClone(DEFAULTS[kind]);
     }
@@ -804,8 +1143,18 @@ export function insightsPage(route: Route): Node[] {
     later(
       async () => {
         const project = scope().project;
-        const insight = await api.get<SavedInsight>(`/api/insights/${encodeURIComponent(head)}`, { project });
-        return editorView({ mode: 'saved', kind: insight.kind, key: insight.key, name: insight.name, description: insight.description, spec: insight.spec, route });
+        const insight = await api.get<SavedInsight>(`/api/insights/${encodeURIComponent(head)}`, {
+          project,
+        });
+        return editorView({
+          mode: 'saved',
+          kind: insight.kind,
+          key: insight.key,
+          name: insight.name,
+          description: insight.description,
+          spec: insight.spec,
+          route,
+        });
       },
       'Loading analysis',
       'chart',

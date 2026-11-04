@@ -16,13 +16,13 @@ pnpm dev            # Glass on http://localhost:8787, a demo site on http://loca
 
 `pnpm dev` runs the real Worker code on Node: D1 is a SQLite file and R2 is a folder, both in `.glass-dev/`. Open the demo site, click around, then open `http://localhost:8787/app` and sign in with `dev-admin-key`. To run on Cloudflare's actual runtime instead, use `pnpm dev:wrangler`.
 
-| Command | What it does |
-| --- | --- |
-| `pnpm typecheck` | TypeScript, strict, across every package |
-| `pnpm lint` / `pnpm format` | Biome |
-| `pnpm test` | `node:test` suites in `packages/*/test` |
-| `pnpm test:e2e` | Builds, then drives the demo site in Chromium with Playwright and checks the API and dashboard (`npx playwright install chromium` once) |
-| `pnpm check` | typecheck + lint + test, what CI runs first |
+| Command                     | What it does                                                                                                                            |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm typecheck`            | TypeScript, strict, across every package                                                                                                |
+| `pnpm lint` / `pnpm format` | Biome                                                                                                                                   |
+| `pnpm test`                 | `node:test` suites in `packages/*/test`                                                                                                 |
+| `pnpm test:e2e`             | Builds, then drives the demo site in Chromium with Playwright and checks the API and dashboard (`npx playwright install chromium` once) |
+| `pnpm check`                | typecheck + lint + test, what CI runs first                                                                                             |
 
 Tests use Node's built-in runner and Node's TypeScript type stripping, so there is no test framework to learn: `node --test packages/core/test/insights.test.ts` runs one file.
 
@@ -72,7 +72,7 @@ Dependencies point one way: `core` ← `web`, `worker`, `dashboard`, `cli`. `cor
 
 ## Code style
 
-Biome formats and lints (`pnpm format`). TypeScript is strict, with `noUncheckedIndexedAccess` and `erasableSyntaxOnly` (no enums or parameter properties, so Node can run sources directly). Import local files with their `.ts` extension. Prefer small pure functions with a doc comment that explains *why*, not *what*.
+Biome formats and lints (`pnpm format`). TypeScript is strict, with `noUncheckedIndexedAccess` and `erasableSyntaxOnly` (no enums or parameter properties, so Node can run sources directly). Import local files with their `.ts` extension. Prefer small pure functions with a doc comment that explains _why_, not _what_.
 
 ## Pull requests
 

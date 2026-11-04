@@ -47,13 +47,14 @@
   --sk: color-mix(in srgb, var(--ink) 7%, transparent);
   --radius: 12px;
   --radius-sm: 8px;
-  --sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  --mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+  --sans:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
   color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
+  :root:not([data-theme="light"]) {
     --field: #0d1311;
     --surface: #141c19;
     --surface-2: #18211e;
@@ -85,7 +86,7 @@
   }
 }
 
-:root[data-theme='dark'] {
+:root[data-theme="dark"] {
   --field: #0d1311;
   --surface: #141c19;
   --surface-2: #18211e;
@@ -125,7 +126,7 @@ body {
   margin: 0;
   background: var(--field);
   color: var(--ink);
-  font: 14px/1.5 var(--sans);
+  font: 14px / 1.5 var(--sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
@@ -264,7 +265,9 @@ kbd {
   height: 24px;
   border-radius: 6px;
   background: linear-gradient(135deg, rgb(255 255 255 / 0.92) 0 56%, #9fd6c6 56% 76%, #3a9a82 76%);
-  box-shadow: inset 0 0 0 1.5px #3a9a82, 0 0 0 3px rgb(58 154 130 / 0.18);
+  box-shadow:
+    inset 0 0 0 1.5px #3a9a82,
+    0 0 0 3px rgb(58 154 130 / 0.18);
 }
 
 .mark.large {
@@ -461,7 +464,7 @@ button.project-switch:hover {
 }
 
 .sidebar li a.active::before {
-  content: '';
+  content: "";
   position: absolute;
   left: -12px;
   top: 8px;
@@ -919,7 +922,7 @@ pre.sql {
 }
 
 .kpi.selected::after {
-  content: '';
+  content: "";
   position: absolute;
   left: 0;
   right: 0;
@@ -1431,14 +1434,22 @@ a.bar-label:hover {
 }
 
 .funnel-col-drop {
-  background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--bad) 16%, transparent) 0 5px, transparent 5px 10px);
+  background: repeating-linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--bad) 16%, transparent) 0 5px,
+    transparent 5px 10px
+  );
   border-top: 1px dashed color-mix(in srgb, var(--bad) 45%, transparent);
 }
 
 .funnel-col-fill {
   position: relative;
   min-height: 0;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--glass-green) 85%, #fff 15%), var(--glass-green));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--glass-green) 85%, #fff 15%),
+    var(--glass-green)
+  );
   transition: height 0.35s ease;
 }
 
@@ -1839,7 +1850,10 @@ button,
   line-height: 1.3;
   white-space: nowrap;
   box-shadow: var(--shadow-sm);
-  transition: background 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease,
+    box-shadow 0.12s ease;
 }
 
 button:hover,
@@ -1857,7 +1871,9 @@ button:disabled {
   background: var(--glass-green);
   border-color: color-mix(in srgb, var(--glass-green) 80%, #000);
   color: var(--on-primary);
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.12), inset 0 1px 0 rgb(255 255 255 / 0.12);
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.12),
+    inset 0 1px 0 rgb(255 255 255 / 0.12);
 }
 
 .primary:hover {
@@ -1892,11 +1908,11 @@ button.copied {
   border-color: var(--hairline);
 }
 
-input[type='text'],
-input[type='search'],
-input[type='password'],
-input[type='number'],
-input[type='date'],
+input[type="text"],
+input[type="search"],
+input[type="password"],
+input[type="number"],
+input[type="date"],
 select,
 textarea {
   font: inherit;
@@ -1907,7 +1923,9 @@ textarea {
   border-radius: var(--radius-sm);
   padding: 7px 10px;
   min-width: 0;
-  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+  transition:
+    border-color 0.12s ease,
+    box-shadow 0.12s ease;
 }
 
 input:focus,
@@ -2124,7 +2142,9 @@ textarea.prose {
 .tab.active {
   background: var(--surface);
   color: var(--ink);
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08), 0 0 0 1px var(--hairline);
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.08),
+    0 0 0 1px var(--hairline);
 }
 
 .tab.active .icon {
@@ -2253,13 +2273,13 @@ textarea.prose {
 }
 
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) .avatar {
+  :root:not([data-theme="light"]) .avatar {
     background: hsl(var(--hue) 30% 24%);
     color: hsl(var(--hue) 55% 82%);
   }
 }
 
-:root[data-theme='dark'] .avatar {
+:root[data-theme="dark"] .avatar {
   background: hsl(var(--hue) 30% 24%);
   color: hsl(var(--hue) 55% 82%);
 }
@@ -2345,7 +2365,12 @@ textarea.prose {
 .sk {
   display: block;
   border-radius: 6px;
-  background: linear-gradient(90deg, var(--sk) 0%, color-mix(in srgb, var(--ink) 3%, transparent) 50%, var(--sk) 100%);
+  background: linear-gradient(
+    90deg,
+    var(--sk) 0%,
+    color-mix(in srgb, var(--ink) 3%, transparent) 50%,
+    var(--sk) 100%
+  );
   background-size: 200% 100%;
   animation: shimmer 1.3s ease-in-out infinite;
 }
@@ -2491,7 +2516,9 @@ textarea.prose {
   z-index: 200;
   box-shadow: var(--shadow-lg);
   animation: toast-in 0.2s ease-out;
-  transition: opacity 0.3s ease, transform 0.3s ease;
+  transition:
+    opacity 0.3s ease,
+    transform 0.3s ease;
 }
 
 .toast.leaving {
@@ -2778,7 +2805,10 @@ input.palette-input:focus {
   text-decoration: none;
   color: inherit;
   box-shadow: var(--shadow-sm);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.15s ease;
 }
 
 .insight-card:hover {
@@ -3856,7 +3886,11 @@ button.active {
   min-height: 240px;
   padding: 0;
   background:
-    repeating-linear-gradient(45deg, transparent 0 10px, color-mix(in srgb, var(--ink) 3%, transparent) 10px 11px),
+    repeating-linear-gradient(
+      45deg,
+      transparent 0 10px,
+      color-mix(in srgb, var(--ink) 3%, transparent) 10px 11px
+    ),
     var(--field);
   overflow: hidden;
 }
@@ -4284,7 +4318,13 @@ pre.transcript {
   justify-items: center;
   gap: 16px;
   padding: 24px 16px;
-  background: radial-gradient(1200px 600px at 50% -10%, color-mix(in srgb, var(--glass-green) 14%, transparent), transparent 70%), var(--field);
+  background:
+    radial-gradient(
+      1200px 600px at 50% -10%,
+      color-mix(in srgb, var(--glass-green) 14%, transparent),
+      transparent 70%
+    ),
+    var(--field);
 }
 
 .key-card {
@@ -4769,8 +4809,8 @@ pre.transcript {
   min-width: 110px;
 }
 
-.filter-row input[type='text'],
-.filter-row input[type='number'] {
+.filter-row input[type="text"],
+.filter-row input[type="number"] {
   flex: 1;
   min-width: 120px;
 }

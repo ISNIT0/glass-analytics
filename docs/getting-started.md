@@ -6,14 +6,14 @@ Glass deploys into your Cloudflare account with one command. You need a Cloudfla
 
 At [dash.cloudflare.com/profile/api-tokens](https://dash.cloudflare.com/profile/api-tokens), create a custom token with:
 
-| Permission | Why |
-| --- | --- |
-| Account › Workers Scripts › Edit | Deploy the Glass Worker |
-| Account › D1 › Edit | Create and migrate the database |
-| Account › Workers R2 Storage › Edit | Store session replays |
-| Account › Account Settings › Read | Find your account |
-| Zone › Workers Routes › Edit | Only with `--route` |
-| Account › Pipelines › Edit, Workers R2 Data Catalog › Edit, Workers R2 SQL › Read | Only with `--lake` |
+| Permission                                                                        | Why                             |
+| --------------------------------------------------------------------------------- | ------------------------------- |
+| Account › Workers Scripts › Edit                                                  | Deploy the Glass Worker         |
+| Account › D1 › Edit                                                               | Create and migrate the database |
+| Account › Workers R2 Storage › Edit                                               | Store session replays           |
+| Account › Account Settings › Read                                                 | Find your account               |
+| Zone › Workers Routes › Edit                                                      | Only with `--route`             |
+| Account › Pipelines › Edit, Workers R2 Data Catalog › Edit, Workers R2 SQL › Read | Only with `--lake`              |
 
 The token is used by the CLI on your machine. It is not stored by Glass, except in lake mode, where it becomes a Worker secret so the Worker can query Basin SQL. (Use a separate read-only token there if you prefer; see [lake.md](lake.md).)
 
@@ -38,18 +38,18 @@ It also creates `.glass/` in your project. Commit it (`config.json`, `wrangler.j
 
 Useful flags:
 
-| Flag | |
-| --- | --- |
-| `--dry-run` | Show what would be created, change nothing |
-| `--account <id>` | Choose the account non-interactively |
-| `--project <id>` | Project id (lowercase letters, digits, `-`, `_`) |
-| `--eu` | Create the database and buckets in the EU jurisdiction |
+| Flag                        |                                                                                    |
+| --------------------------- | ---------------------------------------------------------------------------------- |
+| `--dry-run`                 | Show what would be created, change nothing                                         |
+| `--account <id>`            | Choose the account non-interactively                                               |
+| `--project <id>`            | Project id (lowercase letters, digits, `-`, `_`)                                   |
+| `--eu`                      | Create the database and buckets in the EU jurisdiction                             |
 | `--route acme.com/_glass/*` | Also serve Glass from your own domain (first-party, so ad blockers don't block it) |
-| `--lake` | Store events in Iceberg on R2 instead of D1 (beta; for high volume) |
-| `--no-replay` | Skip replay storage |
-| `--no-agent-files` | Don't write AGENTS.md, SKILL.md or .mcp.json |
-| `--no-ci` | Don't write `.github/workflows/glass.yml` |
-| `--json` | Machine-readable output |
+| `--lake`                    | Store events in Iceberg on R2 instead of D1 (beta; for high volume)                |
+| `--no-replay`               | Skip replay storage                                                                |
+| `--no-agent-files`          | Don't write AGENTS.md, SKILL.md or .mcp.json                                       |
+| `--no-ci`                   | Don't write `.github/workflows/glass.yml`                                          |
+| `--json`                    | Machine-readable output                                                            |
 
 `glass init` is safe to re-run: it finds existing resources and keeps your keys.
 
@@ -61,15 +61,15 @@ The script tag works everywhere and needs no build step:
 <script defer src="https://glass.<you>.workers.dev/s.js" data-project="my-app"></script>
 ```
 
-| Framework | Where |
-| --- | --- |
-| Next.js | `app/layout.tsx`: `<Script src="…/s.js" data-project="my-app" strategy="afterInteractive" />` from `next/script` |
-| Astro | `src/layouts/Layout.astro`, with `is:inline` on the script tag |
-| SvelteKit | `src/app.html` |
-| Nuxt | `app.head.script` in `nuxt.config.ts` |
-| Remix / React Router | `app/root.tsx` |
-| Vite apps | `npm i @glassanalytics/web`, then `glass.init({ host, project })` in `main.ts` |
-| Server-side | `POST <host>/e`; see [sdk.md](sdk.md#server-side-events) |
+| Framework            | Where                                                                                                            |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Next.js              | `app/layout.tsx`: `<Script src="…/s.js" data-project="my-app" strategy="afterInteractive" />` from `next/script` |
+| Astro                | `src/layouts/Layout.astro`, with `is:inline` on the script tag                                                   |
+| SvelteKit            | `src/app.html`                                                                                                   |
+| Nuxt                 | `app.head.script` in `nuxt.config.ts`                                                                            |
+| Remix / React Router | `app/root.tsx`                                                                                                   |
+| Vite apps            | `npm i @glassanalytics/web`, then `glass.init({ host, project })` in `main.ts`                                   |
+| Server-side          | `POST <host>/e`; see [sdk.md](sdk.md#server-side-events)                                                         |
 
 ## 4. Track what matters
 

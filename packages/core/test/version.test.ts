@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { UPGRADE_COMMAND, isNewerThan, parseSemver, upgradeMessage } from '../src/version.ts';
+import { isNewerThan, parseSemver, UPGRADE_COMMAND, upgradeMessage } from '../src/version.ts';
 
 describe('version helpers', () => {
   it('parses dotted semver and compares', () => {
@@ -16,6 +16,9 @@ describe('version helpers', () => {
   it('names the upgrade command', () => {
     assert.match(upgradeMessage('0.1.0', '0.2.0'), /0\.1\.0/);
     assert.match(upgradeMessage('0.1.0', '0.2.0'), /0\.2\.0/);
-    assert.match(upgradeMessage('0.1.0', '0.2.0'), new RegExp(UPGRADE_COMMAND.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    assert.match(
+      upgradeMessage('0.1.0', '0.2.0'),
+      new RegExp(UPGRADE_COMMAND.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
+    );
   });
 });

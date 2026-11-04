@@ -35,9 +35,16 @@ export class LakeStore implements EventStore {
   }
 
   async write(events: StoredEvent[]): Promise<void> {
-    if (!this.env.EVENTS_STREAM) throw new HttpError(503, 'EVENTS_STREAM binding is missing', 'Run `glass init --lake` again.');
+    if (!this.env.EVENTS_STREAM)
+      throw new HttpError(
+        503,
+        'EVENTS_STREAM binding is missing',
+        'Run `glass init --lake` again.',
+      );
     // Iceberg gets a real timestamp column for humans and partitioning; queries use ts_ms.
-    await this.env.EVENTS_STREAM.send(events.map((e) => ({ ...e, ts: new Date(e.ts_ms).toISOString() })));
+    await this.env.EVENTS_STREAM.send(
+      events.map((e) => ({ ...e, ts: new Date(e.ts_ms).toISOString() })),
+    );
   }
 
   async writeIdentity(link: IdentityLink): Promise<void> {
@@ -47,7 +54,11 @@ export class LakeStore implements EventStore {
   async query(sql: string): Promise<Row[]> {
     const { CF_ACCOUNT_ID: account, LAKE_BUCKET: bucket, CF_API_TOKEN: token } = this.env;
     if (!account || !bucket || !token) {
-      throw new HttpError(503, 'Lake mode needs CF_ACCOUNT_ID, LAKE_BUCKET and CF_API_TOKEN', 'Run `glass upgrade` to set them.');
+      throw new HttpError(
+        503,
+        'Lake mode needs CF_ACCOUNT_ID, LAKE_BUCKET and CF_API_TOKEN',
+        'Run `glass upgrade` to set them.',
+      );
     }
     let last: Response | null = null;
     for (const path of QUERY_PATHS) {
@@ -95,7 +106,9 @@ export function normaliseRows(body: unknown): Row[] {
     value = (value as { result: unknown }).result;
   }
   if (Array.isArray(value)) {
-    return value.every((r) => r && typeof r === 'object' && !Array.isArray(r)) ? (value as Row[]) : [];
+    return value.every((r) => r && typeof r === 'object' && !Array.isArray(r))
+      ? (value as Row[])
+      : [];
   }
   if (!value || typeof value !== 'object') return [];
   const v = value as Record<string, unknown>;
@@ -106,5 +119,7 @@ export function normaliseRows(body: unknown): Row[] {
   const names = Array.isArray(columns)
     ? columns.map((c) => (typeof c === 'string' ? c : String((c as { name?: string }).name ?? '')))
     : [];
-  return (rows as unknown[][]).map((r) => Object.fromEntries(r.map((cell, i) => [names[i] ?? `c${i}`, cell])));
+  return (rows as unknown[][]).map((r) =>
+    Object.fromEntries(r.map((cell, i) => [names[i] ?? `c${i}`, cell])),
+  );
 }

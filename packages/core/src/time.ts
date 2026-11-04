@@ -20,7 +20,13 @@ export const INTERVAL_MS: Record<Exclude<Interval, 'month'>, number> = {
 };
 
 const RELATIVE = /^-?(\d+)\s*(m|min|h|d|w|mo|y)$/i;
-const UNIT_MS: Record<string, number> = { m: 60_000, min: 60_000, h: HOUR_MS, d: DAY_MS, w: WEEK_MS };
+const UNIT_MS: Record<string, number> = {
+  m: 60_000,
+  min: 60_000,
+  h: HOUR_MS,
+  d: DAY_MS,
+  w: WEEK_MS,
+};
 
 /**
  * Parse a point in time.
@@ -71,7 +77,9 @@ export function resolveRange(
     to: parseTime(to ?? 'now', now),
   };
   if (range.to <= range.from) {
-    throw new RangeError(`Empty time range: "from" (${iso(range.from)}) must be before "to" (${iso(range.to)}).`);
+    throw new RangeError(
+      `Empty time range: "from" (${iso(range.from)}) must be before "to" (${iso(range.to)}).`,
+    );
   }
   return range;
 }
@@ -84,7 +92,9 @@ export function startOfDay(ms: number): number {
 export function addMonths(ms: number, months: number): number {
   const d = new Date(ms);
   const target = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + months, 1));
-  const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
+  const lastDay = new Date(
+    Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0),
+  ).getUTCDate();
   target.setUTCDate(Math.min(d.getUTCDate(), lastDay));
   target.setUTCHours(d.getUTCHours(), d.getUTCMinutes(), d.getUTCSeconds(), d.getUTCMilliseconds());
   return target.getTime();
@@ -107,7 +117,12 @@ export function bucketStart(ms: number, interval: Interval, utcOffsetMinutes = 0
 }
 
 /** Every bucket start from `from` (bucketed) up to `to` (exclusive). Used to fill gaps in time series. */
-export function bucketsBetween(range: TimeRange, interval: Interval, utcOffsetMinutes = 0, max = 2000): number[] {
+export function bucketsBetween(
+  range: TimeRange,
+  interval: Interval,
+  utcOffsetMinutes = 0,
+  max = 2000,
+): number[] {
   const out: number[] = [];
   let cursor = bucketStart(range.from, interval, utcOffsetMinutes);
   while (cursor < range.to && out.length < max) {
@@ -124,7 +139,10 @@ export function bucketsBetween(range: TimeRange, interval: Interval, utcOffsetMi
 export function parseDuration(input: string | number): number {
   if (typeof input === 'number') return input * 1000;
   const m = /^(\d+)\s*(s|m|min|h|d|w)$/i.exec(input.trim());
-  if (!m) throw new RangeError(`Cannot parse duration "${input}". Use e.g. "30m", "24h", "7d" or seconds.`);
+  if (!m)
+    throw new RangeError(
+      `Cannot parse duration "${input}". Use e.g. "30m", "24h", "7d" or seconds.`,
+    );
   const n = Number(m[1]);
   const unit = m[2]!.toLowerCase();
   const ms = unit === 's' ? 1000 : UNIT_MS[unit]!;

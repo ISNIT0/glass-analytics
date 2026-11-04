@@ -46,7 +46,11 @@ export interface FlagDefinition {
 export const FLAG_ON = 'on';
 
 /** A user's position in [0, 100) for a given flag and purpose. */
-export function bucketOf(flag: Pick<FlagDefinition, 'key' | 'salt'>, distinctId: string, purpose = 'rollout'): number {
+export function bucketOf(
+  flag: Pick<FlagDefinition, 'key' | 'salt'>,
+  distinctId: string,
+  purpose = 'rollout',
+): number {
   return (fnv1a32(`${flag.key}:${flag.salt ?? ''}:${purpose}:${distinctId}`) % 10_000) / 100;
 }
 
@@ -81,7 +85,10 @@ export function evaluateFlag(flag: FlagDefinition, ctx: EvaluationContext): stri
 }
 
 /** Evaluate every flag for a context. Flags that are off are omitted. */
-export function evaluateFlags(flags: readonly FlagDefinition[], ctx: EvaluationContext): Record<string, string> {
+export function evaluateFlags(
+  flags: readonly FlagDefinition[],
+  ctx: EvaluationContext,
+): Record<string, string> {
   const out: Record<string, string> = {};
   for (const flag of flags) {
     const value = evaluateFlag(flag, ctx);
@@ -95,8 +102,10 @@ const FLAG_KEY = /^[a-z0-9][a-z0-9_.-]{0,99}$/i;
 /** Validate a definition, returning a list of human-readable problems (empty when valid). */
 export function validateFlag(flag: FlagDefinition): string[] {
   const problems: string[] = [];
-  if (!FLAG_KEY.test(flag.key)) problems.push('key must be 1-100 characters: letters, digits, "_", "-", "."');
-  if (!(flag.rollout >= 0 && flag.rollout <= 100)) problems.push('rollout must be between 0 and 100');
+  if (!FLAG_KEY.test(flag.key))
+    problems.push('key must be 1-100 characters: letters, digits, "_", "-", "."');
+  if (!(flag.rollout >= 0 && flag.rollout <= 100))
+    problems.push('rollout must be between 0 and 100');
   const keys = new Set<string>();
   for (const v of flag.variants ?? []) {
     if (!FLAG_KEY.test(v.key)) problems.push(`variant "${v.key}" has an invalid key`);
@@ -104,9 +113,11 @@ export function validateFlag(flag: FlagDefinition): string[] {
     if (!(v.weight >= 0)) problems.push(`variant "${v.key}" needs a weight >= 0`);
     keys.add(v.key);
   }
-  if (flag.variants && flag.variants.length === 1) problems.push('a multivariate flag needs at least two variants');
+  if (flag.variants && flag.variants.length === 1)
+    problems.push('a multivariate flag needs at least two variants');
   for (const rule of flag.rules ?? []) {
-    if (rule.variant && !keys.has(rule.variant)) problems.push(`rule forces unknown variant "${rule.variant}"`);
+    if (rule.variant && !keys.has(rule.variant))
+      problems.push(`rule forces unknown variant "${rule.variant}"`);
     if (rule.rollout !== undefined && !(rule.rollout >= 0 && rule.rollout <= 100)) {
       problems.push('rule rollout must be between 0 and 100');
     }

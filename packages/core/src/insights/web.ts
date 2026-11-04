@@ -17,9 +17,16 @@ const MAX_UNION = 5;
 import { SYSTEM_EVENTS } from '../events.ts';
 import type { Dialect } from '../sql/dialect.ts';
 import { bucketExpr, eventsCte, num, text } from '../sql/source.ts';
-import { DAY_MS, type Interval, type TimeRange, bucketsBetween, iso, resolveRange } from '../time.ts';
+import {
+  bucketsBetween,
+  DAY_MS,
+  type Interval,
+  iso,
+  resolveRange,
+  type TimeRange,
+} from '../time.ts';
 import type { WebSpec } from './schemas.ts';
-import { type QueryContext, type ResultBase, fmt } from './types.ts';
+import { fmt, type QueryContext, type ResultBase } from './types.ts';
 
 export interface WebTotals {
   visitors: number;
@@ -67,7 +74,12 @@ export interface WebResult extends ResultBase {
 
 const PV = SYSTEM_EVENTS.pageview;
 
-function totalsSql(d: Dialect, ctx: QueryContext, range: TimeRange, filters: WebSpec['filters']): string {
+function totalsSql(
+  d: Dialect,
+  ctx: QueryContext,
+  range: TimeRange,
+  filters: WebSpec['filters'],
+): string {
   return `WITH ${eventsCte(d, { project: ctx.project, ...range, events: [PV, SYSTEM_EVENTS.pageleave], filters })},
 pv AS (SELECT distinct_id FROM ev WHERE event = ${d.str(PV)}),
 s AS (
@@ -96,8 +108,18 @@ function shapeTotals(row: Record<string, unknown> | undefined): WebTotals {
   };
 }
 
-function breakdownsSql(d: Dialect, ctx: QueryContext, range: TimeRange, filters: WebSpec['filters']): string[] {
-  const cte = eventsCte(d, { project: ctx.project, ...range, events: [PV, SYSTEM_EVENTS.exception], filters });
+function breakdownsSql(
+  d: Dialect,
+  ctx: QueryContext,
+  range: TimeRange,
+  filters: WebSpec['filters'],
+): string[] {
+  const cte = eventsCte(d, {
+    project: ctx.project,
+    ...range,
+    events: [PV, SYSTEM_EVENTS.exception],
+    filters,
+  });
   const none = (expr: string) => `COALESCE(NULLIF(${expr}, ''), '(none)')`;
   const simple = (name: string, expr: string, event: string = PV) =>
     `SELECT * FROM (
@@ -140,7 +162,12 @@ function breakdownsSql(d: Dialect, ctx: QueryContext, range: TimeRange, filters:
   return chunks;
 }
 
-function vitalsSql(d: Dialect, ctx: QueryContext, range: TimeRange, filters: WebSpec['filters']): string {
+function vitalsSql(
+  d: Dialect,
+  ctx: QueryContext,
+  range: TimeRange,
+  filters: WebSpec['filters'],
+): string {
   return `WITH ${eventsCte(d, { project: ctx.project, ...range, events: [SYSTEM_EVENTS.webVitals], filters })}
 SELECT ${d.jsonText('props', ['metric'])} AS metric, ${d.jsonNumber('props', ['value'])} AS val
 FROM ev
@@ -203,15 +230,15 @@ GROUP BY bucket ORDER BY bucket LIMIT 5000`;
     pageviews[i] = num(row.pageviews);
   }
 
-  const breakdowns = Object.fromEntries(Object.keys(WEB_BREAKDOWNS).map((k) => [k, [] as BreakdownRow[]])) as Record<
-    WebBreakdown,
-    BreakdownRow[]
-  >;
+  const breakdowns = Object.fromEntries(
+    Object.keys(WEB_BREAKDOWNS).map((k) => [k, [] as BreakdownRow[]]),
+  ) as Record<WebBreakdown, BreakdownRow[]>;
   for (const row of breakdownRows) {
     const dim = text(row.dim) as WebBreakdown;
     breakdowns[dim]?.push({ value: text(row.val), visitors: num(row.visitors), count: num(row.n) });
   }
-  for (const rows of Object.values(breakdowns)) rows.sort((a, b) => b.visitors - a.visitors || b.count - a.count);
+  for (const rows of Object.values(breakdowns))
+    rows.sort((a, b) => b.visitors - a.visitors || b.count - a.count);
 
   const samples = new Map<string, number[]>();
   for (const row of vitalRows) {
@@ -222,13 +249,18 @@ GROUP BY bucket ORDER BY bucket LIMIT 5000`;
     samples.set(metric, list);
   }
   const vitals = Object.fromEntries(
-    [...samples.entries()].map(([metric, values]) => [metric, { p75: percentile(values, 0.75), samples: values.length }]),
+    [...samples.entries()].map(([metric, values]) => [
+      metric,
+      { p75: percentile(values, 0.75), samples: values.length },
+    ]),
   );
 
   const totals = shapeTotals(totalsRows[0]);
   const prev = previousRows ? shapeTotals(previousRows[0]) : null;
   const change = (now: number, before: number | undefined) =>
-    before ? ` (${now >= before ? '+' : ''}${fmt((now - before) / before, 'percent')} vs previous period)` : '';
+    before
+      ? ` (${now >= before ? '+' : ''}${fmt((now - before) / before, 'percent')} vs previous period)`
+      : '';
   const topPage = breakdowns.pages[0];
   const topRef = breakdowns.referrers[0];
 
@@ -240,7 +272,13 @@ GROUP BY bucket ORDER BY bucket LIMIT 5000`;
     timeseries: { buckets, visitors, pageviews },
     breakdowns,
     vitals,
-    sql: [queries.totals, ...(queries.previous ? [queries.previous] : []), queries.series, ...queries.breakdowns, queries.vitals],
+    sql: [
+      queries.totals,
+      ...(queries.previous ? [queries.previous] : []),
+      queries.series,
+      ...queries.breakdowns,
+      queries.vitals,
+    ],
     range: { from: iso(range.from), to: iso(range.to) },
     summary:
       totals.pageviews === 0

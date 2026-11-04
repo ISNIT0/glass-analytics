@@ -21,10 +21,10 @@ Glass is one Worker, one D1 database and one R2 bucket in the user's Cloudflare 
 - **Ingest** (`packages/worker/src/ingest.ts`): parse a batch, check the project and origin, drop bots and malformed events, apply `identify()` links and person updates, resolve each event's person and snapshot their properties, enrich (clock skew, URL and UTM parsing, referrer, geo, user agent), and write. The body is `text/plain` JSON so browsers skip CORS preflights; the SDK uses `sendBeacon` when pages are hidden.
 - **Queries** (`packages/worker/src/service.ts` → `packages/core/src/insights/`): a spec is validated with zod, compiled to SQL for the store's dialect, executed, and shaped into a result with a `summary`, the `sql` that ran and a dashboard link. The HTTP API, MCP tools and dashboard all go through `GlassService`.
 - **Replay**: each upload is one gzipped JSON array of rrweb events, stored as its own R2 object keyed by start time, page load and sequence. A D1 row indexes the session, so listing replays never touches R2. Two constraints shape this:
-  - *A page that is going away can send about 64 KB* (`sendBeacon` and `keepalive` share that limit), and most pages' DOM snapshots are bigger. So `replay.js` uploads each page's snapshot the moment it's taken and never lets more than a beacon's worth of events wait, which leaves only a small remainder for the beacon when the page is hidden.
-  - *rrweb numbers DOM nodes per page load*, so node 42 means something different on each page. Anything that resolves node ids, such as the transcript in `packages/core/src/replay-summary.ts`, reads each page load separately (`loadReplayPages()` groups chunks by their page id).
-  - *Most of a single-page app arrives as mutations*, not in the first snapshot, and rrweb sends each added node separately. `packages/core/src/replay-dom.ts` rebuilds the DOM from snapshots plus every mutation (adds, removes, text and attribute changes), which is what names clicked elements and renders `replay_snapshot`.
-  - *Reading every chunk is expensive*, so an hourly cron summarises sessions about 30 minutes after they end: the timeline is cached at `summaries/<project>/<session>.json`, and its frustration counts and a searchable digest (pages, clicked elements, errors) go on the D1 row. Search and `analyse_replays` read those; a new chunk makes the cache stale.
+  - _A page that is going away can send about 64 KB_ (`sendBeacon` and `keepalive` share that limit), and most pages' DOM snapshots are bigger. So `replay.js` uploads each page's snapshot the moment it's taken and never lets more than a beacon's worth of events wait, which leaves only a small remainder for the beacon when the page is hidden.
+  - _rrweb numbers DOM nodes per page load_, so node 42 means something different on each page. Anything that resolves node ids, such as the transcript in `packages/core/src/replay-summary.ts`, reads each page load separately (`loadReplayPages()` groups chunks by their page id).
+  - _Most of a single-page app arrives as mutations_, not in the first snapshot, and rrweb sends each added node separately. `packages/core/src/replay-dom.ts` rebuilds the DOM from snapshots plus every mutation (adds, removes, text and attribute changes), which is what names clicked elements and renders `replay_snapshot`.
+  - _Reading every chunk is expensive_, so an hourly cron summarises sessions about 30 minutes after they end: the timeline is cached at `summaries/<project>/<session>.json`, and its frustration counts and a searchable digest (pages, clicked elements, errors) go on the D1 row. Search and `analyse_replays` read those; a new chunk makes the cache stale.
 
 ## Identity
 
@@ -51,13 +51,13 @@ The core tests execute every compiler on real SQLite against the production migr
 
 ## Packages
 
-| Package | Published | |
-| --- | --- | --- |
-| `@glassanalytics/core` | no (bundled) | Event model, SQL, stats, flags, replay summaries, snippets |
-| `@glassanalytics/web` | npm | Browser SDK |
-| `@glassanalytics/worker` | no (bundled into the CLI) | The Worker |
-| `@glassanalytics/dashboard` | no (bundled into the Worker) | The dashboard |
-| `@glassanalytics/cli` | npm | CLI, carrying the built Worker and migrations |
+| Package                     | Published                    |                                                            |
+| --------------------------- | ---------------------------- | ---------------------------------------------------------- |
+| `@glassanalytics/core`      | no (bundled)                 | Event model, SQL, stats, flags, replay summaries, snippets |
+| `@glassanalytics/web`       | npm                          | Browser SDK                                                |
+| `@glassanalytics/worker`    | no (bundled into the CLI)    | The Worker                                                 |
+| `@glassanalytics/dashboard` | no (bundled into the Worker) | The dashboard                                              |
+| `@glassanalytics/cli`       | npm                          | CLI, carrying the built Worker and migrations              |
 
 Versioning the CLI and the Worker together means `npx @glassanalytics/cli@x upgrade` always deploys exactly the Worker that CLI was tested with.
 

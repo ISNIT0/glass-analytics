@@ -15,7 +15,8 @@ import { parseUserAgent } from '../src/ua.ts';
 import { parsePage, referrerHost } from '../src/url.ts';
 import { NOW } from './helpers.ts';
 
-const close = (a: number, b: number, tol: number) => assert.ok(Math.abs(a - b) <= tol, `${a} not within ${tol} of ${b}`);
+const close = (a: number, b: number, tol: number) =>
+  assert.ok(Math.abs(a - b) <= tol, `${a} not within ${tol} of ${b}`);
 
 describe('statistics', () => {
   it('chi-square survival matches known critical values', () => {
@@ -38,25 +39,44 @@ describe('statistics', () => {
   });
 
   it('gives near-certain wins for big lifts and ~50% for identical arms', () => {
-    const big = compareConversions({ exposures: 5000, conversions: 500 }, { exposures: 5000, conversions: 650 });
+    const big = compareConversions(
+      { exposures: 5000, conversions: 500 },
+      { exposures: 5000, conversions: 650 },
+    );
     assert.ok(big.probabilityToBeatControl > 0.999);
     close(big.expectedLift, 0.3, 0.03);
     // Analytic 95% interval for this lift is roughly [0.16, 0.44].
     assert.ok(big.liftInterval[0] > 0.1 && big.liftInterval[1] < 0.5, String(big.liftInterval));
-    const same = compareConversions({ exposures: 1000, conversions: 100 }, { exposures: 1000, conversions: 100 });
+    const same = compareConversions(
+      { exposures: 1000, conversions: 100 },
+      { exposures: 1000, conversions: 100 },
+    );
     close(same.probabilityToBeatControl, 0.5, 0.03);
   });
 
   it('is deterministic for the same inputs', () => {
-    const a = compareConversions({ exposures: 100, conversions: 10 }, { exposures: 100, conversions: 14 });
-    const b = compareConversions({ exposures: 100, conversions: 10 }, { exposures: 100, conversions: 14 });
+    const a = compareConversions(
+      { exposures: 100, conversions: 10 },
+      { exposures: 100, conversions: 14 },
+    );
+    const b = compareConversions(
+      { exposures: 100, conversions: 10 },
+      { exposures: 100, conversions: 14 },
+    );
     assert.deepEqual(a, b);
   });
 
   it('compares means with Welch statistics', () => {
     // control: values 1..10, variant: values 3..12 (mean +2)
-    const stats = (xs: number[]) => ({ n: xs.length, sum: xs.reduce((a, b) => a + b, 0), sumSquares: xs.reduce((a, b) => a + b * b, 0) });
-    const r = compareMeans(stats([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]), stats([3, 4, 5, 6, 7, 8, 9, 10, 11, 12]));
+    const stats = (xs: number[]) => ({
+      n: xs.length,
+      sum: xs.reduce((a, b) => a + b, 0),
+      sumSquares: xs.reduce((a, b) => a + b * b, 0),
+    });
+    const r = compareMeans(
+      stats([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]),
+      stats([3, 4, 5, 6, 7, 8, 9, 10, 11, 12]),
+    );
     assert.equal(r.difference, 2);
     assert.ok(r.pValue > 0.1 && r.pValue < 0.2);
   });
@@ -71,13 +91,25 @@ describe('statistics', () => {
 describe('feature flags', () => {
   it('assigns the same bucket every time', () => {
     assert.equal(bucketOf({ key: 'x' }, 'user-1'), bucketOf({ key: 'x' }, 'user-1'));
-    assert.notEqual(bucketOf({ key: 'x', salt: 'a' }, 'user-1'), bucketOf({ key: 'x', salt: 'b' }, 'user-1'));
+    assert.notEqual(
+      bucketOf({ key: 'x', salt: 'a' }, 'user-1'),
+      bucketOf({ key: 'x', salt: 'b' }, 'user-1'),
+    );
   });
 
   it('respects rollout percentage and variant weights across many users', () => {
-    const flag = { key: 'exp', enabled: true, rollout: 50, variants: [{ key: 'control', weight: 25 }, { key: 'test', weight: 75 }] };
+    const flag = {
+      key: 'exp',
+      enabled: true,
+      rollout: 50,
+      variants: [
+        { key: 'control', weight: 25 },
+        { key: 'test', weight: 75 },
+      ],
+    };
     const counts: Record<string, number> = { off: 0, control: 0, test: 0 };
-    for (let i = 0; i < 20_000; i++) counts[evaluateFlag(flag, { distinct_id: `u${i}` }) ?? 'off']!++;
+    for (let i = 0; i < 20_000; i++)
+      counts[evaluateFlag(flag, { distinct_id: `u${i}` }) ?? 'off']!++;
     close(counts.off! / 20_000, 0.5, 0.02);
     close(counts.test! / (counts.control! + counts.test!), 0.75, 0.02);
   });
@@ -91,7 +123,10 @@ describe('feature flags', () => {
     };
     assert.equal(evaluateFlag(flag, { distinct_id: 'a', person: { plan: 'pro' } }), 'on');
     assert.equal(evaluateFlag(flag, { distinct_id: 'a', person: { plan: 'free' } }), null);
-    assert.equal(evaluateFlag({ ...flag, enabled: false }, { distinct_id: 'a', person: { plan: 'pro' } }), null);
+    assert.equal(
+      evaluateFlag({ ...flag, enabled: false }, { distinct_id: 'a', person: { plan: 'pro' } }),
+      null,
+    );
   });
 
   it('validates definitions with readable messages', () => {
@@ -123,18 +158,24 @@ describe('time', () => {
 describe('ingest helpers', () => {
   it('parses user agents into families', () => {
     assert.deepEqual(
-      parseUserAgent('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1'),
+      parseUserAgent(
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1',
+      ),
       { browser: 'Safari', os: 'iOS', device: 'mobile' },
     );
     assert.deepEqual(
-      parseUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36 Edg/131.0'),
+      parseUserAgent(
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36 Edg/131.0',
+      ),
       { browser: 'Edge', os: 'Windows', device: 'desktop' },
     );
     assert.equal(parseUserAgent('Googlebot/2.1').device, 'bot');
   });
 
   it('extracts UTM tags and normalises referrers', () => {
-    const page = parsePage('https://acme.com/pricing?utm_source=newsletter&utm_campaign=launch&x=1');
+    const page = parsePage(
+      'https://acme.com/pricing?utm_source=newsletter&utm_campaign=launch&x=1',
+    );
     assert.equal(page.path, '/pricing');
     assert.equal(page.url, 'https://acme.com/pricing');
     assert.equal(page.utm_source, 'newsletter');

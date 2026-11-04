@@ -6,7 +6,7 @@
 
 import { DAY_MS, resolveRange } from '@glassanalytics/core/time';
 import { h } from '../dom.ts';
-import { type Route, go, prefs } from '../state.ts';
+import { go, prefs, type Route } from '../state.ts';
 import { icon } from './icons.ts';
 import { popover, toggle } from './menu.ts';
 
@@ -21,7 +21,14 @@ export const PRESETS: { from: string; to?: string; label: string; short: string 
   { from: '-12mo', label: 'Last 12 months', short: '12mo' },
 ];
 
-const UNITS: Record<string, [string, string]> = { m: ['minute', 'minutes'], h: ['hour', 'hours'], d: ['day', 'days'], w: ['week', 'weeks'], mo: ['month', 'months'], y: ['year', 'years'] };
+const UNITS: Record<string, [string, string]> = {
+  m: ['minute', 'minutes'],
+  h: ['hour', 'hours'],
+  d: ['day', 'days'],
+  w: ['week', 'weeks'],
+  mo: ['month', 'months'],
+  y: ['year', 'years'],
+};
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 const day = (ms: number) => {
@@ -51,10 +58,16 @@ export function rangeLabel(from: string, to?: string | null): string {
 }
 
 /** The equally long period immediately before the current one, as ISO timestamps. */
-export function previousRange(from: string, to?: string | null): { from: string; to: string } | null {
+export function previousRange(
+  from: string,
+  to?: string | null,
+): { from: string; to: string } | null {
   try {
     const r = resolveRange(from, to ?? undefined);
-    return { from: new Date(r.from - (r.to - r.from)).toISOString(), to: new Date(r.from).toISOString() };
+    return {
+      from: new Date(r.from - (r.to - r.from)).toISOString(),
+      to: new Date(r.from).toISOString(),
+    };
   } catch {
     return null;
   }
@@ -74,7 +87,16 @@ export function dateRangeControl(route: Route, onCompareChange: () => void): HTM
   const from = route.params.get('from') ?? '-30d';
   const to = route.params.get('to');
   const target = [route.page, ...route.rest].join('/');
-  const trigger = h('button', { type: 'button', class: 'select-trigger date-trigger', 'aria-label': 'Date range' }, icon('calendar'), h('span', { class: 'select-value' }, rangeLabel(from, to)), prefs.compare ? h('span', { class: 'compare-dot', title: 'Comparing to the previous period' }) : null, icon('chevronDown', 14));
+  const trigger = h(
+    'button',
+    { type: 'button', class: 'select-trigger date-trigger', 'aria-label': 'Date range' },
+    icon('calendar'),
+    h('span', { class: 'select-value' }, rangeLabel(from, to)),
+    prefs.compare
+      ? h('span', { class: 'compare-dot', title: 'Comparing to the previous period' })
+      : null,
+    icon('chevronDown', 14),
+  );
   popover(
     trigger,
     (close) => {
@@ -87,8 +109,18 @@ export function dateRangeControl(route: Route, onCompareChange: () => void): HTM
       } catch {
         // leave empty
       }
-      const fromInput = h('input', { type: 'date', value: start, 'aria-label': 'Start date', max: isoDay(Date.now()) });
-      const toInput = h('input', { type: 'date', value: end, 'aria-label': 'End date', max: isoDay(Date.now()) });
+      const fromInput = h('input', {
+        type: 'date',
+        value: start,
+        'aria-label': 'Start date',
+        max: isoDay(Date.now()),
+      });
+      const toInput = h('input', {
+        type: 'date',
+        value: end,
+        'aria-label': 'End date',
+        max: isoDay(Date.now()),
+      });
       const apply = h('button', { type: 'submit', class: 'primary small' }, 'Apply');
       const custom = h(
         'form',

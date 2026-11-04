@@ -1,6 +1,6 @@
 # Roadmap
 
-What Glass does today, and what's next. Items marked *good first issue* are self-contained and a good way to start contributing.
+What Glass does today, and what's next. Items marked _good first issue_ are self-contained and a good way to start contributing.
 
 ## Shipped in 0.1
 
@@ -15,17 +15,17 @@ What Glass does today, and what's next. Items marked *good first issue* are self
 ## Next
 
 - **Verify the lake store against production Cloudflare.** Basin SQL's response format isn't documented yet; `normaliseRows()` is deliberately tolerant. Needs real-account testing and a recorded fixture.
-- **Paths, stickiness and lifecycle insights.** Each is one file in `packages/core/src/insights/`. *good first issue*
+- **Paths, stickiness and lifecycle insights.** Each is one file in `packages/core/src/insights/`. _good first issue_
 - **Cohorts:** saved person filters on the People tab (counts + retention link). Next: apply a cohort as a filter on every insight in one click.
 - **Alerts:** threshold and anomaly alerts on any insight, via email or webhook, run from the Worker's cron.
 - **Current person properties in lake mode:** mirror D1 `persons` to an Iceberg table (today, lake queries use the per-event snapshot).
 - **Lake-mode erasure:** an Iceberg delete job for GDPR requests (D1 mode deletes events today).
-- **Goals in the web view:** mark an event or URL as a goal and show conversion in every breakdown. *good first issue*
+- **Goals in the web view:** mark an event or URL as a goal and show conversion in every breakdown. _good first issue_
 - **Timezone support** beyond fixed UTC offsets (DST-aware bucketing).
 - **Cloudflare Access** support for the dashboard, as an alternative to API keys.
 - **Lake schema migrations:** versioned streams (`glass_events_v2`) and queries across old and new tables, for when built-in columns change.
 - **Materialised property columns** for frequently filtered lake properties (needs versioned streams).
 - **Analytics Engine accelerator** for real-time tiles at high volume.
-- **`glass cost`:** estimate monthly Cloudflare spend from current volume. *good first issue*
+- **`glass cost`:** estimate monthly Cloudflare spend from current volume. _good first issue_
 - **Opt-in install telemetry** for the landing page's conversion funnel (off by default).
-- **More framework snippets and detection:** Qwik, SolidStart, Eleventy, Hugo. *good first issue*
+- **More framework snippets and detection:** Qwik, SolidStart, Eleventy, Hugo. _good first issue_

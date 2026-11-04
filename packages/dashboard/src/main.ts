@@ -18,7 +18,7 @@ import { peoplePage } from './pages/people.ts';
 import { replaysPage } from './pages/replays.ts';
 import { keyScreen, settingsPage } from './pages/settings.ts';
 import { webPage } from './pages/web.ts';
-import { type Route, currentRoute, go, href, prefs } from './state.ts';
+import { currentRoute, go, href, prefs, type Route } from './state.ts';
 
 interface PageDef {
   label: string;
@@ -60,7 +60,17 @@ function projectMark(id: string): HTMLElement {
 function projectSwitcher(route: Route): HTMLElement {
   const project = route.params.get('project') ?? prefs.project ?? projects[0] ?? '';
   if (projects.length <= 1) {
-    return h('div', { class: 'project-switch static', title: project }, projectMark(project), h('span', { class: 'project-text' }, h('span', { class: 'project-kicker' }, 'Project'), h('span', { class: 'project-name' }, project)));
+    return h(
+      'div',
+      { class: 'project-switch static', title: project },
+      projectMark(project),
+      h(
+        'span',
+        { class: 'project-text' },
+        h('span', { class: 'project-kicker' }, 'Project'),
+        h('span', { class: 'project-name' }, project),
+      ),
+    );
   }
   const trigger = selectMenu({
     value: project,
@@ -89,7 +99,17 @@ function navLink(key: string, route: Route): HTMLElement {
   return h(
     'li',
     {},
-    h('a', { href: href(key), class: active ? 'active' : '', 'aria-current': active ? 'page' : null, title: page.label }, icon(page.icon, 17), h('span', { class: 'nav-label' }, page.label)),
+    h(
+      'a',
+      {
+        href: href(key),
+        class: active ? 'active' : '',
+        'aria-current': active ? 'page' : null,
+        title: page.label,
+      },
+      icon(page.icon, 17),
+      h('span', { class: 'nav-label' }, page.label),
+    ),
   );
 }
 
@@ -101,7 +121,12 @@ function sidebar(route: Route): HTMLElement {
     h(
       'div',
       { class: 'sidebar-top' },
-      h('a', { class: 'brand', href: href('reports') }, h('span', { class: 'mark', 'aria-hidden': 'true' }), h('span', { class: 'brand-name' }, 'Glass')),
+      h(
+        'a',
+        { class: 'brand', href: href('reports') },
+        h('span', { class: 'mark', 'aria-hidden': 'true' }),
+        h('span', { class: 'brand-name' }, 'Glass'),
+      ),
       h(
         'button',
         {
@@ -120,7 +145,12 @@ function sidebar(route: Route): HTMLElement {
     projectSwitcher(route),
     h(
       'button',
-      { type: 'button', class: 'cmdk-trigger', onclick: () => openPalette(), title: 'Search and jump (⌘K)' },
+      {
+        type: 'button',
+        class: 'cmdk-trigger',
+        onclick: () => openPalette(),
+        title: 'Search and jump (⌘K)',
+      },
       icon('search', 15),
       h('span', { class: 'nav-label' }, 'Search'),
       h('kbd', {}, isMac ? '⌘K' : 'Ctrl K'),
@@ -128,7 +158,18 @@ function sidebar(route: Route): HTMLElement {
     h(
       'div',
       { class: 'nav-groups' },
-      GROUPS.map((g) => h('div', { class: 'nav-group' }, h('div', { class: 'nav-group-label' }, g.label), h('ul', {}, g.pages.map((p) => navLink(p, route))))),
+      GROUPS.map((g) =>
+        h(
+          'div',
+          { class: 'nav-group' },
+          h('div', { class: 'nav-group-label' }, g.label),
+          h(
+            'ul',
+            {},
+            g.pages.map((p) => navLink(p, route)),
+          ),
+        ),
+      ),
     ),
     h(
       'div',
@@ -157,13 +198,23 @@ function sidebar(route: Route): HTMLElement {
 function crumbs(route: Route): HTMLElement {
   const page = PAGES[route.page] ?? PAGES.reports!;
   const sub = route.rest[0];
-  const subLabel = sub ? (route.page === 'insights' && sub === 'new' ? 'New analysis' : route.page === 'reports' ? sub[0]!.toUpperCase() + sub.slice(1) : sub) : null;
+  const subLabel = sub
+    ? route.page === 'insights' && sub === 'new'
+      ? 'New analysis'
+      : route.page === 'reports'
+        ? sub[0]!.toUpperCase() + sub.slice(1)
+        : sub
+    : null;
   return h(
     'div',
     { class: 'crumbs' },
     h('span', { class: 'crumb-icon' }, icon(page.icon, 16)),
-    sub ? h('a', { href: href(route.page === 'web' ? 'reports' : route.page) }, page.label) : h('span', { class: 'crumb-current' }, page.label),
-    subLabel ? [icon('chevronRight', 14), h('span', { class: 'crumb-current', title: subLabel }, subLabel)] : null,
+    sub
+      ? h('a', { href: href(route.page === 'web' ? 'reports' : route.page) }, page.label)
+      : h('span', { class: 'crumb-current' }, page.label),
+    subLabel
+      ? [icon('chevronRight', 14), h('span', { class: 'crumb-current', title: subLabel }, subLabel)]
+      : null,
   );
 }
 
@@ -198,7 +249,13 @@ function upgradeNotice(): HTMLElement | null {
     'div',
     { class: 'upgrade-banner', role: 'status' },
     icon('zap', 16),
-    h('p', {}, `Glass ${info.latest} is available (this deployment is ${info.version}). Run `, h('code', {}, info.command), ` in your project to upgrade.`),
+    h(
+      'p',
+      {},
+      `Glass ${info.latest} is available (this deployment is ${info.version}). Run `,
+      h('code', {}, info.command),
+      ` in your project to upgrade.`,
+    ),
     h(
       'button',
       {
@@ -235,9 +292,24 @@ function baseCommands(): Command[] {
     .map(([key, p]) => ({ label: p.label, group: 'Go to', icon: p.icon, run: () => go(key) }));
   return [
     ...pages,
-    { label: 'New trends analysis', group: 'Create', icon: 'lineChart', run: () => go('insights/new/trends', { spec: null }) },
-    { label: 'New funnel', group: 'Create', icon: 'funnel', run: () => go('insights/new/funnel', { spec: null }) },
-    { label: 'New retention analysis', group: 'Create', icon: 'retention', run: () => go('insights/new/retention', { spec: null }) },
+    {
+      label: 'New trends analysis',
+      group: 'Create',
+      icon: 'lineChart',
+      run: () => go('insights/new/trends', { spec: null }),
+    },
+    {
+      label: 'New funnel',
+      group: 'Create',
+      icon: 'funnel',
+      run: () => go('insights/new/funnel', { spec: null }),
+    },
+    {
+      label: 'New retention analysis',
+      group: 'Create',
+      icon: 'retention',
+      run: () => go('insights/new/retention', { spec: null }),
+    },
     { label: 'New feature flag', group: 'Create', icon: 'flag', run: () => go('flags/new') },
     { label: 'New experiment', group: 'Create', icon: 'flask', run: () => go('experiments/new') },
     {
@@ -278,9 +350,25 @@ function openPalette(): void {
   paletteOpen = true;
   let commands = baseCommands();
   let active = 0;
-  const input = h('input', { type: 'text', class: 'palette-input', placeholder: 'Search pages, saved analyses and actions…', 'aria-label': 'Command', autocomplete: 'off', spellcheck: false });
+  const input = h('input', {
+    type: 'text',
+    class: 'palette-input',
+    placeholder: 'Search pages, saved analyses and actions…',
+    'aria-label': 'Command',
+    autocomplete: 'off',
+    spellcheck: false,
+  });
   const list = h('div', { class: 'palette-list', role: 'listbox' });
-  const overlay = h('div', { class: 'modal-overlay palette-overlay' }, h('div', { class: 'palette', role: 'dialog', 'aria-label': 'Command palette' }, h('div', { class: 'palette-search' }, icon('search', 18), input, h('kbd', {}, 'Esc')), list));
+  const overlay = h(
+    'div',
+    { class: 'modal-overlay palette-overlay' },
+    h(
+      'div',
+      { class: 'palette', role: 'dialog', 'aria-label': 'Command palette' },
+      h('div', { class: 'palette-search' }, icon('search', 18), input, h('kbd', {}, 'Esc')),
+      list,
+    ),
+  );
   const close = () => {
     overlay.remove();
     paletteOpen = false;
@@ -338,7 +426,8 @@ function openPalette(): void {
       close();
     } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
-      active = (active + (e.key === 'ArrowDown' ? 1 : -1) + found.length) % Math.max(1, found.length);
+      active =
+        (active + (e.key === 'ArrowDown' ? 1 : -1) + found.length) % Math.max(1, found.length);
       paint();
     } else if (e.key === 'Enter') {
       e.preventDefault();
@@ -366,8 +455,20 @@ function openPalette(): void {
     .get<{ insights: { key: string; name: string; kind: string }[] }>('/api/insights', { project })
     .then((r) => {
       if (!paletteOpen) return;
-      const kindIcon: Record<string, IconName> = { trends: 'lineChart', funnel: 'funnel', retention: 'retention' };
-      commands = [...commands, ...r.insights.map((i) => ({ label: i.name, group: 'Saved analyses', icon: kindIcon[i.kind] ?? 'insights', run: () => go(`insights/${i.key}`) }))];
+      const kindIcon: Record<string, IconName> = {
+        trends: 'lineChart',
+        funnel: 'funnel',
+        retention: 'retention',
+      };
+      commands = [
+        ...commands,
+        ...r.insights.map((i) => ({
+          label: i.name,
+          group: 'Saved analyses',
+          icon: kindIcon[i.kind] ?? 'insights',
+          run: () => go(`insights/${i.key}`),
+        })),
+      ];
       paint();
     })
     .catch(() => undefined);
@@ -393,28 +494,44 @@ function render(): void {
 }
 
 async function start(): Promise<void> {
+  // Re-assigning runs the setters, which apply the stored preferences to the page.
+  // biome-ignore lint/correctness/noSelfAssign: the setters have side effects
   prefs.showSql = prefs.showSql;
+  // biome-ignore lint/correctness/noSelfAssign: the setters have side effects
   prefs.theme = prefs.theme;
   if (!prefs.key) {
-    mount(root, keyScreen(() => void start()));
+    mount(
+      root,
+      keyScreen(() => void start()),
+    );
     return;
   }
   try {
     const [r, health] = await Promise.all([
       api.get<{ projects: { id: string }[] }>('/api/projects'),
-      api.get<{ version: string; latest?: string | null; upgradeAvailable?: boolean; upgradeCommand?: string }>('/health'),
+      api.get<{
+        version: string;
+        latest?: string | null;
+        upgradeAvailable?: boolean;
+        upgradeCommand?: string;
+      }>('/health'),
     ]);
     projects = r.projects.map((p) => p.id);
     version = health.version;
     upgradeBanner =
       health.upgradeAvailable && health.latest
-        ? { version: health.version, latest: health.latest, command: health.upgradeCommand ?? 'npx @glassanalytics/cli@latest upgrade' }
+        ? {
+            version: health.version,
+            latest: health.latest,
+            command: health.upgradeCommand ?? 'npx @glassanalytics/cli@latest upgrade',
+          }
         : null;
   } catch {
     if (!prefs.key) return;
   }
   if (!currentRoute().params.get('project') && projects[0]) {
-    const preferred = prefs.project && projects.includes(prefs.project) ? prefs.project : projects[0];
+    const preferred =
+      prefs.project && projects.includes(prefs.project) ? prefs.project : projects[0];
     go(currentRoute().page, { project: preferred });
     return;
   }
@@ -424,11 +541,15 @@ async function start(): Promise<void> {
 window.addEventListener('hashchange', () => (prefs.key ? render() : undefined));
 window.addEventListener('glass:unauthorized', () => {
   prefs.key = null;
-  mount(root, keyScreen(() => void start()));
+  mount(
+    root,
+    keyScreen(() => void start()),
+  );
 });
 window.addEventListener('keydown', (e) => {
   const target = e.target as HTMLElement;
-  const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable;
+  const typing =
+    ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable;
   if ((e.key === 'k' || e.key === 'K') && (e.metaKey || e.ctrlKey) && prefs.key) {
     e.preventDefault();
     openPalette();

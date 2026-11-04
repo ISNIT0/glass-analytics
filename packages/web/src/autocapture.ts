@@ -10,7 +10,8 @@
  * from click capture.
  */
 
-const CLICKABLE = 'a, button, [role="button"], input[type="submit"], input[type="button"], [data-glass-event]';
+const CLICKABLE =
+  'a, button, [role="button"], input[type="submit"], input[type="button"], [data-glass-event]';
 const MAX_ERRORS_PER_PAGE = 10;
 
 export interface AutocaptureHooks {
@@ -48,7 +49,8 @@ export function trackPageviews(hooks: AutocaptureHooks): () => void {
 }
 
 function elementText(el: Element): string {
-  if (el instanceof HTMLInputElement) return el.value && el.type !== 'password' ? el.value.slice(0, 60) : '';
+  if (el instanceof HTMLInputElement)
+    return el.value && el.type !== 'password' ? el.value.slice(0, 60) : '';
   return (el.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 60);
 }
 
@@ -60,12 +62,16 @@ export function trackClicks(hooks: AutocaptureHooks): () => void {
     if (custom) {
       const props: Record<string, unknown> = {};
       for (const attr of Array.from(target.attributes)) {
-        if (attr.name.startsWith('data-glass-prop-')) props[attr.name.slice(16).replace(/-/g, '_')] = attr.value;
+        if (attr.name.startsWith('data-glass-prop-'))
+          props[attr.name.slice(16).replace(/-/g, '_')] = attr.value;
       }
       hooks.capture(custom, props);
       return;
     }
-    const props: Record<string, unknown> = { tag: target.tagName.toLowerCase(), text: elementText(target) };
+    const props: Record<string, unknown> = {
+      tag: target.tagName.toLowerCase(),
+      text: elementText(target),
+    };
     if (target.id) props.id = target.id;
     if (target instanceof HTMLAnchorElement && target.href) {
       props.href = target.href.split('?')[0];
@@ -80,12 +86,22 @@ export function trackClicks(hooks: AutocaptureHooks): () => void {
 export function trackErrors(hooks: AutocaptureHooks, onError: () => void): () => void {
   let count = 0;
   const seen = new Set<string>();
-  const report = (type: string, message: string, stack?: string, extra: Record<string, unknown> = {}) => {
+  const report = (
+    type: string,
+    message: string,
+    stack?: string,
+    extra: Record<string, unknown> = {},
+  ) => {
     const key = `${type}:${message}`;
     if (count >= MAX_ERRORS_PER_PAGE || seen.has(key)) return;
     seen.add(key);
     count++;
-    hooks.capture('$exception', { type, message: message.slice(0, 500), stack: stack?.slice(0, 2000), ...extra });
+    hooks.capture('$exception', {
+      type,
+      message: message.slice(0, 500),
+      stack: stack?.slice(0, 2000),
+      ...extra,
+    });
     onError();
   };
   const onWindowError = (e: ErrorEvent) => {
@@ -98,7 +114,8 @@ export function trackErrors(hooks: AutocaptureHooks, onError: () => void): () =>
   };
   const onRejection = (e: PromiseRejectionEvent) => {
     const reason = e.reason;
-    if (reason instanceof Error) report(reason.name, reason.message, reason.stack, { unhandled_rejection: true });
+    if (reason instanceof Error)
+      report(reason.name, reason.message, reason.stack, { unhandled_rejection: true });
     else report('UnhandledRejection', String(reason), undefined, { unhandled_rejection: true });
   };
   addEventListener('error', onWindowError);

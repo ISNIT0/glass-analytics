@@ -18,7 +18,8 @@ export class HttpError extends Error {
 export const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, Mcp-Protocol-Version, Mcp-Session-Id',
+  'Access-Control-Allow-Headers':
+    'Content-Type, Authorization, Mcp-Protocol-Version, Mcp-Session-Id',
   'Access-Control-Max-Age': '86400',
 };
 
@@ -31,27 +32,46 @@ export function json(data: unknown, init: ResponseInit = {}): Response {
 type Issue = { path?: PropertyKey[]; message: string };
 
 export function isValidationError(err: unknown): err is Error & { issues: Issue[] } {
-  return err instanceof Error && (err.name === 'ZodError' || err.name === '$ZodError') && Array.isArray((err as { issues?: unknown }).issues);
+  return (
+    err instanceof Error &&
+    (err.name === 'ZodError' || err.name === '$ZodError') &&
+    Array.isArray((err as { issues?: unknown }).issues)
+  );
 }
 
 /** "steps: Too small: expected array to have >=2 items; window: …" */
 export function describeIssues(err: { issues: Issue[]; message?: string }): string {
-  const text = err.issues.map((i) => `${i.path?.length ? `${i.path.map(String).join('.')}: ` : ''}${i.message}`).join('; ');
+  const text = err.issues
+    .map((i) => `${i.path?.length ? `${i.path.map(String).join('.')}: ` : ''}${i.message}`)
+    .join('; ');
   return text || err.message || 'invalid input';
 }
 
 export function errorResponse(err: unknown): Response {
   if (err instanceof HttpError) {
-    return json({ error: err.message, ...(err.hint ? { hint: err.hint } : {}) }, { status: err.status });
+    return json(
+      { error: err.message, ...(err.hint ? { hint: err.hint } : {}) },
+      { status: err.status },
+    );
   }
   if (isValidationError(err)) {
-    return json({ error: `Invalid request — ${describeIssues(err)}`, details: err.issues }, { status: 400 });
+    return json(
+      { error: `Invalid request — ${describeIssues(err)}`, details: err.issues },
+      { status: 400 },
+    );
   }
-  if (err instanceof TypeError || err instanceof RangeError || (err instanceof Error && err.name === 'UnsafeSqlError')) {
+  if (
+    err instanceof TypeError ||
+    err instanceof RangeError ||
+    (err instanceof Error && err.name === 'UnsafeSqlError')
+  ) {
     return json({ error: err.message }, { status: 400 });
   }
   console.error('[glass] unhandled error', err);
-  return json({ error: 'Internal error', detail: err instanceof Error ? err.message : String(err) }, { status: 500 });
+  return json(
+    { error: 'Internal error', detail: err instanceof Error ? err.message : String(err) },
+    { status: 500 },
+  );
 }
 
 export async function readJson<T = unknown>(request: Request, maxBytes = 1_000_000): Promise<T> {
@@ -125,6 +145,8 @@ export class Router {
       });
       return route.handler({ request, url, params });
     }
-    return pathMatched ? json({ error: `Method ${request.method} not allowed` }, { status: 405 }) : null;
+    return pathMatched
+      ? json({ error: `Method ${request.method} not allowed` }, { status: 405 })
+      : null;
   }
 }

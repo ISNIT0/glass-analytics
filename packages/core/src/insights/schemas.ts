@@ -12,7 +12,9 @@ import { FILTER_OPS } from '../filters.ts';
 
 const time = z
   .union([z.string(), z.number()])
-  .describe('ISO date ("2026-10-01"), epoch ms, "now", "today", "yesterday", or a relative offset like "-30d", "-12h", "-3mo".');
+  .describe(
+    'ISO date ("2026-10-01"), epoch ms, "now", "today", "yesterday", or a relative offset like "-30d", "-12h", "-3mo".',
+  );
 
 export const filterSchema = z
   .object({
@@ -30,7 +32,10 @@ export const filterSchema = z
   .describe('A condition on an event, column or person property.');
 
 const common = {
-  project: z.string().optional().describe('Project id. Defaults to the only project, or "default".'),
+  project: z
+    .string()
+    .optional()
+    .describe('Project id. Defaults to the only project, or "default".'),
   from: time.optional().describe('Start of the range (inclusive). Defaults to "-30d".'),
   to: time.optional().describe('End of the range (exclusive). Defaults to "now".'),
   filters: z.array(filterSchema).optional().describe('Conditions every event must match.'),
@@ -59,7 +64,9 @@ export const trendsSpec = z
           math: z
             .enum(['total', 'unique_persons', 'unique_sessions', 'sum', 'avg'])
             .optional()
-            .describe('How to aggregate. "total" counts events (default); sum/avg need a numeric "property".'),
+            .describe(
+              'How to aggregate. "total" counts events (default); sum/avg need a numeric "property".',
+            ),
           property: z.string().optional().describe('Numeric property for sum/avg, e.g. "amount".'),
           filters: z.array(filterSchema).optional(),
           label: z.string().optional(),
@@ -68,25 +75,40 @@ export const trendsSpec = z
       .min(1)
       .max(10)
       .describe('One line per series.'),
-    interval: z.enum(['hour', 'day', 'week', 'month']).optional().describe('Bucket size. Defaults to "day".'),
+    interval: z
+      .enum(['hour', 'day', 'week', 'month'])
+      .optional()
+      .describe('Bucket size. Defaults to "day".'),
     breakdown: z
       .union([z.string(), z.array(z.string()).min(1).max(4)])
       .optional()
       .describe(
         'Split each series by one or more properties, e.g. "browser", "person.plan", or ["browser","utm_source"]. Multiple properties are joined with " · ".',
       ),
-    breakdownLimit: z.number().int().min(1).max(50).optional().describe('Top N breakdown values to keep. Default 10.'),
+    breakdownLimit: z
+      .number()
+      .int()
+      .min(1)
+      .max(50)
+      .optional()
+      .describe('Top N breakdown values to keep. Default 10.'),
   })
   .describe('Event counts or aggregates over time.');
 
 export const funnelSpec = z
   .object({
     ...common,
-    steps: z.array(stepSchema).min(2).max(10).describe('Ordered steps. A person converts by doing each step after the previous one.'),
+    steps: z
+      .array(stepSchema)
+      .min(2)
+      .max(10)
+      .describe('Ordered steps. A person converts by doing each step after the previous one.'),
     window: z
       .union([z.string(), z.number()])
       .optional()
-      .describe('Maximum time from the first step to the last, e.g. "1h", "7d". Seconds if a number. Default "7d".'),
+      .describe(
+        'Maximum time from the first step to the last, e.g. "1h", "7d". Seconds if a number. Default "7d".',
+      ),
     breakdown: z
       .union([z.string(), z.array(z.string()).min(1).max(4)])
       .optional()
@@ -100,20 +122,39 @@ export const funnelSpec = z
 export const retentionSpec = z
   .object({
     ...common,
-    cohortEvent: stepSchema.describe('The event that puts a person in a cohort (their first one in the range).'),
+    cohortEvent: stepSchema.describe(
+      'The event that puts a person in a cohort (their first one in the range).',
+    ),
     returnEvent: stepSchema.describe('The event that counts as coming back.'),
-    period: z.enum(['day', 'week', 'month']).optional().describe('Cohort and return period. Default "week".'),
-    periods: z.number().int().min(1).max(52).optional().describe('How many periods after the cohort to measure. Default 8.'),
+    period: z
+      .enum(['day', 'week', 'month'])
+      .optional()
+      .describe('Cohort and return period. Default "week".'),
+    periods: z
+      .number()
+      .int()
+      .min(1)
+      .max(52)
+      .optional()
+      .describe('How many periods after the cohort to measure. Default 8.'),
   })
   .describe('How many people come back after their first event.');
 
 export const webSpec = z
   .object({
     ...common,
-    interval: z.enum(['hour', 'day', 'week', 'month']).optional().describe('Time series bucket. Default picks from the range length.'),
-    compare: z.boolean().optional().describe('Include totals for the previous period of the same length. Default true.'),
+    interval: z
+      .enum(['hour', 'day', 'week', 'month'])
+      .optional()
+      .describe('Time series bucket. Default picks from the range length.'),
+    compare: z
+      .boolean()
+      .optional()
+      .describe('Include totals for the previous period of the same length. Default true.'),
   })
-  .describe('Web analytics overview: visitors, pageviews, sessions, bounce rate and top breakdowns.');
+  .describe(
+    'Web analytics overview: visitors, pageviews, sessions, bounce rate and top breakdowns.',
+  );
 
 export const experimentSpec = z
   .object({
@@ -121,14 +162,21 @@ export const experimentSpec = z
     flag: z.string().describe('Feature flag key whose variants are compared.'),
     goal: stepSchema
       .extend({
-        value: z.string().optional().describe('Optional numeric property summed per person (e.g. "revenue") for a mean metric.'),
+        value: z
+          .string()
+          .optional()
+          .describe(
+            'Optional numeric property summed per person (e.g. "revenue") for a mean metric.',
+          ),
       })
       .describe('The conversion event.'),
     variants: z
       .array(z.string())
       .min(2)
       .optional()
-      .describe('Variant keys, control first. Defaults to the variants seen, with "control" first if present.'),
+      .describe(
+        'Variant keys, control first. Defaults to the variants seen, with "control" first if present.',
+      ),
     from: time.optional(),
     to: time.optional(),
   })
@@ -140,8 +188,16 @@ export const sqlSpec = z
     query: z
       .string()
       .min(1)
-      .describe('One read-only SELECT. Tables: events, identities (D1 mode) or <namespace>.events / <namespace>.identities (lake mode).'),
-    limit: z.number().int().min(1).max(10_000).optional().describe('Maximum rows returned. Default 1000.'),
+      .describe(
+        'One read-only SELECT. Tables: events, identities (D1 mode) or <namespace>.events / <namespace>.identities (lake mode).',
+      ),
+    limit: z
+      .number()
+      .int()
+      .min(1)
+      .max(10_000)
+      .optional()
+      .describe('Maximum rows returned. Default 1000.'),
   })
   .describe('Raw read-only SQL against the event store.');
 

@@ -55,7 +55,9 @@ export function upsertSection(path: string, section: string, createIfMissing: bo
   if (!exists && !createIfMissing) return false;
   const current = exists ? readFileSync(path, 'utf8') : '';
   const pattern = new RegExp(`${START}[\\s\\S]*?${END}`);
-  const next = pattern.test(current) ? current.replace(pattern, section) : `${current.trimEnd()}${current.trim() ? '\n\n' : ''}${section}\n`;
+  const next = pattern.test(current)
+    ? current.replace(pattern, section)
+    : `${current.trimEnd()}${current.trim() ? '\n\n' : ''}${section}\n`;
   writeFileSync(path, next);
   return true;
 }
@@ -124,7 +126,10 @@ export function upsertMcpConfig(path: string): boolean {
       return false; // don't overwrite a file we can't parse
     }
   }
-  config.mcpServers = { ...config.mcpServers, glass: { command: 'npx', args: ['-y', '@glassanalytics/cli', 'mcp'] } };
+  config.mcpServers = {
+    ...config.mcpServers,
+    glass: { command: 'npx', args: ['-y', '@glassanalytics/cli', 'mcp'] },
+  };
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(config, null, 2)}\n`);
   return true;
@@ -141,6 +146,7 @@ export function writeAgentFiles(o: AgentFileOptions): string[] {
   writeFileSync(skill, skillFile(o));
   written.push('.claude/skills/glass/SKILL.md');
   if (upsertMcpConfig(join(o.root, '.mcp.json'))) written.push('.mcp.json');
-  if (existsSync(join(o.root, '.cursor')) && upsertMcpConfig(join(o.root, '.cursor', 'mcp.json'))) written.push('.cursor/mcp.json');
+  if (existsSync(join(o.root, '.cursor')) && upsertMcpConfig(join(o.root, '.cursor', 'mcp.json')))
+    written.push('.cursor/mcp.json');
   return written;
 }

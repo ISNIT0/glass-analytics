@@ -13,17 +13,17 @@ import { filtersSql, propertyNumber } from '../sql/filters.ts';
 import { eventsCte, num, text } from '../sql/source.ts';
 import {
   type BayesComparison,
-  type MeanComparison,
-  type SrmResult,
   compareConversions,
   compareMeans,
+  type MeanComparison,
+  type SrmResult,
   sampleRatioMismatch,
   sampleSizePerVariant,
   wilson,
 } from '../stats/tests.ts';
 import { DAY_MS, iso, resolveRange } from '../time.ts';
 import type { ExperimentSpec } from './schemas.ts';
-import { type QueryContext, type ResultBase, fmt } from './types.ts';
+import { fmt, type QueryContext, type ResultBase } from './types.ts';
 
 export interface VariantResult {
   variant: string;
@@ -51,7 +51,11 @@ export interface ExperimentResult extends ResultBase {
   estimatedDaysToSignificance: number | null;
 }
 
-export function compileExperiment(spec: ExperimentSpec, ctx: QueryContext, range: { from: number; to: number }): string {
+export function compileExperiment(
+  spec: ExperimentSpec,
+  ctx: QueryContext,
+  range: { from: number; to: number },
+): string {
   const d = ctx.dialect;
   const variant = d.jsonText('props', ['variant']);
   const flag = d.jsonText('props', ['flag']);
@@ -123,7 +127,10 @@ export async function runExperiment(
       conversions: s.conversions,
       conversionRate: s.exposures ? s.conversions / s.exposures : 0,
       rateInterval: wilson(s.conversions, s.exposures),
-      vsControl: i === 0 || !control || control.exposures === 0 || s.exposures === 0 ? null : compareConversions(control, s),
+      vsControl:
+        i === 0 || !control || control.exposures === 0 || s.exposures === 0
+          ? null
+          : compareConversions(control, s),
       mean: hasValue
         ? {
             value: s.exposures ? s.sum / s.exposures : 0,
@@ -146,8 +153,11 @@ export async function runExperiment(
   );
   const best = variants
     .filter((v) => v.vsControl)
-    .sort((a, b) => b.vsControl!.probabilityToBeatControl - a.vsControl!.probabilityToBeatControl)[0];
-  const winner = best && best.vsControl!.probabilityToBeatControl >= 0.95 && !srm.mismatch ? best.variant : null;
+    .sort(
+      (a, b) => b.vsControl!.probabilityToBeatControl - a.vsControl!.probabilityToBeatControl,
+    )[0];
+  const winner =
+    best && best.vsControl!.probabilityToBeatControl >= 0.95 && !srm.mismatch ? best.variant : null;
 
   // Days to significance for a 10% relative lift at the observed base rate and exposure pace.
   let estimatedDaysToSignificance: number | null = null;
@@ -156,9 +166,15 @@ export async function runExperiment(
   if (control && control.exposures > 0 && Number.isFinite(firstExposure) && !winner) {
     const days = Math.max(1, (now - firstExposure) / DAY_MS);
     const perDayPerVariant = totalExposures / days / Math.max(1, order.length);
-    const needed = sampleSizePerVariant(Math.max(0.001, control.conversions / control.exposures), 0.1);
+    const needed = sampleSizePerVariant(
+      Math.max(0.001, control.conversions / control.exposures),
+      0.1,
+    );
     const remaining = Math.max(0, needed - Math.min(...variants.map((v) => v.exposures)));
-    estimatedDaysToSignificance = perDayPerVariant > 0 && Number.isFinite(needed) ? Math.ceil(remaining / perDayPerVariant) : null;
+    estimatedDaysToSignificance =
+      perDayPerVariant > 0 && Number.isFinite(needed)
+        ? Math.ceil(remaining / perDayPerVariant)
+        : null;
   }
 
   const excluded = num(rows[0]?.multi);
@@ -187,6 +203,9 @@ export async function runExperiment(
     estimatedDaysToSignificance,
     sql: [sql],
     range: { from: iso(range.from), to: iso(range.to) },
-    summary: totalExposures === 0 ? `No exposures to "${spec.flag}" yet.` : `${lines.join('; ')}. ${verdict}`,
+    summary:
+      totalExposures === 0
+        ? `No exposures to "${spec.flag}" yet.`
+        : `${lines.join('; ')}. ${verdict}`,
   };
 }

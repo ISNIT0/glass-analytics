@@ -10,22 +10,50 @@ import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { GLASS_VERSION, isNewerThan, UPGRADE_COMMAND } from '@glassanalytics/core/version';
-import { CI_WORKFLOW_PATH, ciNextSteps, defaultBranch, hasCiWorkflow, inCi, writeCiWorkflow } from '../ci.ts';
+import {
+  CI_WORKFLOW_PATH,
+  ciNextSteps,
+  defaultBranch,
+  hasCiWorkflow,
+  inCi,
+  writeCiWorkflow,
+} from '../ci.ts';
 import { call } from '../client.ts';
-import { deploy, ensureBucket, installWorkerFiles, migrate, putSecrets, renderWranglerConfig } from '../cloudflare/provision.ts';
+import {
+  deploy,
+  ensureBucket,
+  installWorkerFiles,
+  migrate,
+  putSecrets,
+  renderWranglerConfig,
+} from '../cloudflare/provision.ts';
 import { createWrangler, type Wrangler } from '../cloudflare/wrangler.ts';
-import { connection, glassDir, loadConfig, loadCredentials, projectRoot, saveConfig, UsageError } from '../config.ts';
+import {
+  connection,
+  glassDir,
+  loadConfig,
+  loadCredentials,
+  projectRoot,
+  saveConfig,
+  UsageError,
+} from '../config.ts';
 import { color, line, ok, printJson, skip } from '../output.ts';
 import { ask } from '../prompt.ts';
 
 /** Where the built Worker lives: next to the CLI bundle when installed, or in the repo during development. */
 export function workerBundleDir(): string {
-  const candidates = [new URL('./worker/', import.meta.url), new URL('../../../worker/dist/', import.meta.url)];
+  const candidates = [
+    new URL('./worker/', import.meta.url),
+    new URL('../../../worker/dist/', import.meta.url),
+  ];
   for (const c of candidates) {
     const dir = fileURLToPath(c);
     if (existsSync(join(dir, 'worker.js')) && existsSync(join(dir, 'migrations'))) return dir;
   }
-  throw new UsageError('The Worker bundle is missing.', 'If you are working on Glass itself, run `pnpm build` first.');
+  throw new UsageError(
+    'The Worker bundle is missing.',
+    'If you are working on Glass itself, run `pnpm build` first.',
+  );
 }
 
 export interface UpgradeOptions {
@@ -64,17 +92,27 @@ export async function upgrade(options: UpgradeOptions, deps: UpgradeDeps = {}): 
   const root = deps.root ?? projectRoot();
   const env = deps.env ?? process.env;
   const config = loadConfig(root);
-  if (!config) throw new UsageError('No Glass deployment in this project.', 'Run `npx @glassanalytics/cli init` first.');
+  if (!config)
+    throw new UsageError(
+      'No Glass deployment in this project.',
+      'Run `npx @glassanalytics/cli init` first.',
+    );
   const ci = options.ci ?? inCi(env);
   const credentials = loadCredentials(root);
-  if (!credentials && !ci) throw new UsageError('No .glass/credentials.json in this project.', 'Run `npx @glassanalytics/cli init` again to restore keys, or deploy from CI (`glass upgrade --ci`), which leaves Worker secrets as they are.');
+  if (!credentials && !ci)
+    throw new UsageError(
+      'No .glass/credentials.json in this project.',
+      'Run `npx @glassanalytics/cli init` again to restore keys, or deploy from CI (`glass upgrade --ci`), which leaves Worker secrets as they are.',
+    );
   const dir = glassDir(root);
   const bundle = deps.bundleDir ?? workerBundleDir();
 
   // Never replace a newer Worker with an older one: CLI and Worker versions are the same number,
   // so an older CLI (an `npx` cache, a stale pin) would silently drop features and migrations.
   const live = await liveVersion(config.host, deps.fetcher ?? fetch);
-  const deployed = [config.version, live].filter((v): v is string => Boolean(v)).sort((a, b) => (isNewerThan(a, b) ? -1 : 1))[0];
+  const deployed = [config.version, live]
+    .filter((v): v is string => Boolean(v))
+    .sort((a, b) => (isNewerThan(a, b) ? -1 : 1))[0];
   if (deployed && isNewerThan(deployed, GLASS_VERSION) && !options.allowDowngrade) {
     throw new UsageError(
       `This deployment runs Glass ${deployed}, which is newer than this CLI (${GLASS_VERSION}). Nothing was changed.`,
@@ -91,17 +129,37 @@ export async function upgrade(options: UpgradeOptions, deps: UpgradeDeps = {}): 
     saveConfig(config, root);
     const branch = defaultBranch(root);
     if (options.json) {
-      printJson({ from, to: GLASS_VERSION, staged: true, deploy: CI_WORKFLOW_PATH, next: `Commit .glass/ and push to ${branch}` });
+      printJson({
+        from,
+        to: GLASS_VERSION,
+        staged: true,
+        deploy: CI_WORKFLOW_PATH,
+        next: `Commit .glass/ and push to ${branch}`,
+      });
       return;
     }
-    ok(`Staged Glass ${from === GLASS_VERSION ? GLASS_VERSION : `${from} → ${GLASS_VERSION}`} in .glass/ (nothing deployed)`);
+    ok(
+      `Staged Glass ${from === GLASS_VERSION ? GLASS_VERSION : `${from} → ${GLASS_VERSION}`} in .glass/ (nothing deployed)`,
+    );
     line(`  Commit .glass/ and push to ${branch}; ${CI_WORKFLOW_PATH} migrates and deploys it.`);
     line(color.dim('  Deploying from this machine instead: glass upgrade --local'));
     return;
   }
 
-  const token = options.token ?? env.CLOUDFLARE_API_TOKEN ?? (ci ? undefined : await ask('Cloudflare API token', { flag: '--token (or CLOUDFLARE_API_TOKEN)', secret: true }));
-  if (!token) throw new UsageError('CLOUDFLARE_API_TOKEN is not set.', `In CI, map the repository secret to it (see ${CI_WORKFLOW_PATH}).`);
+  const token =
+    options.token ??
+    env.CLOUDFLARE_API_TOKEN ??
+    (ci
+      ? undefined
+      : await ask('Cloudflare API token', {
+          flag: '--token (or CLOUDFLARE_API_TOKEN)',
+          secret: true,
+        }));
+  if (!token)
+    throw new UsageError(
+      'CLOUDFLARE_API_TOKEN is not set.',
+      `In CI, map the repository secret to it (see ${CI_WORKFLOW_PATH}).`,
+    );
   const wrangler = (deps.wrangler ?? createWrangler)({ token, accountId: config.accountId }, root);
   const report = (status: 'ok' | 'created' | 'skipped', label: string, detail?: string) => {
     if (options.json) return;
@@ -109,7 +167,10 @@ export async function upgrade(options: UpgradeOptions, deps: UpgradeDeps = {}): 
   };
 
   // Replay may have been skipped because R2 wasn't enabled; try again.
-  if (!config.replay && (await ensureBucket(wrangler, `${config.name}-replays`, config.eu, report, 'session replay'))) {
+  if (
+    !config.replay &&
+    (await ensureBucket(wrangler, `${config.name}-replays`, config.eu, report, 'session replay'))
+  ) {
     config.replay = { bucket: `${config.name}-replays` };
   }
   installWorkerFiles(dir, bundle);
@@ -131,28 +192,55 @@ export async function upgrade(options: UpgradeOptions, deps: UpgradeDeps = {}): 
       dir,
     );
   } else {
-    report('skipped', 'Worker secrets', 'no credentials.json here; the keys set by init stay in place');
+    report(
+      'skipped',
+      'Worker secrets',
+      'no credentials.json here; the keys set by init stay in place',
+    );
   }
   config.version = GLASS_VERSION;
   saveConfig(config, root);
-  if (options.json) printJson({ from, to: GLASS_VERSION, host: config.host, replay: Boolean(config.replay), staged: false });
-  else ok(`Glass ${from === GLASS_VERSION ? GLASS_VERSION : `${from} upgraded to ${GLASS_VERSION}`} is live at ${config.host}`);
+  if (options.json)
+    printJson({
+      from,
+      to: GLASS_VERSION,
+      host: config.host,
+      replay: Boolean(config.replay),
+      staged: false,
+    });
+  else
+    ok(
+      `Glass ${from === GLASS_VERSION ? GLASS_VERSION : `${from} upgraded to ${GLASS_VERSION}`} is live at ${config.host}`,
+    );
   if (!ci && !hasCiWorkflow(root) && !options.json) {
-    line(color.dim(`  Tip: \`glass ci\` writes ${CI_WORKFLOW_PATH} so future upgrades deploy from CI instead of this machine.`));
+    line(
+      color.dim(
+        `  Tip: \`glass ci\` writes ${CI_WORKFLOW_PATH} so future upgrades deploy from CI instead of this machine.`,
+      ),
+    );
   }
 }
 
 /** `glass ci`: write (or refresh) the GitHub Actions workflow that deploys Glass. */
-export function ci(options: { branch?: string; secret?: string; json?: boolean }, deps: { root?: string } = {}): void {
+export function ci(
+  options: { branch?: string; secret?: string; json?: boolean },
+  deps: { root?: string } = {},
+): void {
   const root = deps.root ?? projectRoot();
-  if (!loadConfig(root)) throw new UsageError('No Glass deployment in this project.', 'Run `npx @glassanalytics/cli init` first.');
+  if (!loadConfig(root))
+    throw new UsageError(
+      'No Glass deployment in this project.',
+      'Run `npx @glassanalytics/cli init` first.',
+    );
   const result = writeCiWorkflow(root, { branch: options.branch, secret: options.secret });
   const next = ciNextSteps(result);
   if (options.json) {
     printJson({ ...result, next });
     return;
   }
-  (result.status === 'kept' ? skip : ok)(`${result.path} ${result.status === 'kept' ? 'already exists (left as is)' : result.status}`);
+  (result.status === 'kept' ? skip : ok)(
+    `${result.path} ${result.status === 'kept' ? 'already exists (left as is)' : result.status}`,
+  );
   line();
   line(color.bold('Finish CI setup'));
   for (const [i, step] of next.entries()) line(`  ${i + 1}. ${step}`);
@@ -170,9 +258,15 @@ export async function status(options: { json?: boolean }): Promise<void> {
     replay: boolean;
     freshnessSeconds: number;
   }>('GET', '/health');
-  const events = await call<{ events: { event: string; count: number; lastSeen: string }[] }>('GET', `/api/events?days=1${conn.project ? `&project=${conn.project}` : ''}`).catch(() => ({ events: [] }));
+  const events = await call<{ events: { event: string; count: number; lastSeen: string }[] }>(
+    'GET',
+    `/api/events?days=1${conn.project ? `&project=${conn.project}` : ''}`,
+  ).catch(() => ({ events: [] }));
   const total = events.events.reduce((a, e) => a + e.count, 0);
-  const last = events.events.map((e) => e.lastSeen).sort().at(-1);
+  const last = events.events
+    .map((e) => e.lastSeen)
+    .sort()
+    .at(-1);
   const mcp = existsSync(join(projectRoot(), '.mcp.json'));
   const cliMismatch = health.version !== GLASS_VERSION;
   const npmNewer = Boolean(health.latest && isNewerThan(health.latest, health.version));
@@ -195,13 +289,29 @@ export async function status(options: { json?: boolean }): Promise<void> {
   };
   if (options.json) return printJson(result);
   ok(`Worker reachable at ${conn.host} (Glass ${health.version}, ${health.store} store)`);
-  (total ? ok : skip)(total ? `${total.toLocaleString('en-US')} events in the last 24 hours, latest ${last}` : 'No events in the last 24 hours. Is the snippet installed?');
-  (health.replay ? ok : skip)(health.replay ? 'Session replay enabled' : 'Session replay disabled (no R2 bucket); `glass upgrade` retries');
-  (mcp ? ok : skip)(mcp ? 'MCP server configured in .mcp.json' : 'No .mcp.json; run `glass init` again to write agent files');
+  (total ? ok : skip)(
+    total
+      ? `${total.toLocaleString('en-US')} events in the last 24 hours, latest ${last}`
+      : 'No events in the last 24 hours. Is the snippet installed?',
+  );
+  (health.replay ? ok : skip)(
+    health.replay
+      ? 'Session replay enabled'
+      : 'Session replay disabled (no R2 bucket); `glass upgrade` retries',
+  );
+  (mcp ? ok : skip)(
+    mcp
+      ? 'MCP server configured in .mcp.json'
+      : 'No .mcp.json; run `glass init` again to write agent files',
+  );
   if (health.latest && isNewerThan(health.latest, health.version)) {
-    skip(`Glass ${health.latest} is available (this deployment is ${health.version}). Run: ${upgradeCommand}`);
+    skip(
+      `Glass ${health.latest} is available (this deployment is ${health.version}). Run: ${upgradeCommand}`,
+    );
   } else if (cliMismatch) {
-    skip(`This CLI is Glass ${GLASS_VERSION}; the Worker runs ${health.version}. Run: ${upgradeCommand}`);
+    skip(
+      `This CLI is Glass ${GLASS_VERSION}; the Worker runs ${health.version}. Run: ${upgradeCommand}`,
+    );
   } else {
     ok(`Up to date (Glass ${health.version})`);
   }
@@ -211,8 +321,22 @@ export function key(options: { read?: boolean; json?: boolean }): void {
   const conn = connection();
   const credentials = loadCredentials();
   const value = options.read ? credentials?.readKey : conn.key;
-  if (options.json) return printJson({ host: conn.host, project: conn.project, dashboard: `${conn.host}/app`, key: value });
+  if (options.json) {
+    printJson({
+      host: conn.host,
+      project: conn.project,
+      dashboard: `${conn.host}/app`,
+      key: value,
+    });
+    return;
+  }
   line(`Dashboard: ${conn.host}/app`);
   line(`${options.read ? 'Read-only key' : 'Admin key'}: ${value}`);
-  line(color.dim(options.read ? 'Safe to share for viewing.' : 'Full access. Use `glass key --read` for a key that can only view.'));
+  line(
+    color.dim(
+      options.read
+        ? 'Safe to share for viewing.'
+        : 'Full access. Use `glass key --read` for a key that can only view.',
+    ),
+  );
 }

@@ -40,20 +40,35 @@ export async function getProject(db: D1Database, id: string): Promise<Project | 
 }
 
 export async function listProjects(db: D1Database): Promise<Project[]> {
-  const { results } = await db.prepare('SELECT * FROM projects ORDER BY created_at').all<ProjectRow>();
+  const { results } = await db
+    .prepare('SELECT * FROM projects ORDER BY created_at')
+    .all<ProjectRow>();
   return results.map(toProject);
 }
 
 const PROJECT_ID = /^[a-z0-9][a-z0-9_-]{0,62}$/;
 
-export async function createProject(db: D1Database, input: { id: string; name?: string; allowedOrigins?: string[] }): Promise<Project> {
+export async function createProject(
+  db: D1Database,
+  input: { id: string; name?: string; allowedOrigins?: string[] },
+): Promise<Project> {
   if (!PROJECT_ID.test(input.id)) {
-    throw new HttpError(400, 'Project id must be 1-63 lowercase letters, digits, "-" or "_", starting with a letter or digit');
+    throw new HttpError(
+      400,
+      'Project id must be 1-63 lowercase letters, digits, "-" or "_", starting with a letter or digit',
+    );
   }
   const now = Date.now();
   await db
-    .prepare('INSERT INTO projects (id, name, allowed_origins, created_at) VALUES (?, ?, ?, ?) ON CONFLICT (id) DO UPDATE SET name = excluded.name, allowed_origins = excluded.allowed_origins')
-    .bind(input.id, input.name ?? input.id, input.allowedOrigins?.length ? JSON.stringify(input.allowedOrigins) : null, now)
+    .prepare(
+      'INSERT INTO projects (id, name, allowed_origins, created_at) VALUES (?, ?, ?, ?) ON CONFLICT (id) DO UPDATE SET name = excluded.name, allowed_origins = excluded.allowed_origins',
+    )
+    .bind(
+      input.id,
+      input.name ?? input.id,
+      input.allowedOrigins?.length ? JSON.stringify(input.allowedOrigins) : null,
+      now,
+    )
     .run();
   cache.delete(input.id);
   return (await getProject(db, input.id))!;
@@ -65,13 +80,18 @@ export async function createProject(db: D1Database, input: { id: string; name?: 
  */
 export async function resolveProject(db: D1Database, requested?: string | null): Promise<string> {
   if (requested) {
-    if (!(await getProject(db, requested))) throw new HttpError(404, `Unknown project "${requested}"`);
+    if (!(await getProject(db, requested)))
+      throw new HttpError(404, `Unknown project "${requested}"`);
     return requested;
   }
   const projects = await listProjects(db);
   if (projects.length === 1) return projects[0]!.id;
-  if (projects.length === 0) throw new HttpError(404, 'No projects yet', 'Create one with `glass projects add <id>`.');
-  throw new HttpError(400, `Several projects exist; pass "project": one of ${projects.map((p) => `"${p.id}"`).join(', ')}`);
+  if (projects.length === 0)
+    throw new HttpError(404, 'No projects yet', 'Create one with `glass projects add <id>`.');
+  throw new HttpError(
+    400,
+    `Several projects exist; pass "project": one of ${projects.map((p) => `"${p.id}"`).join(', ')}`,
+  );
 }
 
 export function clearProjectCache(): void {

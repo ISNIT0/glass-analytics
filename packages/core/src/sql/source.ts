@@ -35,7 +35,10 @@ export interface SourceOptions {
 export function eventsCte(d: Dialect, o: SourceOptions): string {
   // Cohort filters test the resolved person id, which only exists after the identity join.
   const cohort = (o.filters ?? []).filter((f) => f.property === COHORT_PROPERTY);
-  const rows = resolvedEvents(d, { ...o, filters: (o.filters ?? []).filter((f) => f.property !== COHORT_PROPERTY) });
+  const rows = resolvedEvents(d, {
+    ...o,
+    filters: (o.filters ?? []).filter((f) => f.property !== COHORT_PROPERTY),
+  });
   if (cohort.length === 0) return `ev AS (\n  ${rows}\n)`;
   return `ev AS (\n  SELECT * FROM (\n  ${rows}\n  ) ev_all\n  WHERE ${filtersSql(cohort, d)}\n)`;
 }
@@ -74,7 +77,12 @@ function resolvedEvents(d: Dialect, o: SourceOptions): string {
  * Hours, days and weeks are integer arithmetic (identical in every engine);
  * months need calendar logic, delegated to the dialect.
  */
-export function bucketExpr(d: Dialect, tsMs: string, interval: Interval, utcOffsetMinutes = 0): string {
+export function bucketExpr(
+  d: Dialect,
+  tsMs: string,
+  interval: Interval,
+  utcOffsetMinutes = 0,
+): string {
   const off = utcOffsetMinutes * 60_000;
   const local = off === 0 ? tsMs : `(${tsMs} + ${off})`;
   const back = off === 0 ? '' : ` - ${off}`;

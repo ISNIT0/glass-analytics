@@ -15,7 +15,12 @@
  * independently (see docs/extending.md, "Enriching events").
  */
 
-import { type StoredEvent, type WireBatch, type WireEvent, isValidEventName } from '@glassanalytics/core/events';
+import {
+  isValidEventName,
+  type StoredEvent,
+  type WireBatch,
+  type WireEvent,
+} from '@glassanalytics/core/events';
 import { sha256Hex } from '@glassanalytics/core/hash';
 import { isBot, parseUserAgent } from '@glassanalytics/core/ua';
 import { parsePage, referrerHost } from '@glassanalytics/core/url';
@@ -42,7 +47,10 @@ export interface RequestInfo {
 export function requestInfo(request: Request): RequestInfo {
   const cf = (request as Request & { cf?: Record<string, unknown> }).cf ?? {};
   return {
-    ip: request.headers.get('CF-Connecting-IP') ?? request.headers.get('X-Forwarded-For')?.split(',')[0]?.trim() ?? '',
+    ip:
+      request.headers.get('CF-Connecting-IP') ??
+      request.headers.get('X-Forwarded-For')?.split(',')[0]?.trim() ??
+      '',
     userAgent: request.headers.get('User-Agent') ?? '',
     origin: request.headers.get('Origin'),
     country: String(cf.country ?? request.headers.get('CF-IPCountry') ?? ''),
@@ -56,7 +64,12 @@ export interface IngestResult {
   dropped: number;
 }
 
-export async function handleIngest(request: Request, env: Env, store: EventStore, now = Date.now()): Promise<IngestResult> {
+export async function handleIngest(
+  request: Request,
+  env: Env,
+  store: EventStore,
+  now = Date.now(),
+): Promise<IngestResult> {
   const info = requestInfo(request);
   const batch = await readJson<Partial<WireBatch>>(request, 1_000_000);
   if (typeof batch.project !== 'string' || !Array.isArray(batch.events)) {
@@ -64,9 +77,17 @@ export async function handleIngest(request: Request, env: Env, store: EventStore
   }
   const project = await getProject(env.DB, batch.project);
   if (!project) {
-    throw new HttpError(404, `Unknown project "${batch.project}"`, 'Create it with `glass projects add <id>` or check data-project.');
+    throw new HttpError(
+      404,
+      `Unknown project "${batch.project}"`,
+      'Create it with `glass projects add <id>` or check data-project.',
+    );
   }
-  if (project.allowedOrigins.length > 0 && info.origin && !project.allowedOrigins.includes(info.origin)) {
+  if (
+    project.allowedOrigins.length > 0 &&
+    info.origin &&
+    !project.allowedOrigins.includes(info.origin)
+  ) {
     throw new HttpError(403, `Origin ${info.origin} is not allowed for project "${project.id}"`);
   }
   // Server-side senders often have no user agent; only browsers that look like bots are dropped.
@@ -74,7 +95,15 @@ export async function handleIngest(request: Request, env: Env, store: EventStore
 
   const events = batch.events.slice(0, MAX_EVENTS).filter(isWellFormed);
   const skew = typeof batch.sent_at === 'number' ? now - batch.sent_at : 0;
-  const rows = await toRows(events, { project: project.id, info, now, skew, lib: String(batch.lib ?? '').slice(0, 50), env, store });
+  const rows = await toRows(events, {
+    project: project.id,
+    info,
+    now,
+    skew,
+    lib: String(batch.lib ?? '').slice(0, 50),
+    env,
+    store,
+  });
   await store.write(rows);
   return { accepted: rows.length, dropped: batch.events.length - rows.length };
 }
@@ -82,7 +111,13 @@ export async function handleIngest(request: Request, env: Env, store: EventStore
 function isWellFormed(e: unknown): e is WireEvent {
   if (!e || typeof e !== 'object') return false;
   const w = e as WireEvent;
-  return typeof w.id === 'string' && w.id.length <= 64 && isValidEventName(w.event) && typeof w.ts === 'number' && Number.isFinite(w.ts);
+  return (
+    typeof w.id === 'string' &&
+    w.id.length <= 64 &&
+    isValidEventName(w.event) &&
+    typeof w.ts === 'number' &&
+    Number.isFinite(w.ts)
+  );
 }
 
 interface RowContext {
@@ -95,14 +130,18 @@ interface RowContext {
   store: EventStore;
 }
 
-const str = (v: unknown, max = 500): string => (typeof v === 'string' ? v.slice(0, max) : v == null ? '' : String(v).slice(0, max));
+const str = (v: unknown, max = 500): string =>
+  typeof v === 'string' ? v.slice(0, max) : v == null ? '' : String(v).slice(0, max);
 
 /** Steps 4–6 for a validated batch. */
 async function toRows(events: WireEvent[], ctx: RowContext): Promise<StoredEvent[]> {
   if (events.length === 0) return [];
   const anonymous = await deriveCookielessIds(ctx);
   const withIds = events.map((e) => {
-    const ts = Math.min(ctx.now + 60_000, Math.max(ctx.now - MAX_PAST_MS, Math.round(e.ts + ctx.skew)));
+    const ts = Math.min(
+      ctx.now + 60_000,
+      Math.max(ctx.now - MAX_PAST_MS, Math.round(e.ts + ctx.skew)),
+    );
     const distinct = str(e.distinct_id, 200) || anonymous.distinctId;
     const session = str(e.session_id, 100) || anonymous.sessionId(ts);
     return { e, ts, distinct, user: str(e.user_id, 200) || null, session };
@@ -165,7 +204,9 @@ function boundedJson(value: unknown): string {
 async function deriveCookielessIds(ctx: RowContext) {
   const day = Math.floor(ctx.now / 86_400_000);
   const salt = `${ctx.env.GLASS_SALT_SECRET ?? ctx.env.GLASS_ADMIN_KEY ?? 'glass'}:${day}`;
-  const visitor = (await sha256Hex(`${salt}:${ctx.project}:${ctx.info.ip}:${ctx.info.userAgent}`)).slice(0, 20);
+  const visitor = (
+    await sha256Hex(`${salt}:${ctx.project}:${ctx.info.ip}:${ctx.info.userAgent}`)
+  ).slice(0, 20);
   return {
     distinctId: `c_${visitor}`,
     sessionId: (ts: number) => `cs_${visitor}_${Math.floor(ts / SESSION_BUCKET_MS)}`,
@@ -181,26 +222,44 @@ async function applyIdentity(ctx: RowContext, events: WithIds[]): Promise<void> 
     const props = (e.props ?? {}) as { $set?: unknown; $set_once?: unknown };
     if (e.event === '$identify' && user) {
       const res = await db
-        .prepare('INSERT OR IGNORE INTO identities (project, distinct_id, person_id, created_at) VALUES (?, ?, ?, ?)')
+        .prepare(
+          'INSERT OR IGNORE INTO identities (project, distinct_id, person_id, created_at) VALUES (?, ?, ?, ?)',
+        )
         .bind(ctx.project, distinct, user, ts)
         .run();
       if ((res.meta.changes ?? 0) > 0) {
-        await ctx.store.writeIdentity({ project: ctx.project, distinct_id: distinct, person_id: user, created_at: ts });
+        await ctx.store.writeIdentity({
+          project: ctx.project,
+          distinct_id: distinct,
+          person_id: user,
+          created_at: ts,
+        });
       }
     }
     const set = isObject(props.$set) ? props.$set : null;
     const once = isObject(props.$set_once) ? props.$set_once : null;
-    if ((e.event === '$identify' || e.event === '$set') && (set || once || e.event === '$identify')) {
+    if (
+      (e.event === '$identify' || e.event === '$set') &&
+      (set || once || e.event === '$identify')
+    ) {
       const person = user ?? (await lookupIdentity(db, ctx.project, distinct)) ?? distinct;
       await upsertPerson(db, ctx.project, person, ts, set ?? {}, once ?? {});
     }
   }
 }
 
-const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+const isObject = (v: unknown): v is Record<string, unknown> =>
+  !!v && typeof v === 'object' && !Array.isArray(v);
 
-async function lookupIdentity(db: D1Database, project: string, distinct: string): Promise<string | null> {
-  const row = await db.prepare('SELECT person_id FROM identities WHERE project = ? AND distinct_id = ?').bind(project, distinct).first<{ person_id: string }>();
+async function lookupIdentity(
+  db: D1Database,
+  project: string,
+  distinct: string,
+): Promise<string | null> {
+  const row = await db
+    .prepare('SELECT person_id FROM identities WHERE project = ? AND distinct_id = ?')
+    .bind(project, distinct)
+    .first<{ person_id: string }>();
   return row?.person_id ?? null;
 }
 
@@ -260,7 +319,9 @@ async function personProperties(ctx: RowContext, persons: string[]): Promise<Map
   }
   if (out.size > 0) {
     const ids = [...out.keys()];
-    await ctx.env.DB.prepare(`UPDATE persons SET last_seen = MAX(last_seen, ?) WHERE project = ? AND person_id IN (${ids.map(() => '?').join(', ')})`)
+    await ctx.env.DB.prepare(
+      `UPDATE persons SET last_seen = MAX(last_seen, ?) WHERE project = ? AND person_id IN (${ids.map(() => '?').join(', ')})`,
+    )
       .bind(ctx.now, ctx.project, ...ids)
       .run();
   }

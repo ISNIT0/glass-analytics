@@ -9,17 +9,17 @@ The SDK is about 4 KB gzipped and has no dependencies. Session replay loads a se
 
 ## `glass.init(options)`
 
-| Option | Default | |
-| --- | --- | --- |
-| `host` | required | Your Worker URL, e.g. `https://glass.acme.workers.dev` or `/_glass` |
-| `project` | required | Project id |
-| `persistence` | `'localStorage'` | `'cookieless'` stores nothing on the device (see [privacy.md](privacy.md)) |
-| `autocapture` | `true` | `false`, or `{ pageviews, clicks, errors, webVitals }` to pick |
-| `replay` | off | `{ sampleRate: 0.1, onErrorSampleRate: 1, maskAllText: false, maskTextSelector: '[data-glass-mask]', blockSelector: '[data-glass-block]', console: ['warn', 'error'], network: true }` |
-| `flags` | `true` | Load feature flags on init |
-| `beforeSend` | | `(event) => event | null` to edit or drop events |
-| `flushIntervalMs` | `5000` | How often queued events are sent |
-| `debug` | `false` | Log events to the console |
+| Option            | Default          |                                                                                                                                                                                        |
+| ----------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `host`            | required         | Your Worker URL, e.g. `https://glass.acme.workers.dev` or `/_glass`                                                                                                                    |
+| `project`         | required         | Project id                                                                                                                                                                             |
+| `persistence`     | `'localStorage'` | `'cookieless'` stores nothing on the device (see [privacy.md](privacy.md))                                                                                                             |
+| `autocapture`     | `true`           | `false`, or `{ pageviews, clicks, errors, webVitals }` to pick                                                                                                                         |
+| `replay`          | off              | `{ sampleRate: 0.1, onErrorSampleRate: 1, maskAllText: false, maskTextSelector: '[data-glass-mask]', blockSelector: '[data-glass-block]', console: ['warn', 'error'], network: true }` |
+| `flags`           | `true`           | Load feature flags on init                                                                                                                                                             |
+| `beforeSend`      |                  | `(event) => event                                                                                                                                                                      | null` to edit or drop events |
+| `flushIntervalMs` | `5000`           | How often queued events are sent                                                                                                                                                       |
+| `debug`           | `false`          | Log events to the console                                                                                                                                                              |
 
 Script tag equivalents: `data-project`, `data-host`, `data-persistence="cookieless"`, `data-autocapture="false"`, `data-replay-sample-rate="0.1"`, `data-replay-on-error-sample-rate="1"`, `data-replay-console="false"` (or `"all"`), `data-replay-network="false"`, `data-replay-mask-all-text="true"`, `data-debug="true"`.
 
@@ -33,14 +33,14 @@ Events are batched and sent every few seconds, when 20 are waiting, and when the
 
 Automatic events:
 
-| Event | When | Properties |
-| --- | --- | --- |
-| `$pageview` | Load and client-side navigation (History API) | |
-| `$pageleave` | Leaving a page | `duration_ms` |
-| `$click` | Clicks on links, buttons, `[role=button]` | `tag`, `text`, `href`, `outbound` |
-| `$exception` | Uncaught errors, unhandled rejections | `type`, `message`, `stack` |
-| `$web_vitals` | Page hidden | `metric` (LCP, CLS, INP, FCP, TTFB), `value` |
-| `$exposure` | First `glass.flag(key)` read on a page | `flag`, `variant` |
+| Event         | When                                          | Properties                                   |
+| ------------- | --------------------------------------------- | -------------------------------------------- |
+| `$pageview`   | Load and client-side navigation (History API) |                                              |
+| `$pageleave`  | Leaving a page                                | `duration_ms`                                |
+| `$click`      | Clicks on links, buttons, `[role=button]`     | `tag`, `text`, `href`, `outbound`            |
+| `$exception`  | Uncaught errors, unhandled rejections         | `type`, `message`, `stack`                   |
+| `$web_vitals` | Page hidden                                   | `metric` (LCP, CLS, INP, FCP, TTFB), `value` |
+| `$exposure`   | First `glass.flag(key)` read on a page        | `flag`, `variant`                            |
 
 Add `data-glass-no-capture` to an element to exclude it from click capture. Add `data-glass-event="name"` (and `data-glass-prop-*` attributes) to send a custom event on click instead.
 
@@ -93,7 +93,7 @@ Each session gets a timeline: labelled clicks (with a CSS selector you can searc
 
 ```js
 glass.init({ host, project, persistence: 'cookieless' }); // before consent
-glass.consent(true);  // after the user agrees: switch to a persistent id, allow replay
+glass.consent(true); // after the user agrees: switch to a persistent id, allow replay
 glass.consent(false); // delete stored ids, stop replay, go back to cookieless
 ```
 
@@ -106,7 +106,16 @@ await fetch('https://glass.acme.workers.dev/e', {
   method: 'POST',
   body: JSON.stringify({
     project: 'my-app',
-    events: [{ id: crypto.randomUUID(), event: 'invoice_paid', ts: Date.now(), distinct_id: user.id, user_id: user.id, props: { amount: 49 } }],
+    events: [
+      {
+        id: crypto.randomUUID(),
+        event: 'invoice_paid',
+        ts: Date.now(),
+        distinct_id: user.id,
+        user_id: user.id,
+        props: { amount: 49 },
+      },
+    ],
   }),
 });
 ```

@@ -87,7 +87,9 @@ export function compareMeans(control: MeanStats, variant: MeanStats): MeanCompar
   };
   const c = stats(control);
   const v = stats(variant);
-  const se = Math.sqrt((control.n ? c.variance / control.n : 0) + (variant.n ? v.variance / variant.n : 0));
+  const se = Math.sqrt(
+    (control.n ? c.variance / control.n : 0) + (variant.n ? v.variance / variant.n : 0),
+  );
   const diff = v.mean - c.mean;
   const z = se > 0 ? diff / se : 0;
   return {
@@ -109,7 +111,10 @@ function erf(x: number): number {
   const ax = Math.abs(x);
   const t = 1 / (1 + 0.3275911 * ax);
   const y =
-    1 - ((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-ax * ax);
+    1 -
+    ((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) *
+      t *
+      Math.exp(-ax * ax);
   return sign * y;
 }
 
@@ -124,7 +129,8 @@ export interface SrmResult {
 export function sampleRatioMismatch(observed: number[], weights: number[]): SrmResult {
   const total = observed.reduce((a, b) => a + b, 0);
   const weightSum = weights.reduce((a, b) => a + b, 0);
-  if (total === 0 || weightSum === 0 || observed.length < 2) return { chiSquare: 0, pValue: 1, mismatch: false };
+  if (total === 0 || weightSum === 0 || observed.length < 2)
+    return { chiSquare: 0, pValue: 1, mismatch: false };
   let chi = 0;
   observed.forEach((o, i) => {
     const expected = (total * (weights[i] ?? 0)) / weightSum;
@@ -177,8 +183,9 @@ function upperRegularizedGamma(a: number, x: number): number {
 function logGamma(x: number): number {
   const g = 7;
   const coef = [
-    0.99999999999980993, 676.5203681218851, -1259.1392167224028, 771.32342877765313, -176.61502916214059,
-    12.507343278686905, -0.13857109526572012, 9.9843695780195716e-6, 1.5056327351493116e-7,
+    0.99999999999980993, 676.5203681218851, -1259.1392167224028, 771.32342877765313,
+    -176.61502916214059, 12.507343278686905, -0.13857109526572012, 9.9843695780195716e-6,
+    1.5056327351493116e-7,
   ];
   if (x < 0.5) return Math.log(Math.PI / Math.sin(Math.PI * x)) - logGamma(1 - x);
   const xx = x - 1;

@@ -9,11 +9,20 @@
 import { createInterface } from 'node:readline';
 import { connection } from '../config.ts';
 
-export async function mcpBridge(options: { fetcher?: typeof fetch; input?: NodeJS.ReadableStream; output?: NodeJS.WritableStream } = {}): Promise<void> {
+export async function mcpBridge(
+  options: {
+    fetcher?: typeof fetch;
+    input?: NodeJS.ReadableStream;
+    output?: NodeJS.WritableStream;
+  } = {},
+): Promise<void> {
   const conn = connection();
   const fetcher = options.fetcher ?? fetch;
   const output = options.output ?? process.stdout;
-  const rl = createInterface({ input: options.input ?? process.stdin, crlfDelay: Number.POSITIVE_INFINITY });
+  const rl = createInterface({
+    input: options.input ?? process.stdin,
+    crlfDelay: Number.POSITIVE_INFINITY,
+  });
   const pending: Promise<void>[] = [];
 
   const send = (message: unknown) => output.write(`${JSON.stringify(message)}\n`);
@@ -29,18 +38,36 @@ export async function mcpBridge(options: { fetcher?: typeof fetch; input?: NodeJ
     try {
       const res = await fetcher(`${conn.host}/mcp`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${conn.key}`, 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+        headers: {
+          Authorization: `Bearer ${conn.key}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json, text/event-stream',
+        },
         body: lineText,
       });
       if (res.status === 202 || message.id === undefined) return; // notification
       const text = await res.text();
       if (!res.ok && !text.startsWith('{')) {
-        send({ jsonrpc: '2.0', id: message.id ?? null, error: { code: -32603, message: `Glass returned HTTP ${res.status}: ${text.slice(0, 200)}` } });
+        send({
+          jsonrpc: '2.0',
+          id: message.id ?? null,
+          error: {
+            code: -32603,
+            message: `Glass returned HTTP ${res.status}: ${text.slice(0, 200)}`,
+          },
+        });
         return;
       }
       output.write(`${text.replace(/\n/g, '')}\n`);
     } catch (err) {
-      send({ jsonrpc: '2.0', id: message.id ?? null, error: { code: -32603, message: `Could not reach ${conn.host}: ${err instanceof Error ? err.message : String(err)}` } });
+      send({
+        jsonrpc: '2.0',
+        id: message.id ?? null,
+        error: {
+          code: -32603,
+          message: `Could not reach ${conn.host}: ${err instanceof Error ? err.message : String(err)}`,
+        },
+      });
     }
   };
 

@@ -10,9 +10,9 @@
 
 import { filtersSql } from '../sql/filters.ts';
 import { bucketExpr, eventsCte, fixedIntervalMs, num } from '../sql/source.ts';
-import { DAY_MS, addMonths, iso, resolveRange } from '../time.ts';
+import { addMonths, DAY_MS, iso, resolveRange } from '../time.ts';
 import type { RetentionSpec } from './schemas.ts';
-import { type QueryContext, type ResultBase, fmt } from './types.ts';
+import { fmt, type QueryContext, type ResultBase } from './types.ts';
 
 export interface RetentionCohort {
   /** Cohort period start, epoch ms. */
@@ -32,13 +32,19 @@ export interface RetentionResult extends ResultBase {
   average: number[];
 }
 
-export function compileRetention(spec: RetentionSpec, ctx: QueryContext, range: { from: number; to: number }): string {
+export function compileRetention(
+  spec: RetentionSpec,
+  ctx: QueryContext,
+  range: { from: number; to: number },
+): string {
   const d = ctx.dialect;
   const period = spec.period ?? 'week';
   const periods = spec.periods ?? 8;
   const now = ctx.now ?? Date.now();
   const horizon =
-    period === 'month' ? addMonths(range.to, periods + 1) : range.to + (periods + 1) * fixedIntervalMs(period);
+    period === 'month'
+      ? addMonths(range.to, periods + 1)
+      : range.to + (periods + 1) * fixedIntervalMs(period);
   const cte = eventsCte(d, {
     project: ctx.project,
     from: range.from,
@@ -49,7 +55,9 @@ export function compileRetention(spec: RetentionSpec, ctx: QueryContext, range: 
   const off = spec.utcOffsetMinutes ?? 0;
   // Month buckets are compared by month index (year*12+month), others by bucket start ms.
   const key = (ts: string) =>
-    period === 'month' ? d.monthIndex(off ? `(${ts} + ${off * 60_000})` : ts) : bucketExpr(d, ts, period, off);
+    period === 'month'
+      ? d.monthIndex(off ? `(${ts} + ${off * 60_000})` : ts)
+      : bucketExpr(d, ts, period, off);
   const step = period === 'month' ? 1 : fixedIntervalMs(period);
   const diff = `(a.abucket - c.cbucket) / ${step}`;
   return `WITH ${cte},
@@ -73,7 +81,10 @@ UNION ALL
 SELECT cbucket AS cohort, 0 AS k, COUNT(*) AS n FROM c GROUP BY cbucket`;
 }
 
-export async function runRetention(spec: RetentionSpec, ctx: QueryContext): Promise<RetentionResult> {
+export async function runRetention(
+  spec: RetentionSpec,
+  ctx: QueryContext,
+): Promise<RetentionResult> {
   const range = resolveRange(spec.from, spec.to, ctx.now);
   const period = spec.period ?? 'week';
   const periods = spec.periods ?? 8;
@@ -104,7 +115,12 @@ export async function runRetention(spec: RetentionSpec, ctx: QueryContext): Prom
     .sort((a, b) => a[0] - b[0])
     .map(([cohort, counts]) => {
       const size = counts[0] ?? 0;
-      return { start: toStart(cohort), size, counts, rates: counts.map((c) => (size ? c / size : 0)) };
+      return {
+        start: toStart(cohort),
+        size,
+        counts,
+        rates: counts.map((c) => (size ? c / size : 0)),
+      };
     });
 
   const average = Array.from({ length: periods + 1 }, (_, k) => {

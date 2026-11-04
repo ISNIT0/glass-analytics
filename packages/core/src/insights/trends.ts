@@ -4,9 +4,9 @@
 
 import { breakdownExpr, breakdownProperties, filtersSql, propertyNumber } from '../sql/filters.ts';
 import { bucketExpr, eventsCte, num, text } from '../sql/source.ts';
-import { type Interval, bucketsBetween, iso, resolveRange } from '../time.ts';
+import { bucketsBetween, type Interval, iso, resolveRange } from '../time.ts';
 import type { TrendsSpec } from './schemas.ts';
-import { type QueryContext, type ResultBase, fmt } from './types.ts';
+import { fmt, type QueryContext, type ResultBase } from './types.ts';
 
 export interface TrendsSeries {
   label: string;
@@ -51,7 +51,12 @@ function seriesLabel(s: Series): string {
 }
 
 /** Compile the per-bucket query and the range-total query for one series. */
-export function compileTrendsSeries(spec: TrendsSpec, series: Series, ctx: QueryContext, range: { from: number; to: number }) {
+export function compileTrendsSeries(
+  spec: TrendsSpec,
+  series: Series,
+  ctx: QueryContext,
+  range: { from: number; to: number },
+) {
   const d = ctx.dialect;
   const interval = spec.interval ?? 'day';
   const math = series.math ?? 'total';

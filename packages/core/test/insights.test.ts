@@ -5,7 +5,7 @@ import { runFunnel } from '../src/insights/funnel.ts';
 import { runRetention } from '../src/insights/retention.ts';
 import { runTrends } from '../src/insights/trends.ts';
 import { runWeb } from '../src/insights/web.ts';
-import { DAY, NOW, context, createDb, insert, link } from './helpers.ts';
+import { context, createDb, DAY, insert, link, NOW } from './helpers.ts';
 
 describe('trends', () => {
   it('counts events per day and fills empty days with zero', async () => {
@@ -16,7 +16,10 @@ describe('trends', () => {
       { event: 'signup', daysAgo: 2 },
       { event: 'other', daysAgo: 0 },
     ]);
-    const r = await runTrends({ series: [{ event: 'signup' }], from: '-3d', to: 'now', interval: 'day' }, context(db));
+    const r = await runTrends(
+      { series: [{ event: 'signup' }], from: '-3d', to: 'now', interval: 'day' },
+      context(db),
+    );
     assert.equal(r.series.length, 1);
     assert.equal(r.series[0]!.total, 3);
     assert.deepEqual(r.series[0]!.values.slice(-3), [1, 0, 2]);
@@ -31,7 +34,10 @@ describe('trends', () => {
       { event: 'view', distinct_id: 'anon-2' },
     ]);
     link(db, 'anon-1', 'u1');
-    const r = await runTrends({ series: [{ event: 'view', math: 'unique_persons' }], from: '-1d' }, context(db));
+    const r = await runTrends(
+      { series: [{ event: 'view', math: 'unique_persons' }], from: '-1d' },
+      context(db),
+    );
     assert.equal(r.series[0]!.total, 2);
   });
 
@@ -86,7 +92,10 @@ describe('trends', () => {
       { event: 'order', props: { amount: 32.5 } },
       { event: 'order', props: { amount: 'oops' } },
     ]);
-    const r = await runTrends({ series: [{ event: 'order', math: 'sum', property: 'amount' }], from: '-1d' }, context(db));
+    const r = await runTrends(
+      { series: [{ event: 'order', math: 'sum', property: 'amount' }], from: '-1d' },
+      context(db),
+    );
     assert.equal(r.series[0]!.total, 42.5);
   });
 
@@ -94,9 +103,18 @@ describe('trends', () => {
     const db = createDb();
     // 23:30 UTC on 30 Oct is 00:30 on 31 Oct in UTC+1.
     insert(db, [{ event: 'late', ts_ms: Date.UTC(2026, 9, 30, 23, 30) }]);
-    const utc = await runTrends({ series: [{ event: 'late' }], from: '-3d', interval: 'day' }, context(db));
-    const plusOne = await runTrends({ series: [{ event: 'late' }], from: '-3d', interval: 'day', utcOffsetMinutes: 60 }, context(db));
-    const dayOf = (r: typeof utc) => new Date(r.buckets[r.series[0]!.values.indexOf(1)]! + (r === plusOne ? 3_600_000 : 0)).getUTCDate();
+    const utc = await runTrends(
+      { series: [{ event: 'late' }], from: '-3d', interval: 'day' },
+      context(db),
+    );
+    const plusOne = await runTrends(
+      { series: [{ event: 'late' }], from: '-3d', interval: 'day', utcOffsetMinutes: 60 },
+      context(db),
+    );
+    const dayOf = (r: typeof utc) =>
+      new Date(
+        r.buckets[r.series[0]!.values.indexOf(1)]! + (r === plusOne ? 3_600_000 : 0),
+      ).getUTCDate();
     assert.equal(dayOf(utc), 30);
     assert.equal(dayOf(plusOne), 31);
   });
@@ -120,7 +138,11 @@ describe('funnels', () => {
       { distinct_id: 'c', event: 'pay', ts_ms: t + 2 * DAY },
     ]);
     const r = await runFunnel(
-      { steps: [{ event: 'visit' }, { event: 'signup' }, { event: 'pay' }], window: '1d', from: '-30d' },
+      {
+        steps: [{ event: 'visit' }, { event: 'signup' }, { event: 'pay' }],
+        window: '1d',
+        from: '-30d',
+      },
       context(db),
     );
     assert.deepEqual(
@@ -140,7 +162,13 @@ describe('funnels', () => {
     ]);
     link(db, 'anon', 'alice');
     const r = await runFunnel(
-      { steps: [{ event: '$pageview', filters: [{ property: 'path', value: '/pricing' }] }, { event: 'signup' }], from: '-7d' },
+      {
+        steps: [
+          { event: '$pageview', filters: [{ property: 'path', value: '/pricing' }] },
+          { event: 'signup' },
+        ],
+        from: '-7d',
+      },
       context(db),
     );
     assert.deepEqual(
@@ -159,7 +187,10 @@ describe('funnels', () => {
       { distinct_id: 'z', event: 'visit', utm_source: 'twitter', ts_ms: t },
       { distinct_id: 'z', event: 'signup', ts_ms: t + 1 },
     ]);
-    const r = await runFunnel({ steps: [{ event: 'visit' }, { event: 'signup' }], breakdown: 'utm_source', from: '-7d' }, context(db));
+    const r = await runFunnel(
+      { steps: [{ event: 'visit' }, { event: 'signup' }], breakdown: 'utm_source', from: '-7d' },
+      context(db),
+    );
     const google = r.breakdowns!.find((b) => b.value === 'google')!;
     const twitter = r.breakdowns!.find((b) => b.value === 'twitter')!;
     assert.deepEqual(
@@ -179,7 +210,12 @@ describe('funnels', () => {
 
 describe('cohort filters', () => {
   // Pro cohort: people whose person.plan was "pro" on any event in the last 30 days.
-  const pro = { project: 'p', from: NOW - 30 * DAY, to: NOW, filters: [{ property: 'person.plan', value: 'pro' }] };
+  const pro = {
+    project: 'p',
+    from: NOW - 30 * DAY,
+    to: NOW,
+    filters: [{ property: 'person.plan', value: 'pro' }],
+  };
   const seed = () => {
     const db = createDb();
     insert(db, [
@@ -194,7 +230,11 @@ describe('cohort filters', () => {
 
   it('keeps only people in the cohort, including their anonymous events', async () => {
     const r = await runTrends(
-      { series: [{ event: 'view' }], from: '-1d', filters: [{ property: 'cohort', value: 'pro', cohorts: { pro } }] as never },
+      {
+        series: [{ event: 'view' }],
+        from: '-1d',
+        filters: [{ property: 'cohort', value: 'pro', cohorts: { pro } }] as never,
+      },
       context(seed()),
     );
     assert.equal(r.series[0]!.total, 2);
@@ -203,12 +243,25 @@ describe('cohort filters', () => {
   it('excludes the cohort with not_in and works on funnel steps', async () => {
     const db = seed();
     const out = await runTrends(
-      { series: [{ event: 'view', math: 'unique_persons' }], from: '-1d', filters: [{ property: 'cohort', op: 'not_in', value: ['pro'], cohorts: { pro } }] as never },
+      {
+        series: [{ event: 'view', math: 'unique_persons' }],
+        from: '-1d',
+        filters: [{ property: 'cohort', op: 'not_in', value: ['pro'], cohorts: { pro } }] as never,
+      },
       context(db),
     );
     assert.equal(out.series[0]!.total, 2);
     const funnel = await runFunnel(
-      { steps: [{ event: 'view', filters: [{ property: 'cohort', value: 'pro', cohorts: { pro } }] as never }, { event: 'view' }], from: '-7d' },
+      {
+        steps: [
+          {
+            event: 'view',
+            filters: [{ property: 'cohort', value: 'pro', cohorts: { pro } }] as never,
+          },
+          { event: 'view' },
+        ],
+        from: '-7d',
+      },
       context(db),
     );
     assert.equal(funnel.steps[0]!.count, 1);
@@ -216,7 +269,14 @@ describe('cohort filters', () => {
 
   it('refuses an unresolved cohort key', async () => {
     await assert.rejects(
-      runTrends({ series: [{ event: 'view' }], from: '-1d', filters: [{ property: 'cohort', value: 'pro' }] }, context(seed())),
+      runTrends(
+        {
+          series: [{ event: 'view' }],
+          from: '-1d',
+          filters: [{ property: 'cohort', value: 'pro' }],
+        },
+        context(seed()),
+      ),
       /not resolved/,
     );
   });
@@ -261,7 +321,14 @@ describe('retention', () => {
       { distinct_id: 'a', event: 'use', ts_ms: Date.UTC(2026, 8, 2) },
     ]);
     const r = await runRetention(
-      { cohortEvent: { event: 'signup' }, returnEvent: { event: 'use' }, period: 'month', periods: 2, from: '2026-08-01', to: '2026-09-01' },
+      {
+        cohortEvent: { event: 'signup' },
+        returnEvent: { event: 'use' },
+        period: 'month',
+        periods: 2,
+        from: '2026-08-01',
+        to: '2026-09-01',
+      },
       context(db),
     );
     assert.equal(r.cohorts[0]!.start, Date.UTC(2026, 7, 1));
@@ -277,11 +344,23 @@ describe('web overview', () => {
       // Session 1: two pages, from Google, lasting 60s.
       { distinct_id: 'v1', session_id: 's1', path: '/', referrer_host: 'google.com', ts_ms: t },
       { distinct_id: 'v1', session_id: 's1', path: '/pricing', ts_ms: t + 30_000 },
-      { distinct_id: 'v1', session_id: 's1', event: '$pageleave', path: '/pricing', ts_ms: t + 60_000 },
+      {
+        distinct_id: 'v1',
+        session_id: 's1',
+        event: '$pageleave',
+        path: '/pricing',
+        ts_ms: t + 60_000,
+      },
       // Session 2: one page (a bounce), direct.
       { distinct_id: 'v2', session_id: 's2', path: '/pricing', browser: 'Firefox', ts_ms: t },
       // An error and some vitals.
-      { distinct_id: 'v2', session_id: 's2', event: '$exception', props: { message: 'boom' }, ts_ms: t + 1 },
+      {
+        distinct_id: 'v2',
+        session_id: 's2',
+        event: '$exception',
+        props: { message: 'boom' },
+        ts_ms: t + 1,
+      },
       { distinct_id: 'v2', event: '$web_vitals', props: { metric: 'LCP', value: 1200 }, ts_ms: t },
       { distinct_id: 'v1', event: '$web_vitals', props: { metric: 'LCP', value: 2500 }, ts_ms: t },
       // Previous period: one visitor.
@@ -300,15 +379,12 @@ describe('web overview', () => {
     );
     assert.equal(r.previous!.visitors, 1);
     assert.deepEqual(r.breakdowns.pages[0], { value: '/pricing', visitors: 2, count: 2 });
-    assert.deepEqual(
-      r.breakdowns.entry_pages.map((b) => b.value).sort(),
-      ['/', '/pricing'],
-    );
+    assert.deepEqual(r.breakdowns.entry_pages.map((b) => b.value).sort(), ['/', '/pricing']);
     assert.deepEqual(r.breakdowns.exit_pages.find((b) => b.value === '/pricing')?.count, 2);
-    assert.deepEqual(
-      r.breakdowns.referrers.map((b) => b.value).sort(),
-      ['Direct / None', 'google.com'],
-    );
+    assert.deepEqual(r.breakdowns.referrers.map((b) => b.value).sort(), [
+      'Direct / None',
+      'google.com',
+    ]);
     assert.equal(r.breakdowns.errors[0]!.value, 'boom');
     assert.equal(r.vitals.LCP!.p75, 2500);
     assert.match(r.summary, /2 visitors \(\+100\.0% vs previous period\)/);

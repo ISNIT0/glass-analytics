@@ -4,10 +4,10 @@
  */
 
 import {
-  COLUMN_OPTIONS,
   type CatalogEvent,
   type CatalogEventDetail,
   type CatalogProperty,
+  COLUMN_OPTIONS,
   loadEventDetail,
   loadEvents,
   loadPersonProperties,
@@ -59,8 +59,8 @@ type ListItem = {
 };
 
 export function closeActivePicker(): void {
-  document.querySelectorAll('.picker-pop').forEach((el) => el.remove());
-  document.querySelectorAll('.picker.open').forEach((el) => el.classList.remove('open'));
+  for (const el of document.querySelectorAll('.picker-pop')) el.remove();
+  for (const el of document.querySelectorAll('.picker.open')) el.classList.remove('open');
 }
 
 export function positionPop(trigger: HTMLElement, pop: HTMLElement, maxWidth = 680): void {
@@ -82,7 +82,12 @@ function triggerButton(value: string, placeholder: string, open: () => void): HT
   const empty = !value;
   const btn = h(
     'button',
-    { type: 'button', class: `picker-trigger${empty ? ' empty' : ''}`, 'aria-haspopup': 'listbox', 'aria-expanded': 'false' },
+    {
+      type: 'button',
+      class: `picker-trigger${empty ? ' empty' : ''}`,
+      'aria-haspopup': 'listbox',
+      'aria-expanded': 'false',
+    },
     h('span', { class: 'picker-trigger-value' }, empty ? placeholder : display(value)),
     h('span', { class: 'picker-chevron', 'aria-hidden': 'true' }, '▾'),
   );
@@ -108,10 +113,19 @@ function emptyDetail(message: string): HTMLElement {
 
 function eventDetailView(detail: CatalogEventDetail, listRow?: CatalogEvent): Child {
   return [
-    h('div', { class: 'picker-detail-head' }, h('h3', {}, detail.event), listRow ? h('span', { class: 'muted' }, `${count(listRow.count)} in 30d`) : null),
+    h(
+      'div',
+      { class: 'picker-detail-head' },
+      h('h3', {}, detail.event),
+      listRow ? h('span', { class: 'muted' }, `${count(listRow.count)} in 30d`) : null,
+    ),
     detail.description
       ? h('p', { class: 'picker-detail-desc' }, detail.description)
-      : h('p', { class: 'muted' }, 'No description yet. Document this event under Events so agents know when it fires.'),
+      : h(
+          'p',
+          { class: 'muted' },
+          'No description yet. Document this event under Events so agents know when it fires.',
+        ),
     detail.owner ? h('p', { class: 'muted small' }, `Owner: ${detail.owner}`) : null,
     detail.properties.length
       ? h(
@@ -121,29 +135,64 @@ function eventDetailView(detail: CatalogEventDetail, listRow?: CatalogEvent): Ch
           h(
             'ul',
             {},
-            detail.properties.slice(0, 12).map((p) =>
-              h(
-                'li',
-                {},
-                h('code', {}, p.name),
-                h('span', { class: 'muted' }, p.types.join('|') || '—'),
-                h('span', { class: 'picker-detail-prop-desc' }, p.description || (p.examples.length ? `e.g. ${p.examples.slice(0, 3).join(', ')}` : '')),
+            detail.properties
+              .slice(0, 12)
+              .map((p) =>
+                h(
+                  'li',
+                  {},
+                  h('code', {}, p.name),
+                  h('span', { class: 'muted' }, p.types.join('|') || '—'),
+                  h(
+                    'span',
+                    { class: 'picker-detail-prop-desc' },
+                    p.description ||
+                      (p.examples.length ? `e.g. ${p.examples.slice(0, 3).join(', ')}` : ''),
+                  ),
+                ),
               ),
-            ),
           ),
-          detail.properties.length > 12 ? h('p', { class: 'muted small' }, `+${detail.properties.length - 12} more`) : null,
+          detail.properties.length > 12
+            ? h('p', { class: 'muted small' }, `+${detail.properties.length - 12} more`)
+            : null,
         )
       : h('p', { class: 'muted small' }, 'No custom properties seen on recent events.'),
-    h('a', { class: 'picker-detail-link', href: href(`events/${encodeURIComponent(detail.event)}`) }, 'Open in Events'),
+    h(
+      'a',
+      { class: 'picker-detail-link', href: href(`events/${encodeURIComponent(detail.event)}`) },
+      'Open in Events',
+    ),
   ];
 }
 
-function propertyDetailView(p: CatalogProperty | { name: string; description: string; types?: string[]; coverage?: number; examples?: string[] }): Child {
+function propertyDetailView(
+  p:
+    | CatalogProperty
+    | {
+        name: string;
+        description: string;
+        types?: string[];
+        coverage?: number;
+        examples?: string[];
+      },
+): Child {
   return [
     h('div', { class: 'picker-detail-head' }, h('h3', {}, p.name)),
-    h('p', { class: 'picker-detail-desc' }, p.description || 'No description for this property yet.'),
-    p.types?.length ? h('p', { class: 'muted small' }, `Type: ${p.types.join(', ')}${p.coverage != null ? ` · ${percent(p.coverage, 0)} of recent events` : ''}`) : null,
-    p.examples?.length ? h('p', { class: 'muted small' }, `Examples: ${p.examples.slice(0, 5).join(', ')}`) : null,
+    h(
+      'p',
+      { class: 'picker-detail-desc' },
+      p.description || 'No description for this property yet.',
+    ),
+    p.types?.length
+      ? h(
+          'p',
+          { class: 'muted small' },
+          `Type: ${p.types.join(', ')}${p.coverage != null ? ` · ${percent(p.coverage, 0)} of recent events` : ''}`,
+        )
+      : null,
+    p.examples?.length
+      ? h('p', { class: 'muted small' }, `Examples: ${p.examples.slice(0, 5).join(', ')}`)
+      : null,
   ];
 }
 
@@ -186,7 +235,9 @@ function renderList(
     );
   }
   mount(listEl, nodes);
-  listEl.querySelector<HTMLElement>('.picker-item.active, .picker-item.selected')?.scrollIntoView({ block: 'nearest' });
+  listEl
+    .querySelector<HTMLElement>('.picker-item.active, .picker-item.selected')
+    ?.scrollIntoView({ block: 'nearest' });
 }
 
 /** Event name combobox with list + description side panel. */
@@ -229,7 +280,9 @@ export function eventPicker(options: EventPickerOptions): HTMLElement {
 
     const items = (): ListItem[] => {
       const q = query.trim().toLowerCase();
-      const filtered = events.filter((e) => !q || e.event.toLowerCase().includes(q) || e.description.toLowerCase().includes(q));
+      const filtered = events.filter(
+        (e) => !q || e.event.toLowerCase().includes(q) || e.description.toLowerCase().includes(q),
+      );
       const custom = events.filter((e) => !e.system);
       const system = events.filter((e) => e.system);
       const order = [...custom, ...system].filter((e) => filtered.includes(e));
@@ -241,7 +294,13 @@ export function eventPicker(options: EventPickerOptions): HTMLElement {
         search: `${e.event} ${e.description}`.toLowerCase(),
       }));
       if (q && !events.some((e) => e.event.toLowerCase() === q)) {
-        rows.unshift({ id: query.trim(), label: `Use “${query.trim()}”`, meta: 'new', group: 'Custom', search: q });
+        rows.unshift({
+          id: query.trim(),
+          label: `Use “${query.trim()}”`,
+          meta: 'new',
+          group: 'Custom',
+          search: q,
+        });
       }
       return rows;
     };
@@ -331,7 +390,8 @@ export function eventPicker(options: EventPickerOptions): HTMLElement {
   return root;
 }
 
-const COHORT_DOC = 'People in (or not in) a saved cohort. Pick the cohorts as values; define cohorts on the People tab.';
+const COHORT_DOC =
+  'People in (or not in) a saved cohort. Pick the cohorts as values; define cohorts on the People tab.';
 
 /** Property combobox: cohorts, event props, person props and built-in columns. */
 export function propertyPicker(options: PropertyPickerOptions): HTMLElement {
@@ -389,7 +449,13 @@ export function propertyPicker(options: PropertyPickerOptions): HTMLElement {
         });
       }
       if (includeCohorts) {
-        rows.push({ id: 'cohort', label: 'Cohort', meta: 'in / not in', group: 'Cohorts', search: `cohort segment ${COHORT_DOC}`.toLowerCase() });
+        rows.push({
+          id: 'cohort',
+          label: 'Cohort',
+          meta: 'in / not in',
+          group: 'Cohorts',
+          search: `cohort segment ${COHORT_DOC}`.toLowerCase(),
+        });
       }
       for (const p of eventProps) {
         rows.push({
@@ -425,9 +491,12 @@ export function propertyPicker(options: PropertyPickerOptions): HTMLElement {
 
     const items = (): ListItem[] => {
       const q = query.trim().toLowerCase();
-      const rows = allItems().filter((r) => !q || r.search.includes(q) || r.id.toLowerCase().includes(q));
+      const rows = allItems().filter(
+        (r) => !q || r.search.includes(q) || r.id.toLowerCase().includes(q),
+      );
       const prefix = options.customPrefix ?? '';
-      const typed = prefix && !query.trim().startsWith(prefix) ? `${prefix}${query.trim()}` : query.trim();
+      const typed =
+        prefix && !query.trim().startsWith(prefix) ? `${prefix}${query.trim()}` : query.trim();
       if (allowCustom && q && !rows.some((r) => r.id.toLowerCase() === typed.toLowerCase())) {
         const label = typed.startsWith('person.') ? `Person property “${typed}”` : `Use “${typed}”`;
         rows.unshift({ id: typed, label, meta: 'custom', group: 'Custom', search: q });
@@ -452,7 +521,9 @@ export function propertyPicker(options: PropertyPickerOptions): HTMLElement {
       }
       const col = COLUMN_OPTIONS.find((c) => c.name === id);
       if (col) {
-        detail.show(propertyDetailView({ name: col.name, description: col.description, types: ['string'] }));
+        detail.show(
+          propertyDetailView({ name: col.name, description: col.description, types: ['string'] }),
+        );
         return;
       }
       if (id.startsWith('person.')) {
@@ -464,7 +535,12 @@ export function propertyPicker(options: PropertyPickerOptions): HTMLElement {
         );
         return;
       }
-      detail.show(propertyDetailView({ name: id, description: 'Custom event property (looked up on props).' }));
+      detail.show(
+        propertyDetailView({
+          name: id,
+          description: 'Custom event property (looked up on props).',
+        }),
+      );
     };
 
     const refresh = () => {
@@ -527,7 +603,9 @@ export function propertyPicker(options: PropertyPickerOptions): HTMLElement {
 
     detail.show(h('div', { class: 'picker-detail-loading muted' }, 'Loading properties…'));
     void Promise.all([
-      includeEvent && options.event ? loadEventDetail(options.event, project).then((d) => d.properties) : Promise.resolve([]),
+      includeEvent && options.event
+        ? loadEventDetail(options.event, project).then((d) => d.properties)
+        : Promise.resolve([]),
       includePerson ? loadPersonProperties(project) : Promise.resolve([]),
     ]).then(([event, person]) => {
       eventProps = event;

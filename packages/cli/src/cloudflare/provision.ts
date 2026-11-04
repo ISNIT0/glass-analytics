@@ -8,18 +8,31 @@ import { copyFileSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'nod
 import { join } from 'node:path';
 import { LAKE_TABLES, type LakeTable, streamSchemaFile } from '@glassanalytics/core/lake';
 import type { GlassConfig } from '../config.ts';
-import { type Wrangler, WranglerError, must, parseJsonOutput } from './wrangler.ts';
+import { must, parseJsonOutput, type Wrangler, WranglerError } from './wrangler.ts';
 
-export interface ProvisionReport {
-  (status: 'ok' | 'created' | 'skipped', label: string, detail?: string): void;
-}
+export type ProvisionReport = (
+  status: 'ok' | 'created' | 'skipped',
+  label: string,
+  detail?: string,
+) => void;
 
-const isAlreadyExists = (err: unknown) => err instanceof WranglerError && /already exists|already own|10004|11009/i.test(err.output);
-const isR2Disabled = (err: unknown) => err instanceof WranglerError && /enable R2|R2 (is|has) not been enabled|purchase R2|10042/i.test(err.output);
+const isAlreadyExists = (err: unknown) =>
+  err instanceof WranglerError && /already exists|already own|10004|11009/i.test(err.output);
+const isR2Disabled = (err: unknown) =>
+  err instanceof WranglerError &&
+  /enable R2|R2 (is|has) not been enabled|purchase R2|10042/i.test(err.output);
 
 /** Find or create the D1 database. */
-export async function ensureD1(wrangler: Wrangler, name: string, eu: boolean, report: ProvisionReport): Promise<{ name: string; id: string }> {
-  const find = async () => parseJsonOutput<{ uuid: string; name: string }[]>(await must(wrangler, ['d1', 'list', '--json'])).find((db) => db.name === name);
+export async function ensureD1(
+  wrangler: Wrangler,
+  name: string,
+  eu: boolean,
+  report: ProvisionReport,
+): Promise<{ name: string; id: string }> {
+  const find = async () =>
+    parseJsonOutput<{ uuid: string; name: string }[]>(
+      await must(wrangler, ['d1', 'list', '--json']),
+    ).find((db) => db.name === name);
   let db = await find();
   if (db) {
     report('ok', `D1 database "${name}"`, 'exists');
@@ -33,9 +46,21 @@ export async function ensureD1(wrangler: Wrangler, name: string, eu: boolean, re
 }
 
 /** Create an R2 bucket. Returns false when R2 is not enabled on the account. */
-export async function ensureBucket(wrangler: Wrangler, bucket: string, eu: boolean, report: ProvisionReport, purpose: string): Promise<boolean> {
+export async function ensureBucket(
+  wrangler: Wrangler,
+  bucket: string,
+  eu: boolean,
+  report: ProvisionReport,
+  purpose: string,
+): Promise<boolean> {
   try {
-    await must(wrangler, ['r2', 'bucket', 'create', bucket, ...(eu ? ['--jurisdiction', 'eu'] : [])]);
+    await must(wrangler, [
+      'r2',
+      'bucket',
+      'create',
+      bucket,
+      ...(eu ? ['--jurisdiction', 'eu'] : []),
+    ]);
     report('created', `R2 bucket "${bucket}" for ${purpose}`);
     return true;
   } catch (err) {
@@ -48,8 +73,14 @@ export async function ensureBucket(wrangler: Wrangler, bucket: string, eu: boole
   }
 }
 
-async function findByName(wrangler: Wrangler, kind: 'streams' | 'sinks' | null, name: string): Promise<{ id: string; name: string } | undefined> {
-  const args = kind ? ['pipelines', kind, 'list', '--json', '--per-page', '100'] : ['pipelines', 'list', '--json', '--per-page', '100'];
+async function findByName(
+  wrangler: Wrangler,
+  kind: 'streams' | 'sinks' | null,
+  name: string,
+): Promise<{ id: string; name: string } | undefined> {
+  const args = kind
+    ? ['pipelines', kind, 'list', '--json', '--per-page', '100']
+    : ['pipelines', 'list', '--json', '--per-page', '100'];
   const items = parseJsonOutput<{ id: string; name: string }[]>(await must(wrangler, args));
   return items.find((i) => i.name === name);
 }
@@ -65,7 +96,9 @@ export async function ensureLake(
   report: ProvisionReport,
 ): Promise<{ bucket: string; namespace: string; streams: Record<LakeTable, string> }> {
   if (!(await ensureBucket(wrangler, options.bucket, options.eu, report, 'event lake'))) {
-    throw new Error('Lake mode needs R2. Enable R2 in the Cloudflare dashboard, then run `glass init --lake` again.');
+    throw new Error(
+      'Lake mode needs R2. Enable R2 in the Cloudflare dashboard, then run `glass init --lake` again.',
+    );
   }
   // The data catalog was renamed (R2 Data Catalog → Basin Catalog); try both commands.
   let enabled = false;
@@ -79,7 +112,10 @@ export async function ensureLake(
       break;
     }
   }
-  if (!enabled) throw new Error(`Could not enable the data catalog on "${options.bucket}". Enable it in the R2 dashboard, then re-run.`);
+  if (!enabled)
+    throw new Error(
+      `Could not enable the data catalog on "${options.bucket}". Enable it in the R2 dashboard, then re-run.`,
+    );
   report('ok', `Data catalog on "${options.bucket}"`);
 
   const streams = {} as Record<LakeTable, string>;
@@ -91,7 +127,16 @@ export async function ensureLake(
       const schemaPath = join(options.dir, 'schemas', `${table}.json`);
       mkdirSync(join(options.dir, 'schemas'), { recursive: true });
       writeFileSync(schemaPath, `${JSON.stringify(streamSchemaFile(table), null, 2)}\n`);
-      await must(wrangler, ['pipelines', 'streams', 'create', streamName, '--schema-file', schemaPath, '--http-enabled', 'false']);
+      await must(wrangler, [
+        'pipelines',
+        'streams',
+        'create',
+        streamName,
+        '--schema-file',
+        schemaPath,
+        '--http-enabled',
+        'false',
+      ]);
       stream = await findByName(wrangler, 'streams', streamName);
       if (!stream) throw new Error(`Created stream "${streamName}" but could not find it.`);
       report('created', `Pipelines stream "${streamName}"`);
@@ -99,18 +144,33 @@ export async function ensureLake(
     streams[table] = stream.id;
     if (!(await findByName(wrangler, 'sinks', sinkName))) {
       await must(wrangler, [
-        'pipelines', 'sinks', 'create', sinkName,
-        '--type', 'r2-data-catalog',
-        '--bucket', options.bucket,
-        '--namespace', options.namespace,
-        '--table', table,
-        '--catalog-token', options.token,
-        '--roll-interval', '60',
+        'pipelines',
+        'sinks',
+        'create',
+        sinkName,
+        '--type',
+        'r2-data-catalog',
+        '--bucket',
+        options.bucket,
+        '--namespace',
+        options.namespace,
+        '--table',
+        table,
+        '--catalog-token',
+        options.token,
+        '--roll-interval',
+        '60',
       ]);
       report('created', `Iceberg table "${options.namespace}.${table}"`);
     }
     if (!(await findByName(wrangler, null, streamName))) {
-      await must(wrangler, ['pipelines', 'create', streamName, '--sql', `INSERT INTO ${sinkName} SELECT * FROM ${streamName}`]);
+      await must(wrangler, [
+        'pipelines',
+        'create',
+        streamName,
+        '--sql',
+        `INSERT INTO ${sinkName} SELECT * FROM ${streamName}`,
+      ]);
       report('created', `Pipeline "${streamName}"`);
     }
   }
@@ -131,12 +191,20 @@ export function renderWranglerConfig(config: GlassConfig): string {
     main: 'worker.js',
     compatibility_date: '2026-10-01',
     workers_dev: true,
-    d1_databases: [{ binding: 'DB', database_name: config.d1.name, database_id: config.d1.id, migrations_dir: 'migrations' }],
+    d1_databases: [
+      {
+        binding: 'DB',
+        database_name: config.d1.name,
+        database_id: config.d1.id,
+        migrations_dir: 'migrations',
+      },
+    ],
     vars,
     triggers: { crons: ['17 * * * *'] },
     observability: { enabled: true },
   };
-  if (config.replay) wrangler.r2_buckets = [{ binding: 'REPLAYS', bucket_name: config.replay.bucket }];
+  if (config.replay)
+    wrangler.r2_buckets = [{ binding: 'REPLAYS', bucket_name: config.replay.bucket }];
   if (config.lake) {
     wrangler.pipelines = [
       { binding: 'EVENTS_STREAM', stream: config.lake.streams.events },
@@ -164,11 +232,20 @@ export async function deploy(wrangler: Wrangler, configPath: string): Promise<st
   return /https:\/\/[\w.-]+\.workers\.dev/.exec(out)?.[0] ?? null;
 }
 
-export async function migrate(wrangler: Wrangler, database: string, configPath: string): Promise<void> {
+export async function migrate(
+  wrangler: Wrangler,
+  database: string,
+  configPath: string,
+): Promise<void> {
   await must(wrangler, ['d1', 'migrations', 'apply', database, '--remote', '--config', configPath]);
 }
 
-export async function putSecrets(wrangler: Wrangler, secrets: Record<string, string>, configPath: string, dir: string): Promise<void> {
+export async function putSecrets(
+  wrangler: Wrangler,
+  secrets: Record<string, string>,
+  configPath: string,
+  dir: string,
+): Promise<void> {
   // `secret bulk` reads a JSON file; write it, upload, then remove it.
   const file = join(dir, '.secrets.tmp.json');
   writeFileSync(file, JSON.stringify(secrets), { mode: 0o600 });
@@ -180,11 +257,22 @@ export async function putSecrets(wrangler: Wrangler, secrets: Record<string, str
 }
 
 /** Cloudflare accounts the token can see. */
-export async function listAccounts(token: string, fetcher: typeof fetch = fetch): Promise<{ id: string; name: string }[]> {
-  const res = await fetcher('https://api.cloudflare.com/client/v4/accounts?per_page=50', { headers: { Authorization: `Bearer ${token}` } });
-  const body = (await res.json().catch(() => ({}))) as { success?: boolean; result?: { id: string; name: string }[]; errors?: { message: string }[] };
+export async function listAccounts(
+  token: string,
+  fetcher: typeof fetch = fetch,
+): Promise<{ id: string; name: string }[]> {
+  const res = await fetcher('https://api.cloudflare.com/client/v4/accounts?per_page=50', {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const body = (await res.json().catch(() => ({}))) as {
+    success?: boolean;
+    result?: { id: string; name: string }[];
+    errors?: { message: string }[];
+  };
   if (!res.ok || !body.success) {
-    throw new Error(`Cloudflare rejected the API token: ${body.errors?.[0]?.message ?? `HTTP ${res.status}`}`);
+    throw new Error(
+      `Cloudflare rejected the API token: ${body.errors?.[0]?.message ?? `HTTP ${res.status}`}`,
+    );
   }
   return body.result ?? [];
 }

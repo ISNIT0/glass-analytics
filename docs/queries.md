@@ -8,15 +8,15 @@ Every query is a JSON spec. The same specs work in the dashboard (they're in its
 
 ## Properties
 
-| Written as | Means |
-| --- | --- |
-| `path`, `url`, `host`, `referrer_host`, `title` | Page columns |
-| `utm_source`, `utm_medium`, `utm_campaign`, `utm_term`, `utm_content` | Campaign tags from the page URL |
-| `country`, `region`, `city`, `device`, `browser`, `os` | From the request |
-| `event`, `session_id`, `user_id`, `distinct_id` | Identity columns |
-| `plan` or `props.plan` | The event property `plan` |
-| `props.address.city` | A nested event property |
-| `person.plan` | The person's `plan` at the time of the event |
+| Written as                                                            | Means                                        |
+| --------------------------------------------------------------------- | -------------------------------------------- |
+| `path`, `url`, `host`, `referrer_host`, `title`                       | Page columns                                 |
+| `utm_source`, `utm_medium`, `utm_campaign`, `utm_term`, `utm_content` | Campaign tags from the page URL              |
+| `country`, `region`, `city`, `device`, `browser`, `os`                | From the request                             |
+| `event`, `session_id`, `user_id`, `distinct_id`                       | Identity columns                             |
+| `plan` or `props.plan`                                                | The event property `plan`                    |
+| `props.address.city`                                                  | A nested event property                      |
+| `person.plan`                                                         | The person's `plan` at the time of the event |
 
 ## Filters
 
@@ -39,7 +39,10 @@ Visitors are distinct devices; a session ends after 30 minutes of inactivity. Re
 ```json
 {
   "kind": "trends",
-  "series": [{ "event": "signup_completed", "math": "unique_persons" }, { "event": "order_paid", "math": "sum", "property": "amount" }],
+  "series": [
+    { "event": "signup_completed", "math": "unique_persons" },
+    { "event": "order_paid", "math": "sum", "property": "amount" }
+  ],
   "interval": "week",
   "breakdown": "utm_source",
   "from": "-90d"
@@ -78,12 +81,15 @@ A person enters at their first step-1 event in the range. Each later step must h
 }
 ```
 
-A person's cohort is the period of their first `cohortEvent` in the range. Period 0 is the cohort itself; period *k* counts people who did `returnEvent` *k* periods later. The average weights cohorts by size and only includes cohorts old enough to have that period.
+A person's cohort is the period of their first `cohortEvent` in the range. Period 0 is the cohort itself; period _k_ counts people who did `returnEvent` _k_ periods later. The average weights cohorts by size and only includes cohorts old enough to have that period.
 
 ## SQL
 
 ```json
-{ "query": "SELECT browser, COUNT(DISTINCT distinct_id) AS visitors FROM events WHERE project = 'my-app' AND ts_ms >= 1767225600000 GROUP BY browser", "limit": 100 }
+{
+  "query": "SELECT browser, COUNT(DISTINCT distinct_id) AS visitors FROM events WHERE project = 'my-app' AND ts_ms >= 1767225600000 GROUP BY browser",
+  "limit": 100
+}
 ```
 
 One read-only `SELECT` (or `WITH … SELECT`). In D1 mode you can read `events`, `identities`, `persons`, `flags`, `experiments`, `replays` and `event_definitions`; in lake mode, `<namespace>.events` and `<namespace>.identities`. `ts_ms` is epoch milliseconds; `props`, `person_props` and `flags` are JSON (`json_extract(props, '$.plan')` in D1, `json_get_str(props, 'plan')` in the lake).

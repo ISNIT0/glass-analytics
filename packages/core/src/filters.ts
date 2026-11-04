@@ -107,7 +107,11 @@ function lookup(ctx: EvaluationContext, ref: PropertyRef): unknown {
 }
 
 const asText = (v: unknown): string | null =>
-  v === undefined || v === null || v === '' ? null : typeof v === 'object' ? JSON.stringify(v) : String(v);
+  v === undefined || v === null || v === ''
+    ? null
+    : typeof v === 'object'
+      ? JSON.stringify(v)
+      : String(v);
 
 /** Evaluate a filter in JavaScript. Mirrors the SQL semantics in `sql/filters.ts`. */
 export function matchFilter(filter: Filter, ctx: EvaluationContext): boolean {

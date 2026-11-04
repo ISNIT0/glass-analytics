@@ -40,7 +40,10 @@ function wranglerCommand(): { cmd: string; prefix: string[] } {
     const require = createRequire(import.meta.url);
     return { cmd: process.execPath, prefix: [require.resolve('wrangler/bin/wrangler.js')] };
   } catch {
-    return { cmd: process.platform === 'win32' ? 'npx.cmd' : 'npx', prefix: ['--yes', 'wrangler@4'] };
+    return {
+      cmd: process.platform === 'win32' ? 'npx.cmd' : 'npx',
+      prefix: ['--yes', 'wrangler@4'],
+    };
   }
 }
 
@@ -79,7 +82,11 @@ export function createWrangler(auth: { token: string; accountId: string }, cwd: 
 }
 
 /** Run and throw on failure. */
-export async function must(wrangler: Wrangler, args: string[], options?: { input?: string }): Promise<string> {
+export async function must(
+  wrangler: Wrangler,
+  args: string[],
+  options?: { input?: string },
+): Promise<string> {
   const result = await wrangler.run(args, options);
   if (result.code !== 0) throw new WranglerError(args, result);
   return result.stdout;

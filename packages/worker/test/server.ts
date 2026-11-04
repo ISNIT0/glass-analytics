@@ -9,7 +9,7 @@
  */
 
 import { readFileSync } from 'node:fs';
-import { type IncomingMessage, type Server, type ServerResponse, createServer } from 'node:http';
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
@@ -40,7 +40,8 @@ function loadAssets(): Assets {
 async function toRequest(req: IncomingMessage, origin: string): Promise<Request> {
   const headers = new Headers();
   for (const [k, v] of Object.entries(req.headers)) if (typeof v === 'string') headers.set(k, v);
-  if (!headers.has('CF-Connecting-IP')) headers.set('CF-Connecting-IP', req.socket.remoteAddress ?? '127.0.0.1');
+  if (!headers.has('CF-Connecting-IP'))
+    headers.set('CF-Connecting-IP', req.socket.remoteAddress ?? '127.0.0.1');
   if (!headers.has('CF-IPCountry')) headers.set('CF-IPCountry', process.env.DEV_COUNTRY ?? 'GB');
   const hasBody = req.method !== 'GET' && req.method !== 'HEAD';
   return new Request(new URL(req.url ?? '/', origin), {
@@ -54,12 +55,16 @@ async function toRequest(req: IncomingMessage, origin: string): Promise<Request>
 
 async function send(res: ServerResponse, response: Response): Promise<void> {
   res.statusCode = response.status;
-  response.headers.forEach((value, key) => res.setHeader(key, value));
+  response.headers.forEach((value, key) => {
+    res.setHeader(key, value);
+  });
   res.end(Buffer.from(await response.arrayBuffer()));
 }
 
 function listen(server: Server, port: number): Promise<number> {
-  return new Promise((resolve) => server.listen(port, '127.0.0.1', () => resolve((server.address() as AddressInfo).port)));
+  return new Promise((resolve) =>
+    server.listen(port, '127.0.0.1', () => resolve((server.address() as AddressInfo).port)),
+  );
 }
 
 export interface DevServer {
@@ -69,7 +74,9 @@ export interface DevServer {
   close(): Promise<void>;
 }
 
-export async function startDevServer(options: { port?: number; demoPort?: number; memory?: boolean; dataDir?: string } = {}): Promise<DevServer> {
+export async function startDevServer(
+  options: { port?: number; demoPort?: number; memory?: boolean; dataDir?: string } = {},
+): Promise<DevServer> {
   const dataDir = options.dataDir ?? join(repo, '.glass-dev');
   const env: Env = {
     DB: new SqliteD1(options.memory ? ':memory:' : join(dataDir, 'glass.db')),
@@ -98,7 +105,10 @@ export async function startDevServer(options: { port?: number; demoPort?: number
     const path = (req.url ?? '/').split('?')[0]!.replace(/\/$/, '/index.html');
     const file = join(demoDir, path.replace(/\.\./g, ''));
     try {
-      const body = readFileSync(file.endsWith('.html') ? file : `${file}.html`, 'utf8').replaceAll('{{GLASS_HOST}}', glassUrl);
+      const body = readFileSync(file.endsWith('.html') ? file : `${file}.html`, 'utf8').replaceAll(
+        '{{GLASS_HOST}}',
+        glassUrl,
+      );
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
       res.end(body);
     } catch {
@@ -112,12 +122,18 @@ export async function startDevServer(options: { port?: number; demoPort?: number
     glassUrl,
     demoUrl: `http://127.0.0.1:${demoPort}`,
     env,
-    close: () => Promise.all([new Promise((r) => glass.close(r)), new Promise((r) => demo.close(r))]).then(() => undefined),
+    close: () =>
+      Promise.all([new Promise((r) => glass.close(r)), new Promise((r) => demo.close(r))]).then(
+        () => undefined,
+      ),
   };
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  const server = await startDevServer({ port: Number(process.env.PORT ?? 8787), demoPort: Number(process.env.DEMO_PORT ?? 8788) });
+  const server = await startDevServer({
+    port: Number(process.env.PORT ?? 8787),
+    demoPort: Number(process.env.DEMO_PORT ?? 8788),
+  });
   console.log(`Glass      ${server.glassUrl}/app   (key: dev-admin-key)`);
   console.log(`Demo site  ${server.demoUrl}/`);
   console.log(`MCP        ${server.glassUrl}/mcp`);

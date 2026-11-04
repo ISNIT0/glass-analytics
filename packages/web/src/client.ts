@@ -7,7 +7,14 @@ import { GLASS_VERSION } from '@glassanalytics/core/version';
 import { trackClicks, trackErrors, trackPageviews } from './autocapture.ts';
 import { Store } from './storage.ts';
 import { Transport } from './transport.ts';
-import type { AutocaptureOptions, GlassOptions, ReplayController, ReplayModule, ReplayOptions, WireEvent } from './types.ts';
+import type {
+  AutocaptureOptions,
+  GlassOptions,
+  ReplayController,
+  ReplayModule,
+  ReplayOptions,
+  WireEvent,
+} from './types.ts';
 import { observeVitals } from './vitals.ts';
 
 type FlagListener = (flags: Readonly<Record<string, string>>) => void;
@@ -46,7 +53,12 @@ export class Glass {
     this.options = options;
     this.host = new URL(options.host.replace(/\/+$/, ''), location.href).href.replace(/\/+$/, '');
     this.store = new Store(options.project, options.persistence ?? 'localStorage');
-    this.transport = new Transport(`${this.host}/e`, options.project, `web/${GLASS_VERSION}`, options.flushIntervalMs ?? 5000);
+    this.transport = new Transport(
+      `${this.host}/e`,
+      options.project,
+      `web/${GLASS_VERSION}`,
+      options.flushIntervalMs ?? 5000,
+    );
 
     try {
       this.flagValues = JSON.parse(this.store.get('flags') ?? '{}') as Record<string, string>;
@@ -56,7 +68,11 @@ export class Glass {
     if (options.flags !== false) void this.reloadFlags();
 
     const auto: AutocaptureOptions =
-      options.autocapture === false ? { pageviews: false, clicks: false, errors: false, webVitals: false } : options.autocapture === true || !options.autocapture ? {} : options.autocapture;
+      options.autocapture === false
+        ? { pageviews: false, clicks: false, errors: false, webVitals: false }
+        : options.autocapture === true || !options.autocapture
+          ? {}
+          : options.autocapture;
     const hooks = {
       pageview: () => {
         this.pageStart = Date.now();
@@ -67,7 +83,9 @@ export class Glass {
     };
     let reportVitals: (() => void) | null = null;
     if (auto.webVitals !== false) {
-      reportVitals = observeVitals((metric, value) => this.capture('$web_vitals', { metric, value }));
+      reportVitals = observeVitals((metric, value) =>
+        this.capture('$web_vitals', { metric, value }),
+      );
     }
     if (auto.pageviews !== false) this.teardown.push(trackPageviews(hooks));
     if (auto.clicks !== false) this.teardown.push(trackClicks(hooks));
@@ -268,7 +286,12 @@ export class Glass {
     const session = this.store.session(false);
     let decision = session.replay;
     if (!decision) {
-      decision = Math.random() < (opts.sampleRate ?? 0) ? 'record' : Math.random() < (opts.onErrorSampleRate ?? 0) ? 'buffer' : 'off';
+      decision =
+        Math.random() < (opts.sampleRate ?? 0)
+          ? 'record'
+          : Math.random() < (opts.onErrorSampleRate ?? 0)
+            ? 'buffer'
+            : 'off';
       this.store.setReplayDecision(decision);
     }
     if (decision !== 'off') await this.loadReplay(decision);
@@ -298,7 +321,12 @@ export class Glass {
       maskAllText: opts.maskAllText ?? false,
       maskTextSelector: opts.maskTextSelector ?? '[data-glass-mask]',
       blockSelector: opts.blockSelector ?? '[data-glass-block]',
-      console: opts.console === true ? ['log', 'info', 'warn', 'error', 'debug'] : opts.console === false ? [] : (opts.console ?? ['warn', 'error']),
+      console:
+        opts.console === true
+          ? ['log', 'info', 'warn', 'error', 'debug']
+          : opts.console === false
+            ? []
+            : (opts.console ?? ['warn', 'error']),
       network: opts.network ?? true,
     });
   }

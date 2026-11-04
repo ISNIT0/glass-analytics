@@ -10,7 +10,13 @@ A flag has a rollout percentage, optional variants, and optional targeting rules
   "enabled": true,
   "rollout": 50,
   "variants": [{ "key": "control", "weight": 50 }, { "key": "test", "weight": 50 }],
-  "rules": [{ "conditions": [{ "property": "person.plan", "value": "enterprise" }], "rollout": 100, "variant": "test" }]
+  "rules": [
+    {
+      "conditions": [{ "property": "person.plan", "value": "enterprise" }],
+      "rollout": 100,
+      "variant": "test"
+    }
+  ]
 }
 ```
 

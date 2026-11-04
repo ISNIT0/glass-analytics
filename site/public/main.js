@@ -1,7 +1,10 @@
 // Copy buttons. If Glass is installed on this page, copies are tracked as events.
 for (const button of document.querySelectorAll('button[data-copy], button[data-copy-from]')) {
   button.addEventListener('click', async () => {
-    const text = button.dataset.copy ?? document.getElementById(button.dataset.copyFrom)?.textContent?.trim() ?? '';
+    const text =
+      button.dataset.copy ??
+      document.getElementById(button.dataset.copyFrom)?.textContent?.trim() ??
+      '';
     const label = button.textContent;
     try {
       await navigator.clipboard.writeText(text);

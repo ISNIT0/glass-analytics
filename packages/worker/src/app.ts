@@ -18,7 +18,7 @@ import { requireScope } from './auth.ts';
 import { runMaintenance } from './cron.ts';
 import type { Assets, Env } from './env.ts';
 import { handleFlagEvaluation } from './flags.ts';
-import { CORS_HEADERS, HttpError, errorResponse, json } from './http.ts';
+import { CORS_HEADERS, errorResponse, HttpError, json } from './http.ts';
 import { handleIngest } from './ingest.ts';
 import { llmsTxt } from './llms.ts';
 import { handleMcp } from './mcp/server.ts';
@@ -78,14 +78,20 @@ export function createApp(options: AppOptions) {
 
   async function fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
-    const prefix = url.pathname === MOUNT_PREFIX || url.pathname.startsWith(`${MOUNT_PREFIX}/`) ? MOUNT_PREFIX : '';
+    const prefix =
+      url.pathname === MOUNT_PREFIX || url.pathname.startsWith(`${MOUNT_PREFIX}/`)
+        ? MOUNT_PREFIX
+        : '';
     const path = url.pathname.slice(prefix.length) || '/';
-    const base = (env.GLASS_PUBLIC_URL?.replace(/\/+$/, '') ?? url.origin) + (env.GLASS_PUBLIC_URL ? '' : prefix);
+    const base =
+      (env.GLASS_PUBLIC_URL?.replace(/\/+$/, '') ?? url.origin) +
+      (env.GLASS_PUBLIC_URL ? '' : prefix);
     const store = makeStore(env);
     const service = new GlassService(env, store, base);
     const now = options.now?.() ?? Date.now();
 
-    if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS_HEADERS });
+    if (request.method === 'OPTIONS')
+      return new Response(null, { status: 204, headers: CORS_HEADERS });
 
     try {
       switch (path) {
@@ -109,16 +115,29 @@ export function createApp(options: AppOptions) {
         case '/replay.js':
           return script(options.assets.replay, 3600);
         case '/llms.txt':
-          return new Response(llmsTxt(base, store.kind), { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+          return new Response(llmsTxt(base, store.kind), {
+            headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+          });
         case '/app':
         case '/app/':
           return new Response(dashboardHtml(`${prefix}`), {
-            headers: { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': DASHBOARD_CSP, 'Cache-Control': 'no-cache' },
+            headers: {
+              'Content-Type': 'text/html; charset=utf-8',
+              'Content-Security-Policy': DASHBOARD_CSP,
+              'Cache-Control': 'no-cache',
+            },
           });
         case '/app/app.js':
-          return new Response(options.assets.dashboardJs, { headers: { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-cache' } });
+          return new Response(options.assets.dashboardJs, {
+            headers: {
+              'Content-Type': 'text/javascript; charset=utf-8',
+              'Cache-Control': 'no-cache',
+            },
+          });
         case '/app/app.css':
-          return new Response(options.assets.dashboardCss, { headers: { 'Content-Type': 'text/css; charset=utf-8', 'Cache-Control': 'no-cache' } });
+          return new Response(options.assets.dashboardCss, {
+            headers: { 'Content-Type': 'text/css; charset=utf-8', 'Cache-Control': 'no-cache' },
+          });
         case '/mcp': {
           const scope = requireScope(request, env, 'read');
           return withCors(await handleMcp(request, service, scope));

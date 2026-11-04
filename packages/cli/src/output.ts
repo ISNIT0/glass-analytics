@@ -38,8 +38,12 @@ export function printJson(value: unknown): void {
 /** A simple aligned table. Numeric columns are right-aligned. */
 export function table(headers: string[], rows: (string | number)[][]): void {
   const cells = rows.map((r) => r.map((c) => String(c)));
-  const widths = headers.map((h, i) => Math.min(60, Math.max(h.length, ...cells.map((r) => (r[i] ?? '').length))));
-  const numeric = headers.map((_, i) => rows.length > 0 && rows.every((r) => typeof r[i] === 'number'));
+  const widths = headers.map((h, i) =>
+    Math.min(60, Math.max(h.length, ...cells.map((r) => (r[i] ?? '').length))),
+  );
+  const numeric = headers.map(
+    (_, i) => rows.length > 0 && rows.every((r) => typeof r[i] === 'number'),
+  );
   const fmt = (values: string[]) =>
     values
       .map((v, i) => {

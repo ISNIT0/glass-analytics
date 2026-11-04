@@ -32,7 +32,12 @@ export function panel(title: string, body: Child, options: PanelOptions = {}): H
             'div',
             { class: 'panel-title' },
             options.icon ? h('span', { class: 'panel-icon' }, icon(options.icon)) : null,
-            h('div', {}, title ? h('h2', {}, title) : null, options.subtitle ? h('p', { class: 'panel-subtitle' }, options.subtitle) : null),
+            h(
+              'div',
+              {},
+              title ? h('h2', {}, title) : null,
+              options.subtitle ? h('p', { class: 'panel-subtitle' }, options.subtitle) : null,
+            ),
           ),
           options.actions ? h('div', { class: 'panel-actions' }, options.actions) : null,
         )
@@ -46,12 +51,21 @@ export function sqlPane(queries: string[]): HTMLElement {
   return h(
     'div',
     { class: 'sql-pane' },
-    h('div', { class: 'sql-pane-head' }, h('span', {}, icon('code', 14), queries.length === 1 ? 'Query' : `${queries.length} queries`), copyButton(queries.join(';\n\n'), 'Copy SQL')),
+    h(
+      'div',
+      { class: 'sql-pane-head' },
+      h('span', {}, icon('code', 14), queries.length === 1 ? 'Query' : `${queries.length} queries`),
+      copyButton(queries.join(';\n\n'), 'Copy SQL'),
+    ),
     ...queries.map((q) => h('pre', { class: 'sql' }, h('code', {}, q.trim()))),
   );
 }
 
-export function copyButton(text: string | (() => string), label = 'Copy', iconName: IconName = 'copy'): HTMLButtonElement {
+export function copyButton(
+  text: string | (() => string),
+  label = 'Copy',
+  iconName: IconName = 'copy',
+): HTMLButtonElement {
   const text_ = h('span', {}, label);
   const button = h('button', { class: 'ghost small', type: 'button' }, icon(iconName, 14), text_);
   button.addEventListener('click', async () => {
@@ -78,9 +92,39 @@ function bar(width: string, height = 12): HTMLElement {
 
 /** Grey shimmering placeholders shaped like the content that is loading. */
 export function skeleton(shape: SkeletonShape = 'block'): HTMLElement {
-  const kpis = () => h('div', { class: 'sk-kpis' }, Array.from({ length: 4 }, () => h('div', { class: 'sk-kpi' }, bar('45%', 10), bar('70%', 22))));
-  const chart = () => h('div', { class: 'sk-panel' }, bar('22%', 12), h('div', { class: 'sk-chart' }, Array.from({ length: 18 }, (_, i) => h('span', { class: 'sk', style: `height:${30 + Math.round(45 * Math.abs(Math.sin(i * 0.7)))}%` }))));
-  const tableRows = () => h('div', { class: 'sk-panel' }, bar('18%', 12), Array.from({ length: 6 }, (_, i) => h('div', { class: 'sk-row' }, bar(`${55 - i * 5}%`), bar('10%'))));
+  const kpis = () =>
+    h(
+      'div',
+      { class: 'sk-kpis' },
+      Array.from({ length: 4 }, () =>
+        h('div', { class: 'sk-kpi' }, bar('45%', 10), bar('70%', 22)),
+      ),
+    );
+  const chart = () =>
+    h(
+      'div',
+      { class: 'sk-panel' },
+      bar('22%', 12),
+      h(
+        'div',
+        { class: 'sk-chart' },
+        Array.from({ length: 18 }, (_, i) =>
+          h('span', {
+            class: 'sk',
+            style: `height:${30 + Math.round(45 * Math.abs(Math.sin(i * 0.7)))}%`,
+          }),
+        ),
+      ),
+    );
+  const tableRows = () =>
+    h(
+      'div',
+      { class: 'sk-panel' },
+      bar('18%', 12),
+      Array.from({ length: 6 }, (_, i) =>
+        h('div', { class: 'sk-row' }, bar(`${55 - i * 5}%`), bar('10%')),
+      ),
+    );
   let body: Child;
   switch (shape) {
     case 'kpis':
@@ -93,7 +137,20 @@ export function skeleton(shape: SkeletonShape = 'block'): HTMLElement {
       body = tableRows();
       break;
     case 'cards':
-      body = h('div', { class: 'sk-cards' }, Array.from({ length: 6 }, () => h('div', { class: 'sk-panel' }, bar('60%', 14), bar('90%'), bar('40%'), h('div', { class: 'sk-spark' }))));
+      body = h(
+        'div',
+        { class: 'sk-cards' },
+        Array.from({ length: 6 }, () =>
+          h(
+            'div',
+            { class: 'sk-panel' },
+            bar('60%', 14),
+            bar('90%'),
+            bar('40%'),
+            h('div', { class: 'sk-spark' }),
+          ),
+        ),
+      );
       break;
     case 'report':
       body = [kpis(), chart(), h('div', { class: 'sk-grid' }, tableRows(), tableRows())];
@@ -105,7 +162,12 @@ export function skeleton(shape: SkeletonShape = 'block'): HTMLElement {
 }
 
 export function loading(label = 'Loading', shape: SkeletonShape = 'block'): HTMLElement {
-  return h('div', { class: 'state loading', role: 'status' }, h('span', { class: 'visually-hidden' }, label), skeleton(shape));
+  return h(
+    'div',
+    { class: 'state loading', role: 'status' },
+    h('span', { class: 'visually-hidden' }, label),
+    skeleton(shape),
+  );
 }
 
 export interface EmptyOptions {
@@ -136,7 +198,11 @@ export function errorState(err: unknown): HTMLElement {
 }
 
 /** Render a page section asynchronously: shows a skeleton, then the result or an error. */
-export function later(render: () => Promise<Child>, label?: string, shape: SkeletonShape = 'block'): HTMLElement {
+export function later(
+  render: () => Promise<Child>,
+  label?: string,
+  shape: SkeletonShape = 'block',
+): HTMLElement {
   const holder = h('div', { class: 'later' }, loading(label, shape));
   render().then(
     (content) => {
@@ -152,12 +218,21 @@ export function pageHeader(title: string, description?: string, actions?: Child)
   return h(
     'div',
     { class: 'page-head' },
-    h('div', { class: 'page-title' }, h('h1', {}, title), description ? h('p', { class: 'muted' }, description) : null),
+    h(
+      'div',
+      { class: 'page-title' },
+      h('h1', {}, title),
+      description ? h('p', { class: 'muted' }, description) : null,
+    ),
     actions ? h('div', { class: 'page-actions' }, actions) : null,
   );
 }
 
-export function table(headers: string[], rows: Child[][], options: { numeric?: number[]; class?: string } = {}): HTMLElement {
+export function table(
+  headers: string[],
+  rows: Child[][],
+  options: { numeric?: number[]; class?: string } = {},
+): HTMLElement {
   const numeric = new Set(options.numeric ?? []);
   return h(
     'div',
@@ -165,14 +240,37 @@ export function table(headers: string[], rows: Child[][], options: { numeric?: n
     h(
       'table',
       { class: options.class ?? '' },
-      h('thead', {}, h('tr', {}, headers.map((x, i) => h('th', { class: numeric.has(i) ? 'num' : '' }, x)))),
-      h('tbody', {}, rows.map((r) => h('tr', {}, r.map((cell, i) => h('td', { class: numeric.has(i) ? 'num' : '' }, cell))))),
+      h(
+        'thead',
+        {},
+        h(
+          'tr',
+          {},
+          headers.map((x, i) => h('th', { class: numeric.has(i) ? 'num' : '' }, x)),
+        ),
+      ),
+      h(
+        'tbody',
+        {},
+        rows.map((r) =>
+          h(
+            'tr',
+            {},
+            r.map((cell, i) => h('td', { class: numeric.has(i) ? 'num' : '' }, cell)),
+          ),
+        ),
+      ),
     ),
   );
 }
 
 /** A segmented control for switching between a few views of the same data. */
-export function tabs<T extends string>(options: { value: T; label: string; icon?: IconName }[], selected: T, onSelect: (value: T) => void, className = ''): HTMLElement {
+export function tabs<T extends string>(
+  options: { value: T; label: string; icon?: IconName }[],
+  selected: T,
+  onSelect: (value: T) => void,
+  className = '',
+): HTMLElement {
   return h(
     'div',
     { class: `tabs ${className}`, role: 'tablist' },
@@ -194,10 +292,21 @@ export function tabs<T extends string>(options: { value: T; label: string; icon?
 }
 
 /** A small button with an icon and optional text. */
-export function iconButton(name: IconName, label: string, onClick: () => void, options: { text?: boolean; class?: string } = {}): HTMLButtonElement {
+export function iconButton(
+  name: IconName,
+  label: string,
+  onClick: () => void,
+  options: { text?: boolean; class?: string } = {},
+): HTMLButtonElement {
   return h(
     'button',
-    { type: 'button', class: `${options.text ? 'ghost small' : 'icon-button'} ${options.class ?? ''}`, 'aria-label': label, title: label, onclick: onClick },
+    {
+      type: 'button',
+      class: `${options.text ? 'ghost small' : 'icon-button'} ${options.class ?? ''}`,
+      'aria-label': label,
+      title: label,
+      onclick: onClick,
+    },
     icon(name, options.text ? 14 : 16),
     options.text ? label : null,
   );
@@ -205,13 +314,32 @@ export function iconButton(name: IconName, label: string, onClick: () => void, o
 
 export function toast(message: string, kind: 'ok' | 'error' = 'ok'): void {
   for (const old of document.querySelectorAll('.toast')) old.remove();
-  const el = h('div', { class: `toast ${kind}`, role: 'status' }, icon(kind === 'ok' ? 'check' : 'alert', 16), message);
+  const el = h(
+    'div',
+    { class: `toast ${kind}`, role: 'status' },
+    icon(kind === 'ok' ? 'check' : 'alert', 16),
+    message,
+  );
   document.body.appendChild(el);
   setTimeout(() => el.classList.add('leaving'), 2800);
   setTimeout(() => el.remove(), 3200);
 }
 
 /** An initials avatar with a stable colour. */
-export function avatar(text: string, initialsText: string, hueValue: number, size = 28): HTMLElement {
-  return h('span', { class: 'avatar', style: `--hue:${hueValue};width:${size}px;height:${size}px;font-size:${Math.round(size * 0.4)}px`, 'aria-hidden': 'true', title: text }, initialsText);
+export function avatar(
+  text: string,
+  initialsText: string,
+  hueValue: number,
+  size = 28,
+): HTMLElement {
+  return h(
+    'span',
+    {
+      class: 'avatar',
+      style: `--hue:${hueValue};width:${size}px;height:${size}px;font-size:${Math.round(size * 0.4)}px`,
+      'aria-hidden': 'true',
+      title: text,
+    },
+    initialsText,
+  );
 }

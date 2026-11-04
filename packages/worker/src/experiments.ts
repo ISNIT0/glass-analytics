@@ -46,7 +46,11 @@ interface Row {
 }
 
 function toExperiment(r: Row): Experiment {
-  const def = JSON.parse(r.definition) as { goal: ExperimentGoal; secondary?: ExperimentGoal[]; hypothesis?: string };
+  const def = JSON.parse(r.definition) as {
+    goal: ExperimentGoal;
+    secondary?: ExperimentGoal[];
+    hypothesis?: string;
+  };
   return {
     key: r.key,
     flag: r.flag_key,
@@ -62,12 +66,22 @@ function toExperiment(r: Row): Experiment {
 }
 
 export async function listExperiments(db: D1Database, project: string): Promise<Experiment[]> {
-  const { results } = await db.prepare('SELECT * FROM experiments WHERE project = ? ORDER BY created_at DESC').bind(project).all<Row>();
+  const { results } = await db
+    .prepare('SELECT * FROM experiments WHERE project = ? ORDER BY created_at DESC')
+    .bind(project)
+    .all<Row>();
   return results.map(toExperiment);
 }
 
-export async function getExperiment(db: D1Database, project: string, key: string): Promise<Experiment> {
-  const row = await db.prepare('SELECT * FROM experiments WHERE project = ? AND key = ?').bind(project, key).first<Row>();
+export async function getExperiment(
+  db: D1Database,
+  project: string,
+  key: string,
+): Promise<Experiment> {
+  const row = await db
+    .prepare('SELECT * FROM experiments WHERE project = ? AND key = ?')
+    .bind(project, key)
+    .first<Row>();
   if (!row) throw new HttpError(404, `No experiment "${key}"`);
   return toExperiment(row);
 }
@@ -83,7 +97,11 @@ export interface CreateExperimentInput {
 }
 
 /** Create an experiment, creating its flag (disabled until start) if needed. */
-export async function createExperiment(db: D1Database, project: string, input: CreateExperimentInput): Promise<Experiment> {
+export async function createExperiment(
+  db: D1Database,
+  project: string,
+  input: CreateExperimentInput,
+): Promise<Experiment> {
   const flagKey = input.flag ?? input.key;
   let flag = await getFlag(db, project, flagKey);
   if (!flag) {
@@ -105,11 +123,26 @@ export async function createExperiment(db: D1Database, project: string, input: C
   }
   const now = Date.now();
   await db
-    .prepare('INSERT INTO experiments (project, key, flag_key, definition, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-    .bind(project, input.key, flagKey, JSON.stringify({ goal: input.goal, secondary: input.secondary ?? [], hypothesis: input.hypothesis ?? '' }), 'draft', now, now)
+    .prepare(
+      'INSERT INTO experiments (project, key, flag_key, definition, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    )
+    .bind(
+      project,
+      input.key,
+      flagKey,
+      JSON.stringify({
+        goal: input.goal,
+        secondary: input.secondary ?? [],
+        hypothesis: input.hypothesis ?? '',
+      }),
+      'draft',
+      now,
+      now,
+    )
     .run()
     .catch((err: unknown) => {
-      if (String(err).includes('UNIQUE')) throw new HttpError(409, `Experiment "${input.key}" already exists`);
+      if (String(err).includes('UNIQUE'))
+        throw new HttpError(409, `Experiment "${input.key}" already exists`);
       throw err;
     });
   return getExperiment(db, project, input.key);
@@ -128,22 +161,47 @@ export async function transitionExperiment(
   const now = Date.now();
   if (action === 'start') {
     if (exp.status === 'running') throw new HttpError(409, 'Experiment is already running');
-    if (exp.status === 'shipped') throw new HttpError(409, 'Experiment has shipped; create a new one');
+    if (exp.status === 'shipped')
+      throw new HttpError(409, 'Experiment has shipped; create a new one');
     await saveFlag(db, project, { ...flag, enabled: true });
-    await db.prepare("UPDATE experiments SET status = 'running', started_at = COALESCE(started_at, ?), ended_at = NULL, updated_at = ? WHERE project = ? AND key = ?").bind(now, now, project, key).run();
+    await db
+      .prepare(
+        "UPDATE experiments SET status = 'running', started_at = COALESCE(started_at, ?), ended_at = NULL, updated_at = ? WHERE project = ? AND key = ?",
+      )
+      .bind(now, now, project, key)
+      .run();
   } else if (action === 'stop') {
-    if (exp.status !== 'running') throw new HttpError(409, `Experiment is ${exp.status}, not running`);
-    await db.prepare("UPDATE experiments SET status = 'stopped', ended_at = ?, updated_at = ? WHERE project = ? AND key = ?").bind(now, now, project, key).run();
+    if (exp.status !== 'running')
+      throw new HttpError(409, `Experiment is ${exp.status}, not running`);
+    await db
+      .prepare(
+        "UPDATE experiments SET status = 'stopped', ended_at = ?, updated_at = ? WHERE project = ? AND key = ?",
+      )
+      .bind(now, now, project, key)
+      .run();
   } else {
     if (!variant || !flag.variants?.some((v) => v.key === variant)) {
-      throw new HttpError(400, `Pass the variant to ship, one of: ${(flag.variants ?? []).map((v) => v.key).join(', ')}`);
+      throw new HttpError(
+        400,
+        `Pass the variant to ship, one of: ${(flag.variants ?? []).map((v) => v.key).join(', ')}`,
+      );
     }
     // Everyone gets the shipped variant from now on.
-    await saveFlag(db, project, { ...flag, enabled: true, rollout: 100, rules: [{ conditions: [], rollout: 100, variant }] });
+    await saveFlag(db, project, {
+      ...flag,
+      enabled: true,
+      rollout: 100,
+      rules: [{ conditions: [], rollout: 100, variant }],
+    });
     await db
-      .prepare("UPDATE experiments SET status = 'shipped', ended_at = COALESCE(ended_at, ?), shipped_variant = ?, updated_at = ? WHERE project = ? AND key = ?")
+      .prepare(
+        "UPDATE experiments SET status = 'shipped', ended_at = COALESCE(ended_at, ?), shipped_variant = ?, updated_at = ? WHERE project = ? AND key = ?",
+      )
       .bind(now, variant, now, project, key)
       .run();
   }
-  return { experiment: await getExperiment(db, project, key), flag: (await getFlag(db, project, exp.flag))! };
+  return {
+    experiment: await getExperiment(db, project, key),
+    flag: (await getFlag(db, project, exp.flag))!,
+  };
 }

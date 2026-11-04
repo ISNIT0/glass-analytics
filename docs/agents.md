@@ -20,29 +20,29 @@ Use the read-only key (`npx @glassanalytics/cli key --read`) for agents that sho
 
 ### Tools
 
-| Tool | |
-| --- | --- |
-| `overview` | Start here: headline stats vs the previous period, top pages, referrers, errors, frequent events and the events that moved most |
-| `query_web` | The full web analytics view |
-| `query_trends` | Counts, unique people, sums or averages over time, with breakdowns |
-| `query_funnel` | Conversion through ordered steps within a window, with breakdowns |
-| `query_retention` | Cohort retention by day, week or month |
-| `sql` | One read-only SELECT against the event store |
-| `list_events` | Event names, counts and documentation status (`undocumented` lists custom events still missing a description) |
-| `describe_event` | Properties sent with an event: types, coverage, examples |
-| `define_event` | Document how/when an event fires and what each property means |
-| `instrument` | The exact code to track an event in a framework |
-| `search_persons`, `get_person` | Identified people plus anonymous device counts; one person's properties, devices, events and replays |
-| `property_values`, `list_person_properties` | Top values of a property (with event and people counts) and the person property names, so filters use values that exist |
-| `list_cohorts`, `save_cohort`, `count_cohort`, `delete_cohort` | Saved person filters (and optional did-event) with live membership counts. Filter any query to a cohort with `{"property":"cohort","value":"<key>"}` |
-| `list_replays` | Find recorded sessions: by person, signals (`errors`, `rage_clicks`, `dead_clicks`, `console_errors`, `failed_requests`), visited `url`, `did_event` / `not_event`, event or cohort `filters`, text `search`; sort by `most_frustrated` and more |
-| `summarise_replay` | A session as a transcript: pages, clicks with labels and CSS selectors, rage and dead clicks, errors with stack frames, failed requests, console errors, notes. Highlights link to each moment |
-| `replay_snapshot` | What was on screen at a moment (`at: "01:24"`), as text: headings, links, buttons (and whether disabled), masked form fields, dialogs |
-| `analyse_replays` | Patterns across sessions: most rage- and dead-clicked elements, common errors, failing requests, where frustrated sessions end; each with example links |
-| `annotate_replay`, `delete_replay_note` | Pin a finding to a moment of a session; it shows on the player timeline and in the transcript |
-| `list_flags`, `save_flag`, `delete_flag` | Feature flags |
-| `list_experiments`, `create_experiment`, `experiment_results`, `update_experiment` | A/B tests: create, start, read, stop, ship |
-| `list_projects`, `create_project` | Projects |
+| Tool                                                                               |                                                                                                                                                                                                                                                  |
+| ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `overview`                                                                         | Start here: headline stats vs the previous period, top pages, referrers, errors, frequent events and the events that moved most                                                                                                                  |
+| `query_web`                                                                        | The full web analytics view                                                                                                                                                                                                                      |
+| `query_trends`                                                                     | Counts, unique people, sums or averages over time, with breakdowns                                                                                                                                                                               |
+| `query_funnel`                                                                     | Conversion through ordered steps within a window, with breakdowns                                                                                                                                                                                |
+| `query_retention`                                                                  | Cohort retention by day, week or month                                                                                                                                                                                                           |
+| `sql`                                                                              | One read-only SELECT against the event store                                                                                                                                                                                                     |
+| `list_events`                                                                      | Event names, counts and documentation status (`undocumented` lists custom events still missing a description)                                                                                                                                    |
+| `describe_event`                                                                   | Properties sent with an event: types, coverage, examples                                                                                                                                                                                         |
+| `define_event`                                                                     | Document how/when an event fires and what each property means                                                                                                                                                                                    |
+| `instrument`                                                                       | The exact code to track an event in a framework                                                                                                                                                                                                  |
+| `search_persons`, `get_person`                                                     | Identified people plus anonymous device counts; one person's properties, devices, events and replays                                                                                                                                             |
+| `property_values`, `list_person_properties`                                        | Top values of a property (with event and people counts) and the person property names, so filters use values that exist                                                                                                                          |
+| `list_cohorts`, `save_cohort`, `count_cohort`, `delete_cohort`                     | Saved person filters (and optional did-event) with live membership counts. Filter any query to a cohort with `{"property":"cohort","value":"<key>"}`                                                                                             |
+| `list_replays`                                                                     | Find recorded sessions: by person, signals (`errors`, `rage_clicks`, `dead_clicks`, `console_errors`, `failed_requests`), visited `url`, `did_event` / `not_event`, event or cohort `filters`, text `search`; sort by `most_frustrated` and more |
+| `summarise_replay`                                                                 | A session as a transcript: pages, clicks with labels and CSS selectors, rage and dead clicks, errors with stack frames, failed requests, console errors, notes. Highlights link to each moment                                                   |
+| `replay_snapshot`                                                                  | What was on screen at a moment (`at: "01:24"`), as text: headings, links, buttons (and whether disabled), masked form fields, dialogs                                                                                                            |
+| `analyse_replays`                                                                  | Patterns across sessions: most rage- and dead-clicked elements, common errors, failing requests, where frustrated sessions end; each with example links                                                                                          |
+| `annotate_replay`, `delete_replay_note`                                            | Pin a finding to a moment of a session; it shows on the player timeline and in the transcript                                                                                                                                                    |
+| `list_flags`, `save_flag`, `delete_flag`                                           | Feature flags                                                                                                                                                                                                                                    |
+| `list_experiments`, `create_experiment`, `experiment_results`, `update_experiment` | A/B tests: create, start, read, stop, ship                                                                                                                                                                                                       |
+| `list_projects`, `create_project`                                                  | Projects                                                                                                                                                                                                                                         |
 
 Every result includes a `summary` sentence, the `sql` that ran, and a `dashboard` link to the same view. Tool input schemas are generated from the same zod schemas the API validates with, so the descriptions agents see are always current.
 

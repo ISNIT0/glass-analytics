@@ -104,7 +104,8 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: 'list_person_properties',
     title: 'List person properties',
-    description: 'Person property names (sampled from recently active people) with types and example values. Filter on them as "person.<name>".',
+    description:
+      'Person property names (sampled from recently active people) with types and example values. Filter on them as "person.<name>".',
     input: inputs.listPersonProperties,
     scope: 'read',
     run: (s, a) => s.listPersonProperties(a),
@@ -121,7 +122,7 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: 'get_person',
     title: 'Get a person',
-    description: 'A person\'s properties, devices, last 100 events and recorded sessions.',
+    description: "A person's properties, devices, last 100 events and recorded sessions.",
     input: inputs.getPerson,
     scope: 'read',
     run: (s, a) => s.getPerson(a),
@@ -129,7 +130,8 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: 'list_insights',
     title: 'List saved analyses',
-    description: 'Saved trends/funnel/retention analyses on the Insights tab. New projects are seeded with DAU, WAU, MAU, pageviews and retention defaults.',
+    description:
+      'Saved trends/funnel/retention analyses on the Insights tab. New projects are seeded with DAU, WAU, MAU, pageviews and retention defaults.',
     input: inputs.listInsights,
     scope: 'read',
     run: (s, a) => s.listInsights(a),
@@ -145,7 +147,8 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: 'save_insight',
     title: 'Save an analysis',
-    description: 'Create or update a named trends/funnel/retention analysis with a title and description.',
+    description:
+      'Create or update a named trends/funnel/retention analysis with a title and description.',
     input: inputs.saveInsight,
     scope: 'admin',
     run: (s, a) => s.saveInsight(a),
@@ -161,7 +164,8 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: 'list_cohorts',
     title: 'List cohorts',
-    description: 'Saved person cohorts with live membership counts. Filter any query to a cohort with {"property":"cohort","value":"<key>"} (op "neq" to exclude it).',
+    description:
+      'Saved person cohorts with live membership counts. Filter any query to a cohort with {"property":"cohort","value":"<key>"} (op "neq" to exclude it).',
     input: inputs.listCohorts,
     scope: 'read',
     run: (s, a) => s.listCohorts(a),
@@ -298,7 +302,8 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: 'update_experiment',
     title: 'Start, stop or ship an experiment',
-    description: '"start" enables the flag; "stop" freezes results; "ship" gives everyone the chosen variant.',
+    description:
+      '"start" enables the flag; "stop" freezes results; "ship" gives everyone the chosen variant.',
     input: inputs.updateExperiment,
     scope: 'admin',
     run: (s, a) => s.updateExperiment(a),

@@ -53,12 +53,20 @@ const SYSTEM_DOCS: Record<string, string> = {
 };
 
 /** Built-in columns commonly used for breakdowns and filters. */
-export const COLUMN_OPTIONS: { name: string; description: string; group: 'Page' | 'Acquisition' | 'Geo' | 'Device' | 'Identity' }[] = [
+export const COLUMN_OPTIONS: {
+  name: string;
+  description: string;
+  group: 'Page' | 'Acquisition' | 'Geo' | 'Device' | 'Identity';
+}[] = [
   { name: 'path', description: 'URL path of the page, e.g. /pricing.', group: 'Page' },
   { name: 'host', description: 'Hostname of the page URL.', group: 'Page' },
   { name: 'url', description: 'Full page URL including query string.', group: 'Page' },
   { name: 'title', description: 'document.title at capture time.', group: 'Page' },
-  { name: 'referrer_host', description: 'Hostname of the referrer, e.g. news.ycombinator.com.', group: 'Acquisition' },
+  {
+    name: 'referrer_host',
+    description: 'Hostname of the referrer, e.g. news.ycombinator.com.',
+    group: 'Acquisition',
+  },
   { name: 'referrer', description: 'Full referrer URL (query stripped).', group: 'Acquisition' },
   { name: 'utm_source', description: 'utm_source query parameter.', group: 'Acquisition' },
   { name: 'utm_medium', description: 'utm_medium query parameter.', group: 'Acquisition' },
@@ -71,9 +79,17 @@ export const COLUMN_OPTIONS: { name: string; description: string; group: 'Page' 
   { name: 'device', description: 'desktop, mobile or tablet.', group: 'Device' },
   { name: 'browser', description: 'Browser family: Chrome, Safari, Firefox, …', group: 'Device' },
   { name: 'os', description: 'Operating system family.', group: 'Device' },
-  { name: 'distinct_id', description: 'Anonymous device id (stable across identify).', group: 'Identity' },
+  {
+    name: 'distinct_id',
+    description: 'Anonymous device id (stable across identify).',
+    group: 'Identity',
+  },
   { name: 'user_id', description: 'Your user id after glass.identify().', group: 'Identity' },
-  { name: 'person_id', description: 'Resolved person id (user_id or distinct_id).', group: 'Identity' },
+  {
+    name: 'person_id',
+    description: 'Resolved person id (user_id or distinct_id).',
+    group: 'Identity',
+  },
   { name: 'session_id', description: 'Browser session id.', group: 'Identity' },
 ];
 
@@ -95,7 +111,8 @@ export function invalidateCatalog(): void {
 
 /** Forget cached values of one property (e.g. "cohort" after saving a cohort). */
 export function invalidateValues(property: string): void {
-  for (const key of valuesCache.keys()) if (key.split('::')[1] === property) valuesCache.delete(key);
+  for (const key of valuesCache.keys())
+    if (key.split('::')[1] === property) valuesCache.delete(key);
 }
 
 export function loadEvents(project?: string): Promise<CatalogEvent[]> {
@@ -154,13 +171,22 @@ export function loadPersonProperties(project?: string): Promise<CatalogProperty[
 }
 
 /** Most common values of a property (optionally on one event, containing `query`). */
-export function loadPropertyValues(property: string, options: { event?: string; project?: string; query?: string } = {}): Promise<PropertyValue[]> {
+export function loadPropertyValues(
+  property: string,
+  options: { event?: string; project?: string; query?: string } = {},
+): Promise<PropertyValue[]> {
   const query = options.query?.trim().toLowerCase() ?? '';
   const key = [projectKey(options.project), property, options.event ?? '', query].join('::');
   let pending = valuesCache.get(key);
   if (!pending) {
     pending = api
-      .get<{ values: PropertyValue[] }>('/api/properties/values', { project: options.project, property, event: options.event, query, limit: 50 })
+      .get<{ values: PropertyValue[] }>('/api/properties/values', {
+        project: options.project,
+        property,
+        event: options.event,
+        query,
+        limit: 50,
+      })
       .then((r) => r.values)
       .catch(() => {
         valuesCache.delete(key);

@@ -33,9 +33,14 @@ function applyAttrs(el: Element, attrs: Attrs): void {
   }
 }
 
-const isAttrs = (v: unknown): v is Attrs => !!v && typeof v === 'object' && !(v instanceof Node) && !Array.isArray(v);
+const isAttrs = (v: unknown): v is Attrs =>
+  !!v && typeof v === 'object' && !(v instanceof Node) && !Array.isArray(v);
 
-export function h<K extends keyof HTMLElementTagNameMap>(tag: K, attrs?: Attrs | Child, ...children: Child[]): HTMLElementTagNameMap[K] {
+export function h<K extends keyof HTMLElementTagNameMap>(
+  tag: K,
+  attrs?: Attrs | Child,
+  ...children: Child[]
+): HTMLElementTagNameMap[K] {
   const el = document.createElement(tag);
   if (isAttrs(attrs)) applyAttrs(el, attrs);
   else append(el, attrs as Child);
@@ -45,9 +50,14 @@ export function h<K extends keyof HTMLElementTagNameMap>(tag: K, attrs?: Attrs |
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
-export function s(tag: string, attrs: Record<string, string | number | null | undefined> = {}, ...children: Child[]): SVGElement {
+export function s(
+  tag: string,
+  attrs: Record<string, string | number | null | undefined> = {},
+  ...children: Child[]
+): SVGElement {
   const el = document.createElementNS(SVG_NS, tag);
-  for (const [key, value] of Object.entries(attrs)) if (value !== null && value !== undefined) el.setAttribute(key, String(value));
+  for (const [key, value] of Object.entries(attrs))
+    if (value !== null && value !== undefined) el.setAttribute(key, String(value));
   append(el, children);
   return el;
 }

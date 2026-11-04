@@ -13,14 +13,19 @@ import { type Browser, type BrowserContext, chromium } from 'playwright';
 import { type DevServer, startDevServer } from '../packages/worker/test/server.ts';
 
 // Headless Chromium says "HeadlessChrome", which Glass filters as a bot; look like a real browser.
-const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+const UA =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 const SHOTS = new URL('../test-results/', import.meta.url).pathname;
 
 let server: DevServer;
 let browser: Browser;
 let context: BrowserContext;
 
-async function api<T = Record<string, unknown>>(method: string, path: string, body?: unknown): Promise<T> {
+async function api<T = Record<string, unknown>>(
+  method: string,
+  path: string,
+  body?: unknown,
+): Promise<T> {
   const res = await fetch(`${server.glassUrl}${path}`, {
     method,
     headers: { Authorization: 'Bearer dev-admin-key', 'Content-Type': 'application/json' },
@@ -31,7 +36,12 @@ async function api<T = Record<string, unknown>>(method: string, path: string, bo
   return data as T;
 }
 
-async function eventually<T>(fn: () => Promise<T>, check: (v: T) => boolean, label: string, timeoutMs = 10_000): Promise<T> {
+async function eventually<T>(
+  fn: () => Promise<T>,
+  check: (v: T) => boolean,
+  label: string,
+  timeoutMs = 10_000,
+): Promise<T> {
   const start = Date.now();
   let last: T;
   do {
@@ -50,7 +60,14 @@ describe('Glass end to end', { timeout: 120_000 }, () => {
     browser = await chromium.launch({ args: [`--user-agent=${UA}`] });
     context = await browser.newContext({ userAgent: UA, viewport: { width: 1280, height: 860 } });
     // A 50/50 flag on the home page call to action.
-    await api('PUT', '/api/flags/new-cta', { project: 'demo', rollout: 100, variants: [{ key: 'control', weight: 50 }, { key: 'test', weight: 50 }] });
+    await api('PUT', '/api/flags/new-cta', {
+      project: 'demo',
+      rollout: 100,
+      variants: [
+        { key: 'control', weight: 50 },
+        { key: 'test', weight: 50 },
+      ],
+    });
   });
 
   after(async () => {
@@ -64,7 +81,9 @@ describe('Glass end to end', { timeout: 120_000 }, () => {
     page.on('pageerror', (e) => errors.push(e.message));
 
     await page.goto(`${server.demoUrl}/?utm_source=e2e&utm_campaign=launch`);
-    await page.waitForFunction(() => (window as unknown as { glass?: { flags(): object } }).glass?.flags !== undefined);
+    await page.waitForFunction(
+      () => (window as unknown as { glass?: { flags(): object } }).glass?.flags !== undefined,
+    );
     await page.waitForTimeout(500); // flags load, exposure is logged
     await page.click('#cta a');
     await page.waitForURL('**/pricing');
@@ -82,11 +101,17 @@ describe('Glass end to end', { timeout: 120_000 }, () => {
     // (Closing the tab outright can tear the page down before its handlers run.)
     await page.goto('about:blank');
     await page.close();
-    assert.ok(errors.some((e) => e.includes('number')), 'the demo button throws, as designed');
+    assert.ok(
+      errors.some((e) => e.includes('number')),
+      'the demo button throws, as designed',
+    );
 
     const events = await eventually(
       () => api<{ events: { event: string; count: number }[] }>('GET', '/api/events?project=demo'),
-      (r) => ['signup_completed', 'plan_selected', '$exception', '$pageview'].every((name) => r.events.some((e) => e.event === name)),
+      (r) =>
+        ['signup_completed', 'plan_selected', '$exception', '$pageview'].every((name) =>
+          r.events.some((e) => e.event === name),
+        ),
       'events',
     );
     const count = (name: string) => events.events.find((e) => e.event === name)?.count ?? 0;
@@ -96,11 +121,10 @@ describe('Glass end to end', { timeout: 120_000 }, () => {
   });
 
   it('answers questions about it through the API', async () => {
-    const web = await api<{ totals: { visitors: number; pageviews: number; sessions: number }; breakdowns: { utm_source: { value: string }[] } }>(
-      'POST',
-      '/api/query',
-      { kind: 'web', project: 'demo', from: '-1h' },
-    );
+    const web = await api<{
+      totals: { visitors: number; pageviews: number; sessions: number };
+      breakdowns: { utm_source: { value: string }[] };
+    }>('POST', '/api/query', { kind: 'web', project: 'demo', from: '-1h' });
     assert.equal(web.totals.visitors, 1);
     assert.equal(web.totals.pageviews, 4);
     assert.equal(web.totals.sessions, 1);
@@ -110,41 +134,63 @@ describe('Glass end to end', { timeout: 120_000 }, () => {
       kind: 'funnel',
       project: 'demo',
       from: '-1h',
-      steps: [{ event: '$pageview', filters: [{ property: 'path', value: '/pricing' }] }, { event: 'plan_selected', filters: [{ property: 'plan', value: 'team' }] }, { event: 'signup_completed' }],
+      steps: [
+        { event: '$pageview', filters: [{ property: 'path', value: '/pricing' }] },
+        { event: 'plan_selected', filters: [{ property: 'plan', value: 'team' }] },
+        { event: 'signup_completed' },
+      ],
     });
     assert.deepEqual(
       funnel.steps.map((s) => s.count),
       [1, 1, 1],
     );
 
-    const person = await api<{ identified: boolean; properties: { plan: string }; recentEvents: unknown[] }>('GET', '/api/persons/user-ada?project=demo');
+    const person = await api<{
+      identified: boolean;
+      properties: { plan: string };
+      recentEvents: unknown[];
+    }>('GET', '/api/persons/user-ada?project=demo');
     assert.equal(person.identified, true);
     assert.equal(person.properties.plan, 'team');
     assert.ok(person.recentEvents.length >= 6, 'events before signup are attributed to the person');
 
-    const sql = await api<{ rows: { n: number }[] }>('POST', '/api/sql', { project: 'demo', query: "SELECT COUNT(*) AS n FROM events WHERE event = '$exposure'" });
+    const sql = await api<{ rows: { n: number }[] }>('POST', '/api/sql', {
+      project: 'demo',
+      query: "SELECT COUNT(*) AS n FROM events WHERE event = '$exposure'",
+    });
     assert.ok(sql.rows[0]!.n >= 1, 'reading the flag recorded an exposure');
   });
 
   it('records the session and summarises it as text', async () => {
     const list = await eventually(
-      () => api<{ replays: { session: string; errors: number; clicks: number }[] }>('GET', '/api/replays?project=demo'),
+      () =>
+        api<{ replays: { session: string; errors: number; clicks: number }[] }>(
+          'GET',
+          '/api/replays?project=demo',
+        ),
       (r) => r.replays.length > 0 && r.replays[0]!.errors > 0,
       'replay with errors',
     );
     const session = list.replays[0]!.session;
     const recording = await eventually(
-      () => api<{ events: { type: number }[] }>('GET', `/api/replays/${session}/events?project=demo`),
+      () =>
+        api<{ events: { type: number }[] }>('GET', `/api/replays/${session}/events?project=demo`),
       (r) => r.events.filter((e) => e.type === 4).length >= 4,
       'one recorded page per page load',
     );
     assert.ok(recording.events.length > 10);
     const summary = await eventually(
       () =>
-        api<{ transcript: string; stats: { clicks: number; errors: number; pages: number; failedRequests: number; consoleErrors: number } }>(
-          'GET',
-          `/api/replays/${session}/summary?project=demo`,
-        ),
+        api<{
+          transcript: string;
+          stats: {
+            clicks: number;
+            errors: number;
+            pages: number;
+            failedRequests: number;
+            consoleErrors: number;
+          };
+        }>('GET', `/api/replays/${session}/summary?project=demo`),
       (r) => r.stats.failedRequests > 0 && r.stats.consoleErrors > 0,
       'the failed billing request and its console error',
     );
@@ -156,17 +202,30 @@ describe('Glass end to end', { timeout: 120_000 }, () => {
       .map((l) => l.slice(6).replace(/ · .*$/, ''))
       .filter((l) => /^(Rage-)?[Cc]licked /.test(l));
     assert.match(clicks[0] ?? '', /^Clicked "(See pricing|Start your free trial)" \(link\)$/); // the new-cta flag picks the text
-    assert.deepEqual(clicks.slice(1), ['Clicked "Choose Team" (button)', 'Clicked "Create account" (button)', 'Rage-clicked "Upgrade now" (button) ×3']);
-    assert.match(summary.transcript, /Rage-clicked "Upgrade now" \(button\) ×3 · #pay \[.*an error followed\]/);
+    assert.deepEqual(clicks.slice(1), [
+      'Clicked "Choose Team" (button)',
+      'Clicked "Create account" (button)',
+      'Rage-clicked "Upgrade now" (button) ×3',
+    ]);
+    assert.match(
+      summary.transcript,
+      /Rage-clicked "Upgrade now" \(button\) ×3 · #pay \[.*an error followed\]/,
+    );
     assert.match(summary.transcript, /ERROR TypeError/);
     assert.match(summary.transcript, /Request failed: POST http:\/\/[^ ]+\/api\/billing → 404/);
     assert.doesNotMatch(summary.transcript, /plan=pro/, 'query strings are not recorded');
     assert.match(summary.transcript, /Console error: Billing request failed: 404/);
     assert.match(summary.transcript, /Event signup_completed \(plan="team"\)/);
 
-    const shot = await api<{ screen: string }>('GET', `/api/replays/${session}/snapshot?project=demo&at=00:00`);
+    const shot = await api<{ screen: string }>(
+      'GET',
+      `/api/replays/${session}/snapshot?project=demo&at=00:00`,
+    );
     assert.match(shot.screen, /# Inkwell/);
-    const found = await api<{ replays: { session: string }[] }>('GET', '/api/replays?project=demo&has=rage_clicks,failed_requests&url=/app');
+    const found = await api<{ replays: { session: string }[] }>(
+      'GET',
+      '/api/replays?project=demo&has=rage_clicks,failed_requests&url=/app',
+    );
     assert.deepEqual(
       found.replays.map((r) => r.session),
       [session],
@@ -221,13 +280,20 @@ describe('Glass end to end', { timeout: 120_000 }, () => {
     await visitor.close();
 
     const list = await eventually(
-      () => api<{ replays: { session: string; url: string }[] }>('GET', '/api/replays?project=demo'),
+      () =>
+        api<{ replays: { session: string; url: string }[] }>('GET', '/api/replays?project=demo'),
       (r) => r.replays.some((x) => x.url.endsWith('/changelog')),
       'a replay of the changelog page',
     );
     const session = list.replays.find((x) => x.url.endsWith('/changelog'))!.session;
-    const { events } = await api<{ events: { type: number }[] }>('GET', `/api/replays/${session}/events?project=demo`);
+    const { events } = await api<{ events: { type: number }[] }>(
+      'GET',
+      `/api/replays/${session}/events?project=demo`,
+    );
     const snapshot = events.find((e) => e.type === 2);
-    assert.ok(snapshot && JSON.stringify(snapshot).length > 64_000, 'the full snapshot, bigger than a beacon, was stored');
+    assert.ok(
+      snapshot && JSON.stringify(snapshot).length > 64_000,
+      'the full snapshot, bigger than a beacon, was stored',
+    );
   });
 });

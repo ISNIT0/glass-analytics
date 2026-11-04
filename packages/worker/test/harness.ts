@@ -7,17 +7,27 @@
  * - Pipelines streams → arrays
  */
 
-import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { createApp } from '../src/app.ts';
-import type { Assets, D1Database, D1PreparedStatement, D1Result, Env, PipelineStream, R2Bucket, R2ObjectBody } from '../src/env.ts';
+import type {
+  Assets,
+  D1Database,
+  D1PreparedStatement,
+  D1Result,
+  Env,
+  PipelineStream,
+  R2Bucket,
+  R2ObjectBody,
+} from '../src/env.ts';
 import { clearProjectCache } from '../src/projects.ts';
 
 const MIGRATIONS = new URL('../migrations/', import.meta.url);
 
 type Value = null | number | bigint | string | Uint8Array;
-const toSqlite = (v: unknown): Value => (v === undefined || v === null ? null : typeof v === 'boolean' ? (v ? 1 : 0) : (v as Value));
+const toSqlite = (v: unknown): Value =>
+  v === undefined || v === null ? null : typeof v === 'boolean' ? (v ? 1 : 0) : (v as Value);
 
 class Statement implements D1PreparedStatement {
   private readonly db: DatabaseSync;
@@ -59,7 +69,9 @@ export class SqliteD1 implements D1Database {
   constructor(path = ':memory:') {
     if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
     this.sqlite = new DatabaseSync(path);
-    for (const file of readdirSync(MIGRATIONS).filter((f) => f.endsWith('.sql')).sort()) {
+    for (const file of readdirSync(MIGRATIONS)
+      .filter((f) => f.endsWith('.sql'))
+      .sort()) {
       this.sqlite.exec(readFileSync(new URL(file, MIGRATIONS), 'utf8'));
     }
   }
@@ -82,7 +94,11 @@ export class SqliteD1 implements D1Database {
 }
 
 const bytesOf = (value: ArrayBuffer | Uint8Array | string) =>
-  typeof value === 'string' ? new TextEncoder().encode(value) : value instanceof Uint8Array ? value : new Uint8Array(value);
+  typeof value === 'string'
+    ? new TextEncoder().encode(value)
+    : value instanceof Uint8Array
+      ? value
+      : new Uint8Array(value);
 
 const body = (key: string, bytes: Uint8Array): R2ObjectBody => ({
   key,
@@ -104,7 +120,12 @@ export class MemoryR2 implements R2Bucket {
   }
   async list({ prefix, limit = 1000 }: { prefix: string; limit?: number }) {
     const keys = [...this.objects.keys()].filter((k) => k.startsWith(prefix)).sort();
-    return { objects: keys.slice(0, limit).map((key) => ({ key, size: this.objects.get(key)!.byteLength })), truncated: keys.length > limit };
+    return {
+      objects: keys
+        .slice(0, limit)
+        .map((key) => ({ key, size: this.objects.get(key)!.byteLength })),
+      truncated: keys.length > limit,
+    };
   }
   async delete(keys: string | string[]) {
     for (const k of Array.isArray(keys) ? keys : [keys]) this.objects.delete(k);
@@ -142,7 +163,9 @@ export class DirectoryR2 implements R2Bucket {
     } catch {
       names = [];
     }
-    const objects = names.slice(0, limit).map((n) => ({ key: `${prefix}${decodeURIComponent(n)}`, size: 0 }));
+    const objects = names
+      .slice(0, limit)
+      .map((n) => ({ key: `${prefix}${decodeURIComponent(n)}`, size: 0 }));
     return { objects, truncated: names.length > limit };
   }
   async delete(keys: string | string[]) {
@@ -172,27 +195,60 @@ export interface TestApp {
   db: SqliteD1;
   r2: MemoryR2;
   /** Make a request; `key` defaults to the admin key, pass null for none. */
-  call(method: string, path: string, options?: { body?: unknown; key?: string | null; headers?: Record<string, string> }): Promise<Response>;
-  json<T = Record<string, unknown>>(method: string, path: string, options?: { body?: unknown; key?: string | null }): Promise<T>;
-  ingest(events: Record<string, unknown>[], options?: { project?: string; headers?: Record<string, string> }): Promise<Response>;
+  call(
+    method: string,
+    path: string,
+    options?: { body?: unknown; key?: string | null; headers?: Record<string, string> },
+  ): Promise<Response>;
+  json<T = Record<string, unknown>>(
+    method: string,
+    path: string,
+    options?: { body?: unknown; key?: string | null },
+  ): Promise<T>;
+  ingest(
+    events: Record<string, unknown>[],
+    options?: { project?: string; headers?: Record<string, string> },
+  ): Promise<Response>;
   app: ReturnType<typeof createApp>;
 }
 
 export const CHROME_UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
-export function testApp(envOverrides: Partial<Env> = {}, options: Partial<Parameters<typeof createApp>[0]> = {}): TestApp {
+export function testApp(
+  envOverrides: Partial<Env> = {},
+  options: Partial<Parameters<typeof createApp>[0]> = {},
+): TestApp {
   clearProjectCache();
   const db = new SqliteD1();
   const r2 = new MemoryR2();
-  const env: Env = { DB: db, REPLAYS: r2, GLASS_ADMIN_KEY: ADMIN, GLASS_READ_KEY: READ, GLASS_SALT_SECRET: 'salt', ...envOverrides };
+  const env: Env = {
+    DB: db,
+    REPLAYS: r2,
+    GLASS_ADMIN_KEY: ADMIN,
+    GLASS_READ_KEY: READ,
+    GLASS_SALT_SECRET: 'salt',
+    ...envOverrides,
+  };
   const app = createApp({ assets: TEST_ASSETS, ...options });
   const call: TestApp['call'] = async (method, path, o = {}) => {
     const headers: Record<string, string> = { 'User-Agent': CHROME_UA, ...o.headers };
     const key = o.key === undefined ? ADMIN : o.key;
     if (key) headers.Authorization = `Bearer ${key}`;
-    const body = o.body === undefined ? undefined : typeof o.body === 'string' || o.body instanceof Uint8Array ? o.body : JSON.stringify(o.body);
-    return app.fetch(new Request(`https://glass.test${path}`, { method, headers, body: body as BodyInit | undefined }), env);
+    const body =
+      o.body === undefined
+        ? undefined
+        : typeof o.body === 'string' || o.body instanceof Uint8Array
+          ? o.body
+          : JSON.stringify(o.body);
+    return app.fetch(
+      new Request(`https://glass.test${path}`, {
+        method,
+        headers,
+        body: body as BodyInit | undefined,
+      }),
+      env,
+    );
   };
   return {
     env,
@@ -219,5 +275,13 @@ export function testApp(envOverrides: Partial<Env> = {}, options: Partial<Parame
 let n = 0;
 /** A wire event with defaults. */
 export function wire(event: string, extra: Record<string, unknown> = {}) {
-  return { id: `e-${Date.now()}-${++n}`, event, ts: Date.now() - 1000, distinct_id: 'device-1', session_id: 'session-1', url: 'https://acme.com/', ...extra };
+  return {
+    id: `e-${Date.now()}-${++n}`,
+    event,
+    ts: Date.now() - 1000,
+    distinct_id: 'device-1',
+    session_id: 'session-1',
+    url: 'https://acme.com/',
+    ...extra,
+  };
 }

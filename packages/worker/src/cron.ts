@@ -15,7 +15,11 @@ import type { EventStore } from './stores/types.ts';
 const SUMMARIES_PER_RUN = 10;
 const SETTLED_MS = 30 * 60_000;
 
-export async function runMaintenance(env: Env, store: EventStore, now = Date.now()): Promise<{ events: number; replays: number; summarised: number }> {
+export async function runMaintenance(
+  env: Env,
+  store: EventStore,
+  now = Date.now(),
+): Promise<{ events: number; replays: number; summarised: number }> {
   let events = 0;
   let replays = 0;
   const eventDays = Number(env.GLASS_RETENTION_DAYS);
@@ -23,7 +27,11 @@ export async function runMaintenance(env: Env, store: EventStore, now = Date.now
     const cutoff = now - eventDays * DAY_MS;
     // Delete in slices so a big backlog never exceeds a single invocation's limits.
     for (let i = 0; i < 20; i++) {
-      const res = await env.DB.prepare('DELETE FROM events WHERE rowid IN (SELECT rowid FROM events WHERE ts_ms < ? LIMIT 5000)').bind(cutoff).run();
+      const res = await env.DB.prepare(
+        'DELETE FROM events WHERE rowid IN (SELECT rowid FROM events WHERE ts_ms < ? LIMIT 5000)',
+      )
+        .bind(cutoff)
+        .run();
       const changes = res.meta.changes ?? 0;
       events += changes;
       if (changes < 5000) break;
@@ -43,7 +51,9 @@ export async function runMaintenance(env: Env, store: EventStore, now = Date.now
   let summarised = 0;
   if (env.REPLAYS) {
     const service = new GlassService(env, store, env.GLASS_PUBLIC_URL?.replace(/\/+$/, '') ?? '');
-    summarised = await service.summariseSettled(await sessionsToSummarise(env.DB, now - SETTLED_MS, SUMMARIES_PER_RUN));
+    summarised = await service.summariseSettled(
+      await sessionsToSummarise(env.DB, now - SETTLED_MS, SUMMARIES_PER_RUN),
+    );
   }
   return { events, replays, summarised };
 }

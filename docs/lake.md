@@ -20,18 +20,18 @@ D1 still holds projects, people, identity links, flags, experiments and the repl
 
 ## Differences from D1 mode
 
-| | D1 | Lake |
-| --- | --- | --- |
-| Freshness | Immediate | About 1–2 minutes (file roll interval) |
-| History | Until D1's size limit | Unbounded |
-| Cost | Included in Workers plans up to limits | R2 storage, Pipelines and Basin SQL scans |
-| Person properties | At event time, or current via SQL join | At event time |
-| Deleting a person's events | Yes | Not yet (roadmap) |
-| Other engines | | Any Iceberg reader (DuckDB, Spark, Snowflake) can read the same tables |
+|                            | D1                                     | Lake                                                                   |
+| -------------------------- | -------------------------------------- | ---------------------------------------------------------------------- |
+| Freshness                  | Immediate                              | About 1–2 minutes (file roll interval)                                 |
+| History                    | Until D1's size limit                  | Unbounded                                                              |
+| Cost                       | Included in Workers plans up to limits | R2 storage, Pipelines and Basin SQL scans                              |
+| Person properties          | At event time, or current via SQL join | At event time                                                          |
+| Deleting a person's events | Yes                                    | Not yet (roadmap)                                                      |
+| Other engines              |                                        | Any Iceberg reader (DuckDB, Spark, Snowflake) can read the same tables |
 
 ## Using a narrower token
 
-The Worker only needs to *read* in lake mode. After `init`, you can replace its token with one that has just *Workers R2 SQL › Read* and *Workers R2 Data Catalog › Read*:
+The Worker only needs to _read_ in lake mode. After `init`, you can replace its token with one that has just _Workers R2 SQL › Read_ and _Workers R2 Data Catalog › Read_:
 
 ```sh
 npx wrangler secret put CF_API_TOKEN --config .glass/wrangler.jsonc
