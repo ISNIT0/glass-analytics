@@ -20,15 +20,70 @@ export function duration(seconds: number): string {
   if (s < 60) return `${s}s`;
   const m = Math.floor(s / 60);
   if (m < 60) return `${m}m ${s % 60}s`;
-  return `${Math.floor(m / 60)}h ${m % 60}m`;
+  const hours = Math.floor(m / 60);
+  if (hours < 24) return `${hours}h ${m % 60}m`;
+  const days = Math.floor(hours / 24);
+  const rest = hours % 24;
+  if (days >= 7 || rest === 0) return `${days} ${days === 1 ? 'day' : 'days'}`;
+  return `${days}d ${rest}h`;
+}
+
+/** "GB" → "🇬🇧 United Kingdom". Falls back to the code. */
+const regionNames = (() => {
+  try {
+    return new Intl.DisplayNames(['en'], { type: 'region' });
+  } catch {
+    return null;
+  }
+})();
+
+export function countryName(code: string): string {
+  if (!/^[A-Z]{2}$/i.test(code)) return code;
+  try {
+    return regionNames?.of(code.toUpperCase()) ?? code;
+  } catch {
+    return code;
+  }
+}
+
+export function countryFlag(code: string): string {
+  if (!/^[A-Z]{2}$/i.test(code)) return '';
+  return String.fromCodePoint(...[...code.toUpperCase()].map((c) => 0x1f1a5 + c.charCodeAt(0)));
+}
+
+export function capitalize(text: string): string {
+  return text ? text[0]!.toUpperCase() + text.slice(1) : text;
+}
+
+/** Up to two initials for an avatar: "user_42" → "U4", "Ada Lovelace" → "AL". */
+export function initials(text: string): string {
+  const words = text
+    .replace(/@.*/, '')
+    .split(/[\s._-]+/)
+    .filter(Boolean);
+  if (words.length >= 2) return (words[0]![0]! + words[1]![0]!).toUpperCase();
+  return (words[0] ?? text).slice(0, 2).toUpperCase();
+}
+
+/** A stable hue (0–359) for a string, for avatars. */
+export function hue(text: string): number {
+  let n = 0;
+  for (const c of text) n = (n * 31 + c.charCodeAt(0)) % 360;
+  return n;
 }
 
 /** Signed relative change, e.g. "+12%" or "−3%". */
-export function change(now: number, before: number | undefined | null): { text: string; direction: 'up' | 'down' | 'flat' } | null {
+export function change(
+  now: number,
+  before: number | undefined | null,
+): { text: string; direction: 'up' | 'down' | 'flat' } | null {
   if (!before) return null;
   const c = (now - before) / before;
   if (Math.abs(c) < 0.005) return { text: '0%', direction: 'flat' };
-  return { text: `${c > 0 ? '+' : '−'}${Math.abs(c * 100).toFixed(0)}%`, direction: c > 0 ? 'up' : 'down' };
+  return {
+    text: `${c > 0 ? '+' : '−'}${Math.abs(c * 100).toFixed(0)}%`,
+    direction: c > 0 ? 'up' : 'down',
+  };
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];

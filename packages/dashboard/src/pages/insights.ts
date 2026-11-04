@@ -1,9 +1,10 @@
 /**
- * Insights: saved analyses (list), create flow, and ephemeral agent links.
+ * Insights: saved analyses (library), and the analysis workspace — a query
+ * rail on the left, the chart on the right, re-run automatically as you edit.
  *
  * Routes:
  *   #/insights                  — library of saved analyses
- *   #/insights/new[/:kind]      — create (builder behind "Create new")
+ *   #/insights/new[/:kind]      — create
  *   #/insights/:kind?spec=…     — ephemeral run (agent / share links)
  *   #/insights/:key             — open a saved analysis
  */
@@ -12,19 +13,28 @@ import type { FunnelResult } from '@glassanalytics/core/insights/funnel';
 import type { RetentionResult } from '@glassanalytics/core/insights/retention';
 import type { TrendsResult } from '@glassanalytics/core/insights/trends';
 import { api } from '../api.ts';
-import { funnelChart, lineChart, retentionGrid } from '../components/charts.ts';
+import { type ChartType, SERIES, funnelChart, kpiStat, lineChart, periodReached, retentionCurve, retentionGrid, sparkline } from '../components/charts.ts';
+import { previousRange } from '../components/date-range.ts';
 import { type FilterRow, cleanFilters, filterEditor } from '../components/filter-editor.ts';
+import { type IconName, icon } from '../components/icons.ts';
+import { modal, popover, selectMenu } from '../components/menu.ts';
 import { eventPicker, propertyPicker } from '../components/picker.ts';
-import { copyButton, empty, errorState, later, loading, pageHeader, panel, table, tabs, toast } from '../components/ui.ts';
-import { h, mount } from '../dom.ts';
-import { count, percent } from '../format.ts';
-import { type Route, go, href, scope } from '../state.ts';
+import { copyButton, empty, errorState, iconButton, later, loading, pageHeader, panel, table, tabs, toast } from '../components/ui.ts';
+import { type Child, h, mount } from '../dom.ts';
+import { ago, count, percent } from '../format.ts';
+import { type Route, go, href, prefs, scope } from '../state.ts';
 
 type Kind = 'trends' | 'funnel' | 'retention';
 type Spec = Record<string, unknown>;
 
 const KINDS: Kind[] = ['trends', 'funnel', 'retention'];
 const KIND_LABEL: Record<Kind, string> = { trends: 'Trends', funnel: 'Funnel', retention: 'Retention' };
+const KIND_ICON: Record<Kind, IconName> = { trends: 'lineChart', funnel: 'funnel', retention: 'retention' };
+const KIND_BLURB: Record<Kind, string> = {
+  trends: 'Counts, uniques or sums of any event over time.',
+  funnel: 'How many people complete a sequence of steps.',
+  retention: 'How many people come back after their first visit.',
+};
 
 const DEFAULTS: Record<Kind, Spec> = {
   trends: { series: [{ event: '$pageview', math: 'total' }], interval: 'day' },
@@ -41,20 +51,18 @@ interface SavedInsight {
   updatedAt: string;
 }
 
-function textInput(value: string | undefined, placeholder: string, onInput: (v: string) => void, label: string): HTMLElement {
-  const input = h('input', { type: 'text', value: value ?? '', placeholder, 'aria-label': label });
-  input.addEventListener('input', () => onInput(input.value));
-  return input;
+const letter = (i: number) => String.fromCharCode(65 + (i % 26));
+
+function seriesTag(i: number): HTMLElement {
+  return h('span', { class: 'series-tag', style: `--tag:${SERIES[i % SERIES.length]}` }, letter(i));
 }
 
-function select(value: string, options: [string, string][], onChange: (v: string) => void, label: string): HTMLElement {
-  const el = h('select', { 'aria-label': label }, options.map(([v, l]) => h('option', { value: v, selected: v === value }, l)));
-  el.addEventListener('change', () => onChange(el.value));
-  return el;
+function section(title: string, ...children: Child[]): HTMLElement {
+  return h('div', { class: 'rail-section' }, h('div', { class: 'rail-label' }, title), ...children);
 }
 
-function field(label: string, control: Node): HTMLElement {
-  return h('label', { class: 'field' }, h('span', {}, label), control);
+function addButton(label: string, onClick: () => void): HTMLElement {
+  return h('button', { type: 'button', class: 'link-button add-button', onclick: onClick }, icon('plus', 14), label);
 }
 
 type SeriesSpec = { event: string; math?: string; property?: string; filters?: FilterRow[]; label?: string };
@@ -82,7 +90,6 @@ function breakdownEditor(spec: Spec, event: string | undefined, project: string 
   return h(
     'div',
     { class: 'breakdown-editor' },
-    h('div', { class: 'filter-editor-label' }, 'Break down by'),
     values.map((value, i) =>
       h(
         'div',
@@ -100,36 +107,19 @@ function breakdownEditor(spec: Spec, event: string | undefined, project: string 
             update();
           },
         }),
-        h(
-          'button',
-          {
-            type: 'button',
-            class: 'ghost small',
-            'aria-label': 'Remove breakdown',
-            onclick: () => {
-              const next = readBreakdowns(spec);
-              next.splice(i, 1);
-              writeBreakdowns(spec, next);
-              update();
-            },
-          },
-          'Remove',
-        ),
+        iconButton('x', 'Remove breakdown', () => {
+          const next = readBreakdowns(spec);
+          next.splice(i, 1);
+          writeBreakdowns(spec, next);
+          update();
+        }),
       ),
     ),
     values.length < 4
-      ? h(
-          'button',
-          {
-            type: 'button',
-            class: 'ghost small',
-            onclick: () => {
-              writeBreakdowns(spec, [...readBreakdowns(spec), '']);
-              update();
-            },
-          },
-          values.length ? 'Add breakdown' : 'Add breakdown',
-        )
+      ? addButton(values.length ? 'Add another' : 'Add breakdown', () => {
+          writeBreakdowns(spec, [...readBreakdowns(spec), '']);
+          update();
+        })
       : null,
     values.length > 1 ? h('p', { class: 'muted small' }, 'Values are combined with “ · ”, e.g. Chrome · google.') : null,
   );
@@ -141,39 +131,38 @@ function sanitizeSpec(kind: Kind, spec: Spec): Spec {
   if (global) out.filters = global;
   else delete out.filters;
 
-  if (kind === 'trends') {
-    const series = (out.series as SeriesSpec[]).map((s) => {
-      const filters = cleanFilters(s.filters);
-      const next = { ...s };
-      if (filters) next.filters = filters;
-      else delete next.filters;
-      return next;
-    });
-    out.series = series;
-  }
-  if (kind === 'funnel') {
-    out.steps = (out.steps as StepSpec[]).map((s) => {
-      const filters = cleanFilters(s.filters);
-      const next = { ...s };
-      if (filters) next.filters = filters;
-      else delete next.filters;
-      return next;
-    });
-  }
+  const clean = <T extends { filters?: FilterRow[] }>(s: T): T => {
+    const filters = cleanFilters(s.filters);
+    const next = { ...s };
+    if (filters) next.filters = filters;
+    else delete next.filters;
+    return next;
+  };
+  if (kind === 'trends') out.series = (out.series as SeriesSpec[]).map(clean);
+  if (kind === 'funnel') out.steps = (out.steps as StepSpec[]).map(clean);
   if (kind === 'retention') {
     for (const key of ['cohortEvent', 'returnEvent'] as const) {
       const step = out[key] as StepSpec | undefined;
-      if (!step) continue;
-      const filters = cleanFilters(step.filters);
-      if (filters) step.filters = filters;
-      else delete step.filters;
+      if (step) out[key] = clean(step);
     }
   }
-  const breakdowns = readBreakdowns(out).map((v) => v.trim()).filter(Boolean);
+  const breakdowns = readBreakdowns(out)
+    .map((v) => v.trim())
+    .filter(Boolean);
   if (breakdowns.length) out.breakdown = breakdowns;
   else delete out.breakdown;
   return out;
 }
+
+const MEASURES: { value: string; label: string }[] = [
+  { value: 'total', label: 'Total count' },
+  { value: 'unique_persons', label: 'Unique people' },
+  { value: 'unique_sessions', label: 'Unique sessions' },
+  { value: 'sum', label: 'Sum of property' },
+  { value: 'avg', label: 'Average of property' },
+];
+
+const WINDOWS = ['1h', '1d', '3d', '7d', '14d', '30d', '90d'].map((w) => ({ value: w, label: w.replace(/^(\d+)h$/, '$1 hour').replace(/^1d$/, '1 day').replace(/^(\d+)d$/, '$1 days') }));
 
 function builder(kind: Kind, spec: Spec, update: () => void, project?: string): HTMLElement {
   if (!Array.isArray(spec.filters)) spec.filters = [];
@@ -183,331 +172,459 @@ function builder(kind: Kind, spec: Spec, update: () => void, project?: string): 
     return h(
       'div',
       { class: 'builder-stack' },
-      series.map((s, i) => {
-        ensureFilters(s);
-        return h(
-          'div',
-          { class: 'series-block' },
-          h(
+      section(
+        'Measure',
+        series.map((s, i) => {
+          ensureFilters(s);
+          return h(
             'div',
-            { class: 'series-row' },
-            field(
-              `Event ${series.length > 1 ? i + 1 : ''}`,
+            { class: 'query-card' },
+            h(
+              'div',
+              { class: 'query-card-head' },
+              seriesTag(i),
               eventPicker({
                 value: s.event,
                 project,
-                label: 'Event',
+                label: `Event ${letter(i)}`,
                 onChange: (v) => {
                   s.event = v;
                   update();
                 },
               }),
+              series.length > 1
+                ? iconButton('x', 'Remove series', () => {
+                    series.splice(i, 1);
+                    update();
+                  })
+                : null,
             ),
-            field(
-              'Measure',
-              select(
-                s.math ?? 'total',
-                [
-                  ['total', 'Total count'],
-                  ['unique_persons', 'Unique people'],
-                  ['unique_sessions', 'Unique sessions'],
-                  ['sum', 'Sum of property'],
-                  ['avg', 'Average of property'],
-                ],
-                (v) => {
+            h(
+              'div',
+              { class: 'query-card-row' },
+              selectMenu({
+                value: s.math ?? 'total',
+                label: 'Measure',
+                options: MEASURES,
+                width: 220,
+                onChange: (v) => {
                   s.math = v;
                   update();
                 },
-                'Measure',
-              ),
-            ),
-            s.math === 'sum' || s.math === 'avg'
-              ? field(
-                  'Property',
-                  propertyPicker({
+              }),
+              s.math === 'sum' || s.math === 'avg'
+                ? propertyPicker({
                     value: s.property ?? '',
                     event: s.event,
                     project,
                     columns: false,
-                    placeholder: 'Select a property to aggregate',
+                    placeholder: 'Property to aggregate',
                     onChange: (v) => {
                       s.property = v;
                       update();
                     },
-                  }),
-                )
-              : null,
-            series.length > 1
-              ? h('button', { type: 'button', class: 'ghost small', onclick: () => { series.splice(i, 1); update(); } }, 'Remove series')
-              : null,
-          ),
-          filterEditor(s.filters!, update, { event: s.event, project, label: 'Series filters', cohorts: true }),
-        );
-      }),
-      h('button', { type: 'button', class: 'ghost small', onclick: () => { series.push({ event: '', math: 'total', filters: [] }); update(); } }, 'Add series'),
-      field('Interval', select(String(spec.interval ?? 'day'), [['hour', 'Hour'], ['day', 'Day'], ['week', 'Week'], ['month', 'Month']], (v) => (spec.interval = v), 'Interval')),
-      breakdownEditor(spec, series[0]?.event, project, update),
-      filterEditor(spec.filters as FilterRow[], update, { event: series[0]?.event, project, label: 'Filters on all series', cohorts: true }),
+                  })
+                : null,
+            ),
+            filterEditor(s.filters!, update, { event: s.event, project, cohorts: true }),
+          );
+        }),
+        addButton('Add series', () => {
+          series.push({ event: '', math: 'total', filters: [] });
+          update();
+        }),
+      ),
+      section('Break down by', breakdownEditor(spec, series[0]?.event, project, update)),
+      section('Filters on all series', filterEditor(spec.filters as FilterRow[], update, { event: series[0]?.event, project, cohorts: true })),
     );
   }
   if (kind === 'funnel') {
     const steps = spec.steps as StepSpec[];
+    const windowValue = String(spec.window ?? '7d');
+    const windows = WINDOWS.some((w) => w.value === windowValue) ? WINDOWS : [...WINDOWS, { value: windowValue, label: windowValue }];
     return h(
       'div',
       { class: 'builder-stack' },
-      h(
-        'ol',
-        { class: 'steps-editor' },
-        steps.map((step, i) => {
-          ensureFilters(step);
-          return h(
-            'li',
-            { class: 'step-block' },
-            h(
-              'div',
-              { class: 'step-row' },
-              eventPicker({
-                value: step.event,
-                project,
-                label: `Step ${i + 1}`,
-                placeholder: `Step ${i + 1} event`,
-                onChange: (v) => {
-                  step.event = v;
-                  update();
-                },
-              }),
-              steps.length > 2
-                ? h('button', { type: 'button', class: 'ghost small', onclick: () => { steps.splice(i, 1); update(); } }, 'Remove')
-                : null,
-            ),
-            filterEditor(step.filters!, update, { event: step.event, project, label: `Step ${i + 1} filters`, cohorts: true }),
-          );
+      section(
+        'Steps',
+        h(
+          'ol',
+          { class: 'steps-editor' },
+          steps.map((step, i) => {
+            ensureFilters(step);
+            return h(
+              'li',
+              { class: 'query-card step-card' },
+              h(
+                'div',
+                { class: 'query-card-head' },
+                h('span', { class: 'funnel-step-index' }, String(i + 1)),
+                eventPicker({
+                  value: step.event,
+                  project,
+                  label: `Step ${i + 1}`,
+                  placeholder: `Step ${i + 1} event`,
+                  onChange: (v) => {
+                    step.event = v;
+                    update();
+                  },
+                }),
+                steps.length > 2
+                  ? iconButton('x', 'Remove step', () => {
+                      steps.splice(i, 1);
+                      update();
+                    })
+                  : null,
+              ),
+              filterEditor(step.filters!, update, { event: step.event, project, cohorts: true }),
+            );
+          }),
+        ),
+        addButton('Add step', () => {
+          steps.push({ event: '', filters: [] });
+          update();
         }),
       ),
-      h('button', { type: 'button', class: 'ghost small', onclick: () => { steps.push({ event: '', filters: [] }); update(); } }, 'Add step'),
-      field('Within', textInput(String(spec.window ?? '7d'), '7d', (v) => (spec.window = v), 'Conversion window')),
-      breakdownEditor(spec, steps[0]?.event, project, update),
-      filterEditor(spec.filters as FilterRow[], update, { event: steps[0]?.event, project, label: 'Filters on every step', cohorts: true }),
+      section(
+        'Completed within',
+        selectMenu({
+          value: windowValue,
+          label: 'Conversion window',
+          options: windows,
+          width: 200,
+          onChange: (v) => {
+            spec.window = v;
+            update();
+          },
+        }),
+      ),
+      section('Break down by', breakdownEditor(spec, steps[0]?.event, project, update)),
+      section('Filters on every step', filterEditor(spec.filters as FilterRow[], update, { event: steps[0]?.event, project, cohorts: true })),
     );
   }
   const cohort = spec.cohortEvent as StepSpec;
   const ret = spec.returnEvent as StepSpec;
   ensureFilters(cohort);
   ensureFilters(ret);
+  const periods = Number(spec.periods ?? 8);
   return h(
     'div',
     { class: 'builder-stack' },
-    field(
+    section(
       'First did',
-      eventPicker({
-        value: cohort.event,
-        project,
-        label: 'Cohort event',
-        onChange: (v) => {
-          cohort.event = v;
-          update();
-        },
-      }),
+      h(
+        'div',
+        { class: 'query-card' },
+        h('div', { class: 'query-card-head' }, seriesTag(0), eventPicker({ value: cohort.event, project, label: 'Cohort event', onChange: (v) => { cohort.event = v; update(); } })),
+        filterEditor(cohort.filters!, update, { event: cohort.event, project, cohorts: true }),
+      ),
     ),
-    filterEditor(cohort.filters!, update, { event: cohort.event, project, label: 'First event filters', cohorts: true }),
-    field(
+    section(
       'Came back and did',
-      eventPicker({
-        value: ret.event,
-        project,
-        label: 'Return event',
-        onChange: (v) => {
-          ret.event = v;
-          update();
-        },
-      }),
+      h(
+        'div',
+        { class: 'query-card' },
+        h('div', { class: 'query-card-head' }, seriesTag(1), eventPicker({ value: ret.event, project, label: 'Return event', onChange: (v) => { ret.event = v; update(); } })),
+        filterEditor(ret.filters!, update, { event: ret.event, project, cohorts: true }),
+      ),
     ),
-    filterEditor(ret.filters!, update, { event: ret.event, project, label: 'Return event filters', cohorts: true }),
-    field('Period', select(String(spec.period ?? 'week'), [['day', 'Day'], ['week', 'Week'], ['month', 'Month']], (v) => (spec.period = v), 'Period')),
-    field('Periods', textInput(String(spec.periods ?? 8), '8', (v) => (spec.periods = Number(v) || 8), 'Number of periods')),
-    filterEditor(spec.filters as FilterRow[], update, { event: cohort.event, project, label: 'Filters on both events', cohorts: true }),
+    section(
+      'Measured in',
+      h(
+        'div',
+        { class: 'query-card-row' },
+        tabs(
+          [
+            { value: 'day', label: 'Days' },
+            { value: 'week', label: 'Weeks' },
+            { value: 'month', label: 'Months' },
+          ],
+          String(spec.period ?? 'week'),
+          (v) => {
+            spec.period = v;
+            update();
+          },
+          'tabs-small',
+        ),
+        selectMenu({
+          value: String(periods),
+          label: 'Number of periods',
+          options: [4, 6, 8, 10, 12, 16, 24].map((n) => ({ value: String(n), label: `${n} periods` })),
+          fallback: `${periods} periods`,
+          width: 160,
+          onChange: (v) => {
+            spec.periods = Number(v);
+            update();
+          },
+        }),
+      ),
+    ),
+    section('Filters on both events', filterEditor(spec.filters as FilterRow[], update, { event: cohort.event, project, cohorts: true })),
   );
 }
 
-function resultView(kind: Kind, result: Record<string, unknown>): HTMLElement {
-  if (kind === 'trends') {
-    const r = result as unknown as TrendsResult;
-    const primary = r.series[0];
-    return h(
-      'div',
-      { class: 'insight-result' },
-      primary
-        ? h(
-            'div',
-            { class: 'funnel-kpis trends-kpis' },
-            h(
-              'div',
-              { class: 'funnel-kpi' },
-              h('div', { class: 'funnel-kpi-value' }, count(primary.total)),
-              h('div', { class: 'funnel-kpi-label' }, primary.label),
-              h('div', { class: 'funnel-kpi-hint muted' }, `by ${r.interval}`),
-            ),
-            r.series.length > 1
-              ? h(
-                  'div',
-                  { class: 'funnel-kpi' },
-                  h('div', { class: 'funnel-kpi-value' }, String(r.series.length)),
-                  h('div', { class: 'funnel-kpi-label' }, 'Series'),
-                )
-              : null,
-          )
-        : null,
-      lineChart(
-        r.buckets,
-        r.series.map((s) => ({ label: s.label, values: s.values })),
-        r.interval,
-      ),
-      r.series.length > 1 ? table(['Series', 'Total'], r.series.map((s) => [s.label, count(s.total)]), { numeric: [1] }) : null,
-    );
-  }
-  if (kind === 'funnel') {
-    const r = result as unknown as FunnelResult;
-    if (!r.steps[0]?.count) return empty('No one did the first step in this period.');
-    return funnelChart(r.steps, { windowSeconds: r.windowSeconds, breakdowns: r.breakdowns });
-  }
-  const r = result as unknown as RetentionResult;
-  if (!r.cohorts.length) return empty('No one in any cohort for this period.');
-  const day0 = r.average[0] ?? 0;
-  const end = r.average[r.average.length - 1] ?? 0;
+interface RunResult extends Record<string, unknown> {
+  summary: string;
+  sql: string[];
+}
+
+function trendsView(r: TrendsResult, previous: TrendsResult | null, chartType: ChartType | 'number'): HTMLElement {
+  const stats = h(
+    'div',
+    { class: `stats ${chartType === 'number' ? 'stats-large' : ''}` },
+    r.series.map((s, i) => {
+      const before = previous?.series[i]?.total;
+      const c = before ? (s.total - before) / before : null;
+      return kpiStat(
+        s.label,
+        count(s.total),
+        c === null
+          ? `by ${r.interval}`
+          : h('span', { class: `delta ${Math.abs(c) < 0.005 ? '' : c > 0 ? 'good' : 'bad'}` }, c > 0 ? icon('arrowUp', 12) : icon('arrowDown', 12), `${Math.abs(c * 100).toFixed(0)}% vs previous`),
+        { tag: letter(i), color: SERIES[i % SERIES.length] },
+      );
+    }),
+  );
+  if (chartType === 'number') return h('div', { class: 'insight-result' }, stats);
+  const chart = lineChart(
+    r.buckets,
+    r.series.map((s, i) => ({ label: s.label, values: s.values, previous: previous?.series[i]?.values })),
+    r.interval,
+    { height: 320, type: chartType },
+  );
+  const rows = r.series.map((s, i) => {
+    const before = previous?.series[i]?.total;
+    return [
+      h('span', { class: 'series-cell' }, seriesTag(i), s.label),
+      sparkline(s.values, { color: SERIES[i % SERIES.length], height: 22 }),
+      count(s.total),
+      before === undefined ? '–' : count(before),
+      before ? h('span', { class: `delta ${s.total >= before ? 'good' : 'bad'}` }, `${s.total >= before ? '+' : '−'}${Math.abs(((s.total - before) / before) * 100).toFixed(0)}%`) : '–',
+    ];
+  });
+  return h(
+    'div',
+    { class: 'insight-result' },
+    stats,
+    chart,
+    r.series.length > 1 || previous ? table(['Series', 'Trend', 'Total', 'Previous', 'Change'], rows, { numeric: [2, 3, 4], class: 'series-table' }) : null,
+  );
+}
+
+function retentionView(r: RetentionResult): HTMLElement {
+  if (!r.cohorts.length) return empty('No one in any cohort for this period.', undefined, { icon: 'retention' });
+  const now = Date.now();
+  let last = r.average.length - 1;
+  while (last > 0 && !r.cohorts.some((c) => periodReached(c.start, last, r.period, now))) last--;
+  const p = r.period[0]!.toUpperCase();
   return h(
     'div',
     { class: 'insight-result' },
     h(
       'div',
-      { class: 'funnel-kpis' },
-      h(
-        'div',
-        { class: 'funnel-kpi' },
-        h('div', { class: 'funnel-kpi-value' }, percent(end, 0)),
-        h('div', { class: 'funnel-kpi-label' }, `Retained (${r.period} ${r.average.length - 1})`),
-        h('div', { class: 'funnel-kpi-hint muted' }, `${percent(day0, 0)} on day/period 0`),
-      ),
-      h(
-        'div',
-        { class: 'funnel-kpi' },
-        h('div', { class: 'funnel-kpi-value' }, count(r.cohorts.reduce((n, c) => n + c.size, 0))),
-        h('div', { class: 'funnel-kpi-label' }, 'People in cohorts'),
-        h('div', { class: 'funnel-kpi-hint muted' }, `${r.cohorts.length} cohorts`),
-      ),
+      { class: 'stats' },
+      kpiStat(`Retained at ${p}1`, r.average.length > 1 && last >= 1 ? percent(r.average[1] ?? 0, 1) : '–', `of people come back the next ${r.period}`),
+      last > 1 ? kpiStat(`Retained at ${p}${last}`, percent(r.average[last] ?? 0, 1), `latest ${r.period} any cohort has reached`) : null,
+      kpiStat('People in cohorts', count(r.cohorts.reduce((n, c) => n + c.size, 0)), `${r.cohorts.length} ${r.period}ly cohorts`),
     ),
-    retentionGrid(r.cohorts, r.average, r.period),
+    retentionCurve(r.cohorts, r.average, r.period, now),
+    retentionGrid(r.cohorts, r.average, r.period, now),
   );
 }
 
-function listView(): Node[] {
-  const project = scope().project;
-  return [
-    pageHeader(
-      'Insights',
-      'Saved analyses you and your agents can reopen. New projects start with DAU, WAU, retention and a few other defaults.',
-      h('a', { class: 'button primary', href: href('insights/new') }, 'Create new'),
-    ),
-    later(async () => {
-      const r = await api.get<{ insights: SavedInsight[] }>('/api/insights', { project });
-      if (r.insights.length === 0) {
-        return empty('No saved analyses yet.', h('a', { class: 'button primary', href: href('insights/new') }, 'Create new'));
-      }
-      return h(
+function newMenu(label = 'New analysis'): HTMLElement {
+  const trigger = h('button', { type: 'button', class: 'primary' }, icon('plus', 15), label, icon('chevronDown', 14));
+  popover(
+    trigger,
+    (close) =>
+      h(
         'div',
-        { class: 'insight-library' },
-        r.insights.map((insight) =>
+        { class: 'menu new-menu' },
+        KINDS.map((k) =>
           h(
-            'a',
-            { class: 'insight-card', href: href(`insights/${insight.key}`) },
-            h('div', { class: 'insight-card-head' }, h('h2', {}, insight.name), h('span', { class: 'badge' }, KIND_LABEL[insight.kind])),
-            insight.description ? h('p', { class: 'muted' }, insight.description) : h('p', { class: 'muted' }, 'No description'),
+            'button',
+            {
+              type: 'button',
+              class: 'menu-item menu-item-rich',
+              onclick: () => {
+                close();
+                go(`insights/new/${k}`, { spec: null });
+              },
+            },
+            h('span', { class: 'menu-icon' }, icon(KIND_ICON[k], 18)),
+            h('span', { class: 'menu-rich-text' }, h('strong', {}, KIND_LABEL[k]), h('span', { class: 'muted small' }, KIND_BLURB[k])),
           ),
         ),
+      ),
+    { width: 320, align: 'end' },
+  );
+  return trigger;
+}
+
+/** A small async preview for a library card. */
+function cardPreview(insight: SavedInsight): HTMLElement {
+  const sc = scope();
+  return later(
+    async () => {
+      const body = { kind: insight.kind, ...insight.spec, from: (insight.spec.from as string) ?? sc.from, to: (insight.spec.to as string) ?? sc.to, project: sc.project };
+      const r = await api.post<Record<string, unknown>>('/api/query', body);
+      if (insight.kind === 'trends') {
+        const t = r as unknown as TrendsResult;
+        const s = t.series[0];
+        if (!s) return h('div', { class: 'card-preview muted small' }, 'No data');
+        return h('div', { class: 'card-preview' }, h('div', { class: 'card-number' }, count(s.total), h('span', { class: 'muted small' }, ` ${s.label}`)), sparkline(s.values, { height: 44 }));
+      }
+      if (insight.kind === 'funnel') {
+        const f = r as unknown as FunnelResult;
+        const first = f.steps[0]?.count ?? 0;
+        const lastStep = f.steps[f.steps.length - 1]?.count ?? 0;
+        return h(
+          'div',
+          { class: 'card-preview' },
+          h('div', { class: 'card-number' }, percent(first ? lastStep / first : 0, 1), h('span', { class: 'muted small' }, ' converted')),
+          h('div', { class: 'mini-funnel' }, f.steps.map((st) => h('span', { style: `height:${first ? Math.max(4, (st.count / first) * 100) : 4}%` }))),
+        );
+      }
+      const rr = r as unknown as RetentionResult;
+      const now = Date.now();
+      let last = rr.average.length - 1;
+      while (last > 0 && !rr.cohorts.some((c) => periodReached(c.start, last, rr.period, now))) last--;
+      return h(
+        'div',
+        { class: 'card-preview' },
+        h('div', { class: 'card-number' }, last >= 1 ? percent(rr.average[1] ?? 0, 0) : '–', h('span', { class: 'muted small' }, ` back after 1 ${rr.period}`)),
+        last >= 1 ? sparkline(rr.average.slice(0, last + 1), { height: 44 }) : h('div', { class: 'sparkline' }),
       );
-    }),
+    },
+    'Loading preview',
+    'block',
+  );
+}
+
+function listView(route: Route): Node[] {
+  const project = scope().project;
+  const filterKind = (route.params.get('kind') as Kind | null) ?? null;
+  let query = '';
+  const grid = h('div', { class: 'insight-library' });
+  let all: SavedInsight[] = [];
+  const paint = () => {
+    const q = query.trim().toLowerCase();
+    const shown = all.filter((i) => (!filterKind || i.kind === filterKind) && (!q || `${i.name} ${i.description}`.toLowerCase().includes(q)));
+    if (!shown.length) {
+      mount(grid, empty(q ? `Nothing matches “${query}”.` : 'No saved analyses of this type yet.', undefined, { icon: 'search' }));
+      return;
+    }
+    mount(
+      grid,
+      shown.map((insight) =>
+        h(
+          'a',
+          { class: 'insight-card', href: href(`insights/${insight.key}`) },
+          h(
+            'div',
+            { class: 'insight-card-head' },
+            h('span', { class: `kind-chip kind-${insight.kind}` }, icon(KIND_ICON[insight.kind], 14), KIND_LABEL[insight.kind]),
+            h('span', { class: 'muted small' }, insight.updatedAt ? `Updated ${ago(insight.updatedAt)}` : ''),
+          ),
+          h('h2', {}, insight.name),
+          h('p', { class: 'muted insight-card-desc' }, insight.description || 'No description'),
+          cardPreview(insight),
+        ),
+      ),
+    );
+  };
+  const search = h('input', { type: 'search', placeholder: 'Search analyses', 'aria-label': 'Search analyses' });
+  search.addEventListener('input', () => {
+    query = search.value;
+    paint();
+  });
+  return [
+    pageHeader('Insights', 'Saved analyses you and your agents can reopen. New projects start with DAU, WAU, retention and a few other defaults.', newMenu()),
+    h(
+      'div',
+      { class: 'toolbar' },
+      h('label', { class: 'search-field' }, icon('search', 15), search),
+      tabs(
+        [
+          { value: 'all', label: 'All' },
+          ...KINDS.map((k) => ({ value: k as string, label: KIND_LABEL[k], icon: KIND_ICON[k] })),
+        ],
+        filterKind ?? 'all',
+        (v) => go('insights', { kind: v === 'all' ? null : v }),
+      ),
+    ),
+    later(
+      async () => {
+        const r = await api.get<{ insights: SavedInsight[] }>('/api/insights', { project });
+        if (r.insights.length === 0) {
+          return empty('Build a trends, funnel or retention chart, then save it here so you and your agents can reopen it.', newMenu('Create your first analysis'), { icon: 'insights', title: 'No saved analyses yet' });
+        }
+        all = r.insights;
+        paint();
+        return grid;
+      },
+      'Loading analyses',
+      'cards',
+    ),
   ];
 }
 
-function editorView(options: {
-  mode: 'new' | 'saved' | 'ephemeral';
-  kind: Kind;
-  key?: string;
-  name?: string;
-  description?: string;
-  spec: Spec;
-  route: Route;
-}): Node[] {
-  let kind = options.kind;
-  let spec = structuredClone(options.spec);
+function editorView(options: { mode: 'new' | 'saved' | 'ephemeral'; kind: Kind; key?: string; name?: string; description?: string; spec: Spec; route: Route }): Node[] {
+  const kind = options.kind;
+  const spec = structuredClone(options.spec);
   const sc = scope();
   const form = h('form', { class: 'builder' });
   const output = h('div', { class: 'insight-output' });
-
-  const titleInput = h('input', {
-    type: 'text',
-    value: options.name ?? '',
-    placeholder: 'Title, e.g. Daily active users',
-    'aria-label': 'Analysis title',
-    required: true,
-  });
-  const descriptionInput = h('textarea', {
-    rows: 2,
-    placeholder: 'What question does this answer?',
-    'aria-label': 'Description',
-  }, options.description ?? '');
+  const status = h('span', { class: 'run-status muted small', 'aria-live': 'polite' });
+  let chartType: ChartType | 'number' = (options.route.params.get('chart') as ChartType | 'number' | null) ?? 'line';
+  let runId = 0;
+  let timer: ReturnType<typeof setTimeout> | undefined;
 
   const fullSpec = () => {
     const cleaned = sanitizeSpec(kind, spec);
     return { kind, ...cleaned, from: cleaned.from ?? sc.from, to: cleaned.to ?? sc.to, project: sc.project };
   };
+  const shareable = () => {
+    const { kind: _k, project: _p, ...rest } = fullSpec();
+    return rest;
+  };
+  const agentPrompt = () => `Using the Glass MCP tool query_${kind}, run ${JSON.stringify(shareable())} and explain what it shows.`;
 
-  const renderForm = () =>
-    mount(
-      form,
-      builder(kind, spec, renderForm, sc.project),
-      h(
-        'div',
-        { class: 'form-actions' },
-        h('button', { type: 'submit', class: 'primary' }, 'Run query'),
-        options.mode === 'saved'
-          ? h(
-              'button',
-              {
-                type: 'button',
-                class: 'ghost',
-                onclick: () => {
-                  if (!confirm('Delete this saved analysis?')) return;
-                  void api.delete(`/api/insights/${encodeURIComponent(options.key!)}`, { project: sc.project }).then(() => {
-                    toast('Deleted');
-                    go('insights');
-                  });
-                },
-              },
-              'Delete',
-            )
-          : null,
-        h('a', { class: 'button ghost', href: href('insights') }, 'Back to library'),
-      ),
-    );
+  const ready = () => {
+    if (kind === 'funnel') return (spec.steps as StepSpec[]).every((s) => s.event);
+    if (kind === 'trends') return (spec.series as SeriesSpec[]).every((s) => s.event && ((s.math !== 'sum' && s.math !== 'avg') || s.property));
+    return Boolean((spec.cohortEvent as StepSpec).event && (spec.returnEvent as StepSpec).event);
+  };
 
   const run = async () => {
-    mount(output, loading('Running query'));
+    clearTimeout(timer);
+    if (!ready()) {
+      mount(output, empty(kind === 'funnel' ? 'Pick an event for every step to see the funnel.' : 'Pick an event to see results.', undefined, { icon: KIND_ICON[kind], title: 'Almost there' }));
+      status.textContent = '';
+      return;
+    }
+    const id = ++runId;
+    status.textContent = 'Running…';
+    output.classList.add('running');
+    if (!output.firstChild || output.querySelector('.state.empty')) mount(output, loading('Running query', 'chart'));
     try {
       const body = fullSpec();
-      const result = await api.post<Record<string, unknown> & { summary: string; sql: string[]; dashboard: string }>('/api/query', body);
-      const { kind: _k, project: _p, ...shareable } = body;
-      const prompt = `Using the Glass MCP tool query_${kind}, run ${JSON.stringify(shareable)} and explain what it shows.`;
-      mount(
-        output,
-        panel(
-          'Result',
-          [h('p', { class: 'summary muted' }, result.summary), resultView(kind, result)],
-          {
-            sql: result.sql,
-            actions: [copyButton(prompt, 'Copy as agent prompt'), copyButton(() => location.href, 'Copy link')],
-          },
-        ),
-      );
+      const prev = kind === 'trends' && prefs.compare ? previousRange(String(body.from), body.to ? String(body.to) : null) : null;
+      const [result, previous] = await Promise.all([
+        api.post<RunResult>('/api/query', body),
+        prev ? api.post<TrendsResult>('/api/query', { ...body, from: prev.from, to: prev.to }).catch(() => null) : Promise.resolve(null),
+      ]);
+      if (id !== runId) return;
+      const view =
+        kind === 'trends'
+          ? trendsView(result as unknown as TrendsResult, previous, chartType)
+          : kind === 'funnel'
+            ? (result as unknown as FunnelResult).steps[0]?.count
+              ? funnelChart((result as unknown as FunnelResult).steps, { windowSeconds: (result as unknown as FunnelResult).windowSeconds, breakdowns: (result as unknown as FunnelResult).breakdowns })
+              : empty('No one did the first step in this period.', undefined, { icon: 'funnel' })
+            : retentionView(result as unknown as RetentionResult);
+      mount(output, panel('', [h('p', { class: 'summary' }, icon('bot', 15), h('span', {}, result.summary)), view], { sql: result.sql, class: 'result-panel' }));
+      status.textContent = `Updated ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
       if (options.mode === 'ephemeral' || options.mode === 'new') {
         const params = new URLSearchParams(Object.fromEntries(options.route.params));
         params.set('spec', JSON.stringify(spec));
@@ -515,29 +632,37 @@ function editorView(options: {
         history.replaceState(null, '', `#/${path}?${params}`);
       }
     } catch (err) {
+      if (id !== runId) return;
       mount(output, errorState(err));
+      status.textContent = '';
+    } finally {
+      if (id === runId) output.classList.remove('running');
     }
   };
+  const schedule = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => void run(), 450);
+  };
 
-  const savePanel = panel(
-    options.mode === 'saved' ? 'Save changes' : 'Save analysis',
-    h(
-      'form',
-      { class: 'stack save-insight' },
-      field('Title', titleInput),
-      field('Description', descriptionInput),
-      h(
-        'div',
-        { class: 'form-actions' },
-        h('button', { type: 'submit', class: 'primary' }, options.mode === 'saved' ? 'Update' : 'Save to library'),
-      ),
-    ),
-  );
-  savePanel.querySelector('form')!.addEventListener('submit', (e) => {
+  const renderForm = () => mount(form, builder(kind, spec, update, sc.project));
+  function update() {
+    renderForm();
+    schedule();
+  }
+  // Text and number inputs inside filters change without a structural update.
+  form.addEventListener('change', schedule);
+  form.addEventListener('submit', (e) => {
     e.preventDefault();
-    void (async () => {
+    void run();
+  });
+
+  const openSave = () => {
+    const titleInput = h('input', { type: 'text', value: options.name ?? '', placeholder: 'e.g. Daily active users', 'aria-label': 'Title', required: true });
+    const descriptionInput = h('textarea', { rows: 3, placeholder: 'What question does this answer? Agents read this too.', 'aria-label': 'Description', class: 'prose' }, options.description ?? '');
+    const save = async () => {
       if (!titleInput.value.trim()) {
         toast('Add a title', 'error');
+        titleInput.focus();
         return;
       }
       try {
@@ -549,87 +674,141 @@ function editorView(options: {
           kind,
           spec: sanitizeSpec(kind, spec),
         });
-        toast(options.mode === 'saved' ? 'Updated' : 'Saved');
+        close();
+        toast(options.mode === 'saved' ? 'Changes saved' : 'Saved to library');
         go(`insights/${saved.key}`);
       } catch (err) {
         toast(err instanceof Error ? err.message : String(err), 'error');
       }
-    })();
-  });
+    };
+    const formEl = h('form', { class: 'stack modal-form' }, h('label', { class: 'field' }, h('span', {}, 'Title'), titleInput), h('label', { class: 'field' }, h('span', {}, 'Description'), descriptionInput));
+    formEl.addEventListener('submit', (e) => {
+      e.preventDefault();
+      void save();
+    });
+    const close = modal({
+      title: options.mode === 'saved' ? 'Save changes' : 'Save analysis',
+      body: formEl,
+      actions: [h('button', { type: 'button', class: 'ghost', onclick: () => close() }, 'Cancel'), h('button', { type: 'button', class: 'primary', onclick: () => void save() }, icon('save', 14), options.mode === 'saved' ? 'Save changes' : 'Save to library')],
+    });
+  };
 
-  form.addEventListener('submit', (e) => {
-    e.preventDefault();
-    void run();
-  });
-  renderForm();
-  const ready = kind === 'funnel' ? (spec.steps as { event: string }[]).every((s) => s.event) : true;
-  if (ready) void run();
-  else mount(output, empty('Pick the events for each step, then run the query.'));
+  const headerActions = [
+    copyButton(agentPrompt, 'Agent prompt', 'bot'),
+    copyButton(() => location.href, 'Link', 'link'),
+    options.mode === 'saved'
+      ? iconButton('trash', 'Delete analysis', () => {
+          if (!confirm('Delete this saved analysis?')) return;
+          void api.delete(`/api/insights/${encodeURIComponent(options.key!)}`, { project: sc.project }).then(() => {
+            toast('Deleted');
+            go('insights');
+          });
+        })
+      : null,
+    h('button', { type: 'button', class: 'primary', onclick: openSave }, icon('save', 15), options.mode === 'saved' ? 'Save changes' : 'Save'),
+  ];
 
-  const title =
-    options.mode === 'new' ? 'New analysis' : options.mode === 'saved' ? (options.name ?? 'Analysis') : `${KIND_LABEL[kind]} query`;
-  const blurb =
-    options.mode === 'new'
-      ? 'Build a trends, funnel or retention chart, then save it to the library.'
-      : options.description || 'Run, tweak, and save.';
+  const title = options.mode === 'new' ? `New ${KIND_LABEL[kind].toLowerCase()} analysis` : options.mode === 'saved' ? (options.name ?? 'Analysis') : `${KIND_LABEL[kind]} query`;
+  const blurb = options.mode === 'saved' ? options.description || KIND_BLURB[kind] : KIND_BLURB[kind];
 
-  return [
-    pageHeader(title, blurb),
+  const kindSwitch =
     options.mode === 'new' || options.mode === 'ephemeral'
       ? tabs(
-          KINDS.map((k) => ({ value: k, label: KIND_LABEL[k] })),
+          KINDS.map((k) => ({ value: k, label: KIND_LABEL[k], icon: KIND_ICON[k] })),
           kind,
-          (next) => {
-            if (options.mode === 'new') go(`insights/new/${next}`, { spec: null });
-            else go(`insights/${next}`, { spec: null });
-          },
+          (next) => go(options.mode === 'new' ? `insights/new/${next}` : `insights/${next}`, { spec: null }),
+          'tabs-block',
         )
-      : h('p', { class: 'muted' }, KIND_LABEL[kind]),
-    form,
-    savePanel,
-    output,
+      : h('span', { class: `kind-chip kind-${kind}` }, icon(KIND_ICON[kind], 14), KIND_LABEL[kind]);
+
+  const toolbar = h('div', { class: 'canvas-toolbar' });
+  const paintToolbar = (): void =>
+    mount(
+      toolbar,
+      kind === 'trends'
+        ? [
+            tabs(
+              [
+                { value: 'line', label: 'Line', icon: 'lineChart' as IconName },
+                { value: 'area', label: 'Area', icon: 'areaChart' as IconName },
+                { value: 'bar', label: 'Bar', icon: 'barChart' as IconName },
+                { value: 'number', label: 'Number', icon: 'hash' as IconName },
+              ],
+              chartType,
+              (v) => {
+                chartType = v as ChartType | 'number';
+                paintToolbar();
+                void run();
+              },
+              'tabs-small',
+            ),
+            tabs(
+              [
+                { value: 'hour', label: 'Hour' },
+                { value: 'day', label: 'Day' },
+                { value: 'week', label: 'Week' },
+                { value: 'month', label: 'Month' },
+              ],
+              String(spec.interval ?? 'day'),
+              (v) => {
+                spec.interval = v;
+                paintToolbar();
+                void run();
+              },
+              'tabs-small',
+            ),
+          ]
+        : h('span', { class: 'muted small' }, kind === 'funnel' ? 'Counts unique people who did each step in order.' : 'Cohorts by the period of each person’s first event.'),
+      h('span', { class: 'toolbar-spacer' }),
+      status,
+    );
+  paintToolbar();
+
+  renderForm();
+  void run();
+
+  return [
+    pageHeader(title, blurb, headerActions),
+    h(
+      'div',
+      { class: 'analysis' },
+      h('aside', { class: 'query-rail', 'aria-label': 'Query' }, h('div', { class: 'rail-kind' }, kindSwitch), form, options.mode !== 'saved' ? null : h('a', { class: 'link-button rail-back', href: href('insights') }, icon('chevronLeft', 14), 'Back to library')),
+      h('section', { class: 'query-canvas' }, toolbar, output),
+    ),
   ];
 }
 
 export function insightsPage(route: Route): Node[] {
   const head = route.rest[0];
-  if (!head) return listView();
+  if (!head) return listView(route);
+
+  const parseSpec = (kind: Kind): Spec => {
+    try {
+      return route.params.get('spec') ? (JSON.parse(route.params.get('spec')!) as Spec) : structuredClone(DEFAULTS[kind]);
+    } catch {
+      return structuredClone(DEFAULTS[kind]);
+    }
+  };
 
   if (head === 'new') {
     const kind = (KINDS.includes(route.rest[1] as Kind) ? route.rest[1] : 'trends') as Kind;
-    let spec: Spec;
-    try {
-      spec = route.params.get('spec') ? (JSON.parse(route.params.get('spec')!) as Spec) : structuredClone(DEFAULTS[kind]);
-    } catch {
-      spec = structuredClone(DEFAULTS[kind]);
-    }
-    return editorView({ mode: 'new', kind, spec, route });
+    return editorView({ mode: 'new', kind, spec: parseSpec(kind), route });
   }
 
   if (KINDS.includes(head as Kind)) {
     const kind = head as Kind;
-    let spec: Spec;
-    try {
-      spec = route.params.get('spec') ? (JSON.parse(route.params.get('spec')!) as Spec) : structuredClone(DEFAULTS[kind]);
-    } catch {
-      spec = structuredClone(DEFAULTS[kind]);
-    }
-    return editorView({ mode: 'ephemeral', kind, spec, route });
+    return editorView({ mode: 'ephemeral', kind, spec: parseSpec(kind), route });
   }
 
   return [
-    later(async () => {
-      const project = scope().project;
-      const insight = await api.get<SavedInsight>(`/api/insights/${encodeURIComponent(head)}`, { project });
-      return editorView({
-        mode: 'saved',
-        kind: insight.kind,
-        key: insight.key,
-        name: insight.name,
-        description: insight.description,
-        spec: insight.spec,
-        route,
-      });
-    }),
+    later(
+      async () => {
+        const project = scope().project;
+        const insight = await api.get<SavedInsight>(`/api/insights/${encodeURIComponent(head)}`, { project });
+        return editorView({ mode: 'saved', kind: insight.kind, key: insight.key, name: insight.name, description: insight.description, spec: insight.spec, route });
+      },
+      'Loading analysis',
+      'chart',
+    ),
   ];
 }

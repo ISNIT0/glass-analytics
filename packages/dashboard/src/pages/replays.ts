@@ -5,7 +5,9 @@
 import { Replayer, type eventWithTime } from 'rrweb';
 import 'rrweb/dist/style.css';
 import { api } from '../api.ts';
-import { copyButton, empty, errorState, later, loading, pageHeader, panel, table } from '../components/ui.ts';
+import { icon } from '../components/icons.ts';
+import { toggle } from '../components/menu.ts';
+import { copyButton, empty, errorState, later, loading, pageHeader, panel, table, tabs } from '../components/ui.ts';
 import { h, mount } from '../dom.ts';
 import { dateTime, duration } from '../format.ts';
 import { type Route, go, href, scope } from '../state.ts';
@@ -23,31 +25,31 @@ interface ReplayListItem {
 
 function list(route: Route): Node[] {
   const withErrors = route.params.get('errors') === '1';
-  const toggle = h('label', { class: 'switch' }, h('input', { type: 'checkbox', checked: withErrors, onchange: () => go('replays', { errors: withErrors ? null : '1' }) }), 'Only sessions with errors');
+  const errorsOnly = toggle({ checked: withErrors, label: 'Only sessions with errors', onChange: () => go('replays', { errors: withErrors ? null : '1' }) });
   return [
-    pageHeader('Replays', 'Recorded sessions. Each one has a text transcript that agents can read.', toggle),
+    pageHeader('Replays', 'Recorded sessions. Each one has a text transcript that agents can read.', errorsOnly),
     later(async () => {
       const r = await api.get<{ enabled: boolean; replays: ReplayListItem[] }>('/api/replays', { project: scope().project, with_errors: withErrors || undefined, limit: 100 });
-      if (!r.enabled) return empty('Session replay is not enabled on this deployment. Enable R2 in your Cloudflare account, then run glass upgrade.');
+      if (!r.enabled) return empty('Enable R2 in your Cloudflare account, then run glass upgrade.', undefined, { icon: 'replay', title: 'Session replay is off' });
       if (r.replays.length === 0) {
-        return empty(
-          withErrors ? 'No recorded sessions with errors.' : 'No recordings yet. Set data-replay-sample-rate="0.1" on the script tag to record 10% of sessions.',
-        );
+        return withErrors
+          ? empty('No recorded sessions hit an error in this period.', undefined, { icon: 'check', title: 'No errors' })
+          : empty('Set data-replay-sample-rate="0.1" on the script tag to record 10% of sessions. Inputs are masked.', h('a', { class: 'button', href: href('settings') }, icon('code', 14), 'Install snippet'), { icon: 'replay', title: 'No recordings yet' });
       }
-      return table(
+      return panel(`${r.replays.length} recordings`, table(
         ['Started', 'Person', 'Length', 'Clicks', 'Errors', 'First page', 'Device'],
         r.replays.map((x) => [
-          h('a', { href: href(`replays/${x.session}`) }, dateTime(x.started)),
+          h('a', { class: 'replay-link', href: href(`replays/${x.session}`) }, h('span', { class: 'play-chip' }, icon('play', 11)), dateTime(x.started)),
           h('a', { href: href(`users/${encodeURIComponent(x.person)}`) }, x.person.slice(0, 16)),
           duration(x.durationSeconds),
           String(x.clicks),
-          x.errors ? h('span', { class: 'badge bad' }, String(x.errors)) : '0',
-          h('span', { class: 'muted' }, x.url.replace(/^https?:\/\//, '')),
-          h('span', { class: 'muted' }, x.device),
+          x.errors ? h('span', { class: 'badge bad' }, icon('alert', 12), String(x.errors)) : h('span', { class: 'muted' }, '0'),
+          h('span', { class: 'muted cell-clip' }, x.url.replace(/^https?:\/\//, '')),
+          h('span', { class: 'muted device-cell' }, icon(x.device === 'mobile' ? 'smartphone' : x.device === 'tablet' ? 'tablet' : 'monitor', 14), x.device),
         ]),
         { numeric: [3, 4] },
-      );
-    }),
+      ), { icon: 'replay', class: 'flush' });
+    }, 'Loading recordings', 'table'),
   ];
 }
 
@@ -82,15 +84,32 @@ function detail(session: string): Node[] {
       replayer = new Replayer(r.events, { root: stage, skipInactive: true, showWarning: false });
       const meta = replayer.getMetaData();
       let playing = false;
-      const button = h('button', { type: 'button', class: 'primary' }, 'Play');
+      let speed = '1';
+      const button = h('button', { type: 'button', class: 'primary' }, icon('play', 14), 'Play');
       button.addEventListener('click', () => {
         if (!replayer) return;
         if (playing) replayer.pause();
         else replayer.play();
         playing = !playing;
-        button.textContent = playing ? 'Pause' : 'Play';
+        mount(button, icon(playing ? 'pause' : 'play', 14), playing ? 'Pause' : 'Play');
       });
-      mount(controls, button, h('span', { class: 'muted' }, duration(meta.totalTime / 1000)));
+      const speeds = () =>
+        tabs(
+          [
+            { value: '1', label: '1×' },
+            { value: '2', label: '2×' },
+            { value: '4', label: '4×' },
+          ],
+          speed,
+          (v) => {
+            speed = v;
+            replayer?.setConfig({ speed: Number(v) });
+            mount(speedSlot, speeds());
+          },
+          'tabs-small',
+        );
+      const speedSlot = h('span', {}, speeds());
+      mount(controls, button, speedSlot, h('span', { class: 'muted' }, icon('clock', 14), ' ', duration(meta.totalTime / 1000)));
     } catch (err) {
       mount(controls, errorState(err));
     }
@@ -113,7 +132,7 @@ function detail(session: string): Node[] {
     h(
       'div',
       { class: 'replay-layout' },
-      panel('Recording', [stage, controls], { class: 'player' }),
+      panel('Recording', [stage, controls], { class: 'player', icon: 'replay' }),
       panel(
         'Transcript',
         later(async () => {

@@ -7,6 +7,7 @@
 
 import { ApiError } from '../api.ts';
 import { type Child, h, mount } from '../dom.ts';
+import { type IconName, icon } from './icons.ts';
 
 export interface PanelOptions {
   /** Queries behind this panel, shown in the SQL pane. */
@@ -14,13 +15,28 @@ export interface PanelOptions {
   /** Extra controls in the panel header. */
   actions?: Child;
   class?: string;
+  /** Small muted line under the title. */
+  subtitle?: Child;
+  icon?: IconName;
 }
 
 export function panel(title: string, body: Child, options: PanelOptions = {}): HTMLElement {
   return h(
     'section',
     { class: `panel ${options.class ?? ''}` },
-    h('header', { class: 'panel-head' }, h('h2', {}, title), options.actions ? h('div', { class: 'panel-actions' }, options.actions) : null),
+    title || options.actions
+      ? h(
+          'header',
+          { class: 'panel-head' },
+          h(
+            'div',
+            { class: 'panel-title' },
+            options.icon ? h('span', { class: 'panel-icon' }, icon(options.icon)) : null,
+            h('div', {}, title ? h('h2', {}, title) : null, options.subtitle ? h('p', { class: 'panel-subtitle' }, options.subtitle) : null),
+          ),
+          options.actions ? h('div', { class: 'panel-actions' }, options.actions) : null,
+        )
+      : null,
     h('div', { class: 'panel-body' }, body),
     options.sql?.length ? sqlPane(options.sql) : null,
   );
@@ -30,46 +46,103 @@ export function sqlPane(queries: string[]): HTMLElement {
   return h(
     'div',
     { class: 'sql-pane' },
-    h('div', { class: 'sql-pane-head' }, h('span', {}, queries.length === 1 ? 'Query' : `${queries.length} queries`), copyButton(queries.join(';\n\n'), 'Copy SQL')),
+    h('div', { class: 'sql-pane-head' }, h('span', {}, icon('code', 14), queries.length === 1 ? 'Query' : `${queries.length} queries`), copyButton(queries.join(';\n\n'), 'Copy SQL')),
     ...queries.map((q) => h('pre', { class: 'sql' }, h('code', {}, q.trim()))),
   );
 }
 
-export function copyButton(text: string | (() => string), label = 'Copy'): HTMLButtonElement {
-  const button = h('button', { class: 'ghost small', type: 'button' }, label);
+export function copyButton(text: string | (() => string), label = 'Copy', iconName: IconName = 'copy'): HTMLButtonElement {
+  const text_ = h('span', {}, label);
+  const button = h('button', { class: 'ghost small', type: 'button' }, icon(iconName, 14), text_);
   button.addEventListener('click', async () => {
     try {
       await navigator.clipboard.writeText(typeof text === 'function' ? text() : text);
-      button.textContent = 'Copied';
+      text_.textContent = 'Copied';
+      button.classList.add('copied');
     } catch {
-      button.textContent = 'Copy failed';
+      text_.textContent = 'Copy failed';
     }
     setTimeout(() => {
-      button.textContent = label;
+      text_.textContent = label;
+      button.classList.remove('copied');
     }, 1500);
   });
   return button;
 }
 
-export function loading(label = 'Loading'): HTMLElement {
-  return h('div', { class: 'state loading', role: 'status' }, label);
+export type SkeletonShape = 'block' | 'kpis' | 'chart' | 'table' | 'cards' | 'report';
+
+function bar(width: string, height = 12): HTMLElement {
+  return h('span', { class: 'sk', style: `width:${width};height:${height}px` });
 }
 
-export function empty(message: string, action?: Child): HTMLElement {
-  return h('div', { class: 'state empty' }, h('p', {}, message), action ?? null);
+/** Grey shimmering placeholders shaped like the content that is loading. */
+export function skeleton(shape: SkeletonShape = 'block'): HTMLElement {
+  const kpis = () => h('div', { class: 'sk-kpis' }, Array.from({ length: 4 }, () => h('div', { class: 'sk-kpi' }, bar('45%', 10), bar('70%', 22))));
+  const chart = () => h('div', { class: 'sk-panel' }, bar('22%', 12), h('div', { class: 'sk-chart' }, Array.from({ length: 18 }, (_, i) => h('span', { class: 'sk', style: `height:${30 + Math.round(45 * Math.abs(Math.sin(i * 0.7)))}%` }))));
+  const tableRows = () => h('div', { class: 'sk-panel' }, bar('18%', 12), Array.from({ length: 6 }, (_, i) => h('div', { class: 'sk-row' }, bar(`${55 - i * 5}%`), bar('10%'))));
+  let body: Child;
+  switch (shape) {
+    case 'kpis':
+      body = kpis();
+      break;
+    case 'chart':
+      body = chart();
+      break;
+    case 'table':
+      body = tableRows();
+      break;
+    case 'cards':
+      body = h('div', { class: 'sk-cards' }, Array.from({ length: 6 }, () => h('div', { class: 'sk-panel' }, bar('60%', 14), bar('90%'), bar('40%'), h('div', { class: 'sk-spark' }))));
+      break;
+    case 'report':
+      body = [kpis(), chart(), h('div', { class: 'sk-grid' }, tableRows(), tableRows())];
+      break;
+    default:
+      body = h('div', { class: 'sk-panel' }, bar('30%', 14), bar('90%'), bar('75%'), bar('60%'));
+  }
+  return h('div', { class: 'skeleton', 'aria-busy': 'true' }, body);
+}
+
+export function loading(label = 'Loading', shape: SkeletonShape = 'block'): HTMLElement {
+  return h('div', { class: 'state loading', role: 'status' }, h('span', { class: 'visually-hidden' }, label), skeleton(shape));
+}
+
+export interface EmptyOptions {
+  icon?: IconName;
+  title?: string;
+}
+
+export function empty(message: string, action?: Child, options: EmptyOptions = {}): HTMLElement {
+  return h(
+    'div',
+    { class: 'state empty' },
+    h('span', { class: 'empty-icon' }, icon(options.icon ?? 'inbox', 22)),
+    options.title ? h('h3', {}, options.title) : null,
+    h('p', {}, message),
+    action ? h('div', { class: 'empty-actions' }, action) : null,
+  );
 }
 
 export function errorState(err: unknown): HTMLElement {
   const message = err instanceof Error ? err.message : String(err);
   const hint = err instanceof ApiError ? err.hint : undefined;
-  return h('div', { class: 'state error', role: 'alert' }, h('p', {}, message), hint ? h('p', { class: 'hint' }, hint) : null);
+  return h(
+    'div',
+    { class: 'state error', role: 'alert' },
+    h('span', { class: 'error-icon' }, icon('alert', 18)),
+    h('div', {}, h('p', {}, message), hint ? h('p', { class: 'hint' }, hint) : null),
+  );
 }
 
-/** Render a page section asynchronously: shows loading, then the result or an error. */
-export function later(render: () => Promise<Child>, label?: string): HTMLElement {
-  const holder = h('div', { class: 'later' }, loading(label));
+/** Render a page section asynchronously: shows a skeleton, then the result or an error. */
+export function later(render: () => Promise<Child>, label?: string, shape: SkeletonShape = 'block'): HTMLElement {
+  const holder = h('div', { class: 'later' }, loading(label, shape));
   render().then(
-    (content) => mount(holder, content),
+    (content) => {
+      mount(holder, content);
+      holder.classList.add('ready');
+    },
     (err: unknown) => mount(holder, errorState(err)),
   );
   return holder;
@@ -79,7 +152,7 @@ export function pageHeader(title: string, description?: string, actions?: Child)
   return h(
     'div',
     { class: 'page-head' },
-    h('div', {}, h('h1', {}, title), description ? h('p', { class: 'muted' }, description) : null),
+    h('div', { class: 'page-title' }, h('h1', {}, title), description ? h('p', { class: 'muted' }, description) : null),
     actions ? h('div', { class: 'page-actions' }, actions) : null,
   );
 }
@@ -99,10 +172,10 @@ export function table(headers: string[], rows: Child[][], options: { numeric?: n
 }
 
 /** A segmented control for switching between a few views of the same data. */
-export function tabs<T extends string>(options: { value: T; label: string }[], selected: T, onSelect: (value: T) => void): HTMLElement {
+export function tabs<T extends string>(options: { value: T; label: string; icon?: IconName }[], selected: T, onSelect: (value: T) => void, className = ''): HTMLElement {
   return h(
     'div',
-    { class: 'tabs', role: 'tablist' },
+    { class: `tabs ${className}`, role: 'tablist' },
     options.map((o) =>
       h(
         'button',
@@ -113,14 +186,32 @@ export function tabs<T extends string>(options: { value: T; label: string }[], s
           class: o.value === selected ? 'tab active' : 'tab',
           onclick: () => onSelect(o.value),
         },
+        o.icon ? icon(o.icon, 14) : null,
         o.label,
       ),
     ),
   );
 }
 
+/** A small button with an icon and optional text. */
+export function iconButton(name: IconName, label: string, onClick: () => void, options: { text?: boolean; class?: string } = {}): HTMLButtonElement {
+  return h(
+    'button',
+    { type: 'button', class: `${options.text ? 'ghost small' : 'icon-button'} ${options.class ?? ''}`, 'aria-label': label, title: label, onclick: onClick },
+    icon(name, options.text ? 14 : 16),
+    options.text ? label : null,
+  );
+}
+
 export function toast(message: string, kind: 'ok' | 'error' = 'ok'): void {
-  const el = h('div', { class: `toast ${kind}`, role: 'status' }, message);
+  for (const old of document.querySelectorAll('.toast')) old.remove();
+  const el = h('div', { class: `toast ${kind}`, role: 'status' }, icon(kind === 'ok' ? 'check' : 'alert', 16), message);
   document.body.appendChild(el);
+  setTimeout(() => el.classList.add('leaving'), 2800);
   setTimeout(() => el.remove(), 3200);
+}
+
+/** An initials avatar with a stable colour. */
+export function avatar(text: string, initialsText: string, hueValue: number, size = 28): HTMLElement {
+  return h('span', { class: 'avatar', style: `--hue:${hueValue};width:${size}px;height:${size}px;font-size:${Math.round(size * 0.4)}px`, 'aria-hidden': 'true', title: text }, initialsText);
 }

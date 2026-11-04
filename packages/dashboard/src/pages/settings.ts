@@ -3,6 +3,7 @@
  */
 
 import { api } from '../api.ts';
+import { icon } from '../components/icons.ts';
 import { copyButton, errorState, later, pageHeader, panel, table, toast } from '../components/ui.ts';
 import { h, mount } from '../dom.ts';
 import { dateTime } from '../format.ts';
@@ -30,6 +31,7 @@ export function settingsPage(): Node[] {
           h('p', {}, 'Then track what matters:'),
           codeBlock(`glass.capture('signup_completed', { plan: 'pro' });\nglass.identify(user.id, { plan: user.plan });`),
         ],
+        { icon: 'code' },
       ),
       panel(
         'Connect an agent',
@@ -39,6 +41,7 @@ export function settingsPage(): Node[] {
           h('p', {}, 'Agent instructions for this deployment:'),
           codeBlock(`${host}/llms.txt`),
         ],
+        { icon: 'bot' },
       ),
     ),
     later(async () => {
@@ -56,7 +59,7 @@ export function settingsPage(): Node[] {
       ]);
       const id = h('input', { type: 'text', required: true, placeholder: 'acme-docs', pattern: '[a-z0-9][a-z0-9_-]*' });
       const error = h('div', {});
-      const form = h('form', { class: 'inline-form' }, id, h('button', { type: 'submit', class: 'ghost' }, 'Add project'), error);
+      const form = h('form', { class: 'inline-form' }, id, h('button', { type: 'submit', class: 'ghost' }, icon('plus', 14), 'Add project'), error);
       form.addEventListener('submit', async (e) => {
         e.preventDefault();
         try {
@@ -69,14 +72,14 @@ export function settingsPage(): Node[] {
       });
       return h(
         'div',
-        { class: 'grid-2' },
+        { class: 'grid-2 settings-lower' },
         panel('Projects', [
           table(
             ['Project', 'Created', 'Allowed origins'],
             projects.projects.map((p) => [h('code', {}, p.id), dateTime(p.createdAt), p.allowedOrigins.join(', ') || h('span', { class: 'muted' }, 'Any')]),
           ),
           form,
-        ]),
+        ], { icon: 'layers' }),
         panel(
           'This deployment',
           [
@@ -99,9 +102,10 @@ export function settingsPage(): Node[] {
               h('dt', {}, 'Session replay'),
               h('dd', {}, health.replay ? 'Enabled' : 'Disabled (no R2 bucket)'),
               h('dt', {}, 'Signed in with'),
-              h('dd', {}, h('button', { type: 'button', class: 'ghost small', onclick: () => { prefs.key = null; location.reload(); } }, 'Forget this key')),
+              h('dd', {}, h('button', { type: 'button', class: 'ghost small', onclick: () => { prefs.key = null; location.reload(); } }, icon('logout', 14), 'Forget this key')),
             ),
           ],
+          { icon: 'zap' },
         ),
       );
     }),
@@ -116,7 +120,7 @@ export function keyScreen(onDone: () => void): HTMLElement {
     { class: 'stack' },
     input,
     error,
-    h('button', { type: 'submit', class: 'primary' }, 'Open dashboard'),
+    h('button', { type: 'submit', class: 'primary' }, 'Open dashboard', icon('arrowRight', 15)),
   );
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -132,9 +136,16 @@ export function keyScreen(onDone: () => void): HTMLElement {
   return h(
     'main',
     { class: 'key-screen' },
-    h('h1', {}, 'Glass'),
-    h('p', {}, 'Paste the API key created by glass init. Run ', h('code', {}, 'npx @glassanalytics/cli key'), ' in your project to print it.'),
-    form,
-    h('p', { class: 'muted small' }, 'The key stays in this browser. Use the read-only key to share the dashboard without letting people change flags.'),
+    h(
+      'div',
+      { class: 'key-card' },
+      h('div', { class: 'key-brand' }, h('span', { class: 'mark large', 'aria-hidden': 'true' }), h('span', {}, 'Glass')),
+      h('h1', {}, 'Open your dashboard'),
+      h('p', { class: 'muted' }, 'Paste the API key that ', h('code', {}, 'glass init'), ' created. Print it again any time:'),
+      codeBlock('npx @glassanalytics/cli key'),
+      form,
+      h('p', { class: 'muted small key-note' }, icon('key', 13), ' The key stays in this browser. Share the read-only key to let people look without changing flags.'),
+    ),
+    h('p', { class: 'key-foot muted small' }, 'Analytics that lives in your own Cloudflare account.'),
   );
 }

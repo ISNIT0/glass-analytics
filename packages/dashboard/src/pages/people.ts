@@ -6,9 +6,10 @@ import { api } from '../api.ts';
 import { invalidateValues } from '../catalog.ts';
 import { type FilterRow, cleanFilters, filterEditor } from '../components/filter-editor.ts';
 import { eventPicker } from '../components/picker.ts';
-import { copyButton, empty, later, pageHeader, panel, table, toast } from '../components/ui.ts';
-import { h, mount } from '../dom.ts';
-import { ago, count, dateTime } from '../format.ts';
+import { icon } from '../components/icons.ts';
+import { avatar, copyButton, empty, later, pageHeader, panel, table, tabs, toast } from '../components/ui.ts';
+import { type Child, h, mount } from '../dom.ts';
+import { ago, count, dateTime, hue, initials } from '../format.ts';
 import { type Route, go, href, scope } from '../state.ts';
 
 interface PersonSummary {
@@ -54,27 +55,19 @@ const preview = (props: Record<string, unknown>) =>
     .join(', ');
 
 function peopleKpis(stats: PeopleStats): HTMLElement {
+  const total = stats.identified + stats.anonymousDevices;
+  const share = total ? stats.identified / total : 0;
   return h(
     'dl',
-    { class: 'kpis' },
-    h('div', { class: 'kpi' }, h('dt', {}, 'Identified'), h('dd', {}, count(stats.identified))),
-    h(
-      'div',
-      { class: 'kpi' },
-      h('dt', {}, `Anonymous devices (${stats.days}d)`),
-      h('dd', {}, count(stats.anonymousDevices)),
-    ),
+    { class: 'kpis kpis-3' },
+    h('div', { class: 'kpi' }, h('dt', {}, 'Identified people'), h('dd', {}, count(stats.identified)), h('div', { class: 'kpi-note muted small' }, 'Called glass.identify()')),
+    h('div', { class: 'kpi' }, h('dt', {}, `Anonymous devices (${stats.days}d)`), h('dd', {}, count(stats.anonymousDevices)), h('div', { class: 'kpi-note muted small' }, 'Visited without signing in')),
     h(
       'div',
       { class: 'kpi' },
       h('dt', {}, 'Identified share'),
-      h(
-        'dd',
-        {},
-        stats.identified + stats.anonymousDevices
-          ? `${Math.round((stats.identified / (stats.identified + stats.anonymousDevices)) * 100)}%`
-          : '–',
-      ),
+      h('dd', {}, total ? `${Math.round(share * 100)}%` : '–'),
+      h('div', { class: 'meter', 'aria-hidden': 'true' }, h('span', { style: `width:${share * 100}%` })),
     ),
   );
 }
@@ -169,7 +162,7 @@ function cohortsPanel(project: string | undefined): HTMLElement {
       const r = await api.get<{ cohorts: Cohort[] }>('/api/cohorts', { project });
       const list =
         r.cohorts.length === 0
-          ? empty('No cohorts yet. Save a filter below — counts update live, and each cohort links to retention.')
+          ? empty('Save a filter below. Counts update live, and each cohort links to its retention.', undefined, { icon: 'layers', title: 'No cohorts yet' })
           : table(
               ['Cohort', 'Definition', 'People', ''],
               r.cohorts.map((c) => [
@@ -243,48 +236,125 @@ function cohortsPanel(project: string | undefined): HTMLElement {
   return body;
 }
 
+/** The most common property keys, shown as their own columns. */
+function topKeys(persons: PersonSummary[], limit = 3): string[] {
+  const seen = new Map<string, number>();
+  for (const p of persons) for (const k of Object.keys(p.properties)) seen.set(k, (seen.get(k) ?? 0) + 1);
+  return [...seen.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([k]) => k);
+}
+
+const show = (v: unknown): string => (v === undefined || v === null ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v));
+
+/** The best human label for a person: name, then email, then id. */
+function personLabel(id: string, props: Record<string, unknown>): { primary: string; secondary: string | null; via: string | null } {
+  const name = show(props.name);
+  const email = show(props.email);
+  if (name) return { primary: name, secondary: email || id, via: email ? 'email' : null };
+  if (email) return { primary: email, secondary: email === id ? null : id, via: 'email' };
+  return { primary: id, secondary: null, via: null };
+}
+
+function personCell(id: string, props: Record<string, unknown>): HTMLElement {
+  const label = personLabel(id, props);
+  return h(
+    'a',
+    { class: 'person-cell', href: href(`users/${encodeURIComponent(id)}`) },
+    avatar(id, initials(label.primary), hue(id)),
+    h('span', { class: 'person-text' }, h('span', { class: 'person-id' }, label.primary), label.secondary ? h('span', { class: 'muted small' }, label.secondary) : null),
+  );
+}
+
+const PAGE_SIZE = 25;
+
+function peopleTable(persons: PersonSummary[]): HTMLElement {
+  const keys = topKeys(persons, 4).filter((k) => k !== 'name' && k !== 'email').slice(0, 3);
+  const holder = h('div', {});
+  let page = 0;
+  const pages = Math.max(1, Math.ceil(persons.length / PAGE_SIZE));
+  const paint = () => {
+    const rows = persons.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+    mount(
+      holder,
+      table(
+        ['Person', ...keys, 'First seen', 'Last seen'],
+        rows.map((p) => [
+          personCell(p.id, p.properties),
+          ...keys.map((k) => {
+            const v = show(p.properties[k]);
+            return v ? (k === 'plan' || k.endsWith('_plan') || k === 'role' ? h('span', { class: 'badge' }, v) : h('span', { class: 'cell-clip', title: v }, v)) : h('span', { class: 'muted' }, '–');
+          }),
+          h('span', { class: 'muted' }, dateTime(p.firstSeen)),
+          ago(p.lastSeen),
+        ]),
+        { class: 'people-table' },
+      ),
+      pages > 1
+        ? h(
+            'div',
+            { class: 'pager' },
+            h('span', { class: 'muted small' }, `${page * PAGE_SIZE + 1}–${Math.min(persons.length, (page + 1) * PAGE_SIZE)} of ${count(persons.length)}${persons.length >= 100 ? ' most recently active' : ''}`),
+            h(
+              'div',
+              { class: 'pager-buttons' },
+              h('button', { type: 'button', class: 'ghost small', disabled: page === 0, 'aria-label': 'Previous page', onclick: () => { page--; paint(); } }, icon('chevronLeft', 14)),
+              h('button', { type: 'button', class: 'ghost small', disabled: page >= pages - 1, 'aria-label': 'Next page', onclick: () => { page++; paint(); } }, icon('chevronRight', 14)),
+            ),
+          )
+        : null,
+    );
+  };
+  paint();
+  return holder;
+}
+
 function list(route: Route): Node[] {
+  const tab = route.params.get('tab') === 'cohorts' ? 'cohorts' : 'people';
   const q = route.params.get('q') ?? '';
   const search = h('input', { type: 'search', value: q, placeholder: 'Search by id or property value', 'aria-label': 'Search people' });
-  const form = h('form', { class: 'search', role: 'search' }, search, h('button', { type: 'submit', class: 'ghost' }, 'Search'));
+  const form = h('form', { class: 'search-field', role: 'search' }, icon('search', 15), search);
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     go('users', { q: search.value });
   });
   const project = scope().project;
+  const switcher = tabs(
+    [
+      { value: 'people', label: 'People', icon: 'users' },
+      { value: 'cohorts', label: 'Cohorts', icon: 'layers' },
+    ],
+    tab,
+    (v) => go('users', { tab: v === 'people' ? null : v }),
+  );
+  if (tab === 'cohorts') {
+    return [
+      pageHeader('People', 'Saved cohorts: reusable groups of people for filters, funnels and retention.', switcher),
+      panel('Cohorts', cohortsPanel(project), { icon: 'layers', subtitle: 'Counts update live. Each cohort links to its retention.' }),
+    ];
+  }
   return [
-    pageHeader(
-      'People',
-      'Identified users from glass.identify(), anonymous device volume, and saved cohorts you can reuse in insights.',
+    pageHeader('People', 'Identified users from glass.identify(), and how much traffic is still anonymous.', switcher),
+    later(
+      async () => {
+        const r = await api.get<{ persons: PersonSummary[]; stats: PeopleStats; summary: string; sql?: string[] }>('/api/persons', { project, query: q, limit: 100 });
+        const body: Child =
+          r.persons.length === 0
+            ? empty(
+                q ? `No identified people match "${q}".` : 'Call glass.identify(userId) after login. Anonymous devices still count in the overview above.',
+                undefined,
+                { icon: 'users', title: q ? 'No matches' : 'No identified people yet' },
+              )
+            : peopleTable(r.persons);
+        return [
+          peopleKpis(r.stats),
+          panel('Identified people', body, { sql: r.sql, actions: form, subtitle: r.summary, class: 'people-panel' }),
+        ];
+      },
+      'Loading people',
+      'table',
     ),
-    later(async () => {
-      const r = await api.get<{ persons: PersonSummary[]; stats: PeopleStats; summary: string; sql?: string[] }>(
-        '/api/persons',
-        { project, query: q, limit: 100 },
-      );
-      return [
-        panel('Overview', [peopleKpis(r.stats), h('p', { class: 'summary' }, r.summary)], { sql: r.sql }),
-        panel('Cohorts', cohortsPanel(project)),
-        form,
-        r.persons.length === 0
-          ? empty(
-              q
-                ? `No identified people match "${q}".`
-                : 'No identified people yet. Call glass.identify(userId) after login — anonymous devices still count in the overview above.',
-            )
-          : panel(
-              'Identified people',
-              table(
-                ['Person', 'Properties', 'Last seen'],
-                r.persons.map((p) => [
-                  h('a', { href: href(`users/${encodeURIComponent(p.id)}`) }, p.id),
-                  h('span', { class: 'muted' }, preview(p.properties)),
-                  ago(p.lastSeen),
-                ]),
-              ),
-            ),
-      ];
-    }),
   ];
 }
 
@@ -293,7 +363,12 @@ function detail(id: string): Node[] {
     later(async () => {
       const p = await api.get<Person>(`/api/persons/${encodeURIComponent(id)}`, { project: scope().project });
       return [
-        pageHeader(p.id, p.summary, copyButton(p.id, 'Copy id')),
+        h(
+          'div',
+          { class: 'person-head' },
+          avatar(p.id, initials(personLabel(p.id, p.properties).primary), hue(p.id), 52),
+          pageHeader(personLabel(p.id, p.properties).primary, p.summary, copyButton(p.id, 'Copy id')),
+        ),
         h(
           'div',
           { class: 'grid-2' },
@@ -321,7 +396,7 @@ function detail(id: string): Node[] {
           p.recentEvents.length
             ? table(
                 ['Time', 'Event', 'Page', 'Properties'],
-                p.recentEvents.map((e) => [dateTime(e.time), h('code', {}, e.event), e.path, h('span', { class: 'muted' }, preview(e.properties))]),
+                p.recentEvents.map((e) => [h('span', { class: 'muted' }, dateTime(e.time)), h('span', { class: 'event-pill' }, e.event), e.path, h('span', { class: 'muted cell-clip' }, preview(e.properties))]),
               )
             : empty('No events in the last 90 days.'),
           { sql: p.sql },

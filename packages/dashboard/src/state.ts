@@ -47,6 +47,29 @@ export const prefs = {
   set project(value: string | null) {
     store('project', value);
   },
+  /** Overlay the previous period on time charts. On by default. */
+  get compare(): boolean {
+    return stored('compare') !== '0';
+  },
+  set compare(value: boolean) {
+    store('compare', value ? null : '0');
+  },
+  get sidebarCollapsed(): boolean {
+    return stored('sidebar') === 'collapsed';
+  },
+  set sidebarCollapsed(value: boolean) {
+    store('sidebar', value ? 'collapsed' : null);
+  },
+  /** 'system' follows the OS; 'light' and 'dark' pin the theme. */
+  get theme(): 'system' | 'light' | 'dark' {
+    const t = stored('theme');
+    return t === 'light' || t === 'dark' ? t : 'system';
+  },
+  set theme(value: 'system' | 'light' | 'dark') {
+    store('theme', value === 'system' ? null : value);
+    if (value === 'system') document.documentElement.removeAttribute('data-theme');
+    else document.documentElement.setAttribute('data-theme', value);
+  },
 };
 
 export interface Route {

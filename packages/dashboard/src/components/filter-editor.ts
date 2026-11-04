@@ -7,6 +7,7 @@
 
 import { COLUMN_OPTIONS, loadEventDetail, loadPersonProperties } from '../catalog.ts';
 import { h } from '../dom.ts';
+import { icon } from './icons.ts';
 import { propertyPicker } from './picker.ts';
 import { valueInput } from './value-input.ts';
 
@@ -215,7 +216,7 @@ export function filterEditor(
         'button',
         {
           type: 'button',
-          class: 'ghost small filter-remove',
+          class: 'icon-button filter-remove',
           'aria-label': 'Remove filter',
           title: 'Remove filter',
           onclick: () => {
@@ -223,7 +224,7 @@ export function filterEditor(
             changed();
           },
         },
-        '×',
+        icon('x', 14),
       ),
     );
     return el;
@@ -251,26 +252,28 @@ export function filterEditor(
           'button',
           {
             type: 'button',
-            class: 'ghost small',
+            class: 'link-button add-button',
             onclick: () => {
               filters.push({ property: '', op: 'eq', value: '' });
               changed();
             },
           },
-          options.personOnly ? '+ Person property' : '+ Filter',
+          icon('filter', 13),
+          options.personOnly ? 'Person property' : 'Filter',
         ),
         options.cohorts
           ? h(
               'button',
               {
                 type: 'button',
-                class: 'ghost small',
+                class: 'link-button add-button',
                 onclick: () => {
                   filters.push({ property: 'cohort', op: 'eq', value: '' });
                   changed();
                 },
               },
-              '+ Cohort',
+              icon('layers', 13),
+              'Cohort',
             )
           : null,
       ),
