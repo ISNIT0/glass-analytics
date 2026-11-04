@@ -40,6 +40,12 @@ Tracking (project \`${o.project}\`):
 - ${EVENT_DOCUMENTATION_GUIDE}
 - Prefer MCP \`define_event\` so you can set both the event description and each property's meaning in one call.
 - Feature flags: \`glass.flag('key')\` returns "on", a variant key, or null. Create with \`npx @glassanalytics/cli flags set <key> --rollout 10\`.
+
+Upgrades (the Worker version is pinned in \`.glass/config.json\`):
+- \`.github/workflows/glass.yml\` deploys whatever \`.glass/\` holds when it changes on the default branch. If that file is missing, run \`npx @glassanalytics/cli ci\` and add the \`CLOUDFLARE_API_TOKEN\` repository secret.
+- To upgrade: \`npx @glassanalytics/cli@latest upgrade\` stages the new Worker and migrations into \`.glass/\` without deploying. Commit and push (or open a PR); CI deploys. Ask before pushing if pushes also deploy the site.
+- Do not deploy Glass from a laptop (\`glass upgrade --local\`, wrangler) once the workflow exists, and never commit \`.glass/credentials.json\`.
+- \`glass upgrade\` refuses to replace a newer Worker with an older CLI. If it does, use \`@latest\`; do not pass \`--allow-downgrade\`.
 ${END}`;
 }
 
@@ -66,7 +72,7 @@ Glass is deployed at ${o.host} (project \`${o.project}\`). Prefer the \`glass\` 
 
 ## Answer a question about usage
 
-1. \`overview\` for the period (visitors, top pages, errors, events that moved). If it (or MCP init) says an upgrade is available, tell the user to run \`npx @glassanalytics/cli@latest upgrade\` — do not upgrade yourself.
+1. \`overview\` for the period (visitors, top pages, errors, events that moved). If it (or MCP init) says an upgrade is available, tell the user; with their go-ahead, follow "Upgrade Glass" below.
 2. \`list_events\` to get exact event names — never guess them.
 3. The right query: \`query_trends\` (counts over time), \`query_funnel\` (conversion through steps), \`query_retention\` (who comes back), \`sql\` when nothing else fits.
 4. Report numbers with the dashboard link and SQL from the result.
@@ -89,6 +95,13 @@ Glass is deployed at ${o.host} (project \`${o.project}\`). Prefer the \`glass\` 
 1. \`query_funnel\` with a breakdown (browser, device, utm_source) to find where people drop.
 2. \`list_replays\` with \`with_errors: true\` (or a \`person\`) to find affected sessions.
 3. \`summarise_replay\` to read what happened: pages, labelled clicks, rage clicks, errors.
+
+## Upgrade Glass
+
+1. \`npx @glassanalytics/cli@latest upgrade\`. With \`.github/workflows/glass.yml\` present this only stages \`.glass/\` (Worker, migrations, pinned version); nothing deploys.
+2. No workflow yet? \`npx @glassanalytics/cli ci\` writes it; the repo needs secret \`CLOUDFLARE_API_TOKEN\` (\`gh secret set CLOUDFLARE_API_TOKEN\`).
+3. Commit \`.glass/\` and push to the default branch (or open a PR). The Glass workflow migrates D1 and deploys.
+4. \`npx @glassanalytics/cli status\` confirms the new version is live.
 
 ## Run an experiment
 

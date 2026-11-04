@@ -1,18 +1,21 @@
 /**
  * `glass init` — deploy Glass into your Cloudflare account and wire it into
  * the current project. Safe to re-run: every step finds existing resources.
+ *
+ * Init is the only deploy meant to run from a laptop (it has to create the
+ * resources and keys). It also writes .github/workflows/glass.yml, so every
+ * later upgrade is a commit: `glass upgrade` stages, CI deploys (see ci.ts).
  */
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomToken } from '@glassanalytics/core/ids';
-import { FRAMEWORKS, detectFramework } from '@glassanalytics/core/instrument';
+import { detectFramework, FRAMEWORKS } from '@glassanalytics/core/instrument';
 import { GLASS_VERSION } from '@glassanalytics/core/version';
 import { writeAgentFiles } from '../agent-files.ts';
+import { CI_WORKFLOW_PATH, ciNextSteps, writeCiWorkflow } from '../ci.ts';
 import { call } from '../client.ts';
 import {
-  type ProvisionReport,
-  TOKEN_SCOPES,
   deploy,
   ensureBucket,
   ensureD1,
@@ -20,11 +23,13 @@ import {
   installWorkerFiles,
   listAccounts,
   migrate,
+  type ProvisionReport,
   putSecrets,
   renderWranglerConfig,
+  TOKEN_SCOPES,
 } from '../cloudflare/provision.ts';
-import { type Wrangler, WranglerError, createWrangler } from '../cloudflare/wrangler.ts';
-import { type Credentials, type GlassConfig, UsageError, glassDir, loadConfig, loadCredentials, projectRoot, saveConfig, saveCredentials } from '../config.ts';
+import { createWrangler, type Wrangler, WranglerError } from '../cloudflare/wrangler.ts';
+import { type Credentials, type GlassConfig, glassDir, loadConfig, loadCredentials, projectRoot, saveConfig, saveCredentials, UsageError } from '../config.ts';
 import { color, line, ok, printJson, skip } from '../output.ts';
 import { ask, choose } from '../prompt.ts';
 import { workerBundleDir } from './upgrade.ts';
@@ -39,6 +44,8 @@ export interface InitOptions {
   route?: string;
   replay?: boolean;
   agentFiles?: boolean;
+  /** Write the GitHub Actions workflow that deploys upgrades (default true). */
+  ci?: boolean;
   dryRun?: boolean;
   json?: boolean;
 }
@@ -140,7 +147,7 @@ export async function init(options: InitOptions, deps: InitDeps = {}): Promise<v
         wantReplay ? `R2 bucket "${name}-replays"` : null,
         lake ? `R2 bucket "${name}-data" with data catalog, Pipelines streams/sinks for events and identities` : null,
       ].filter(Boolean),
-      files: ['.glass/config.json', '.glass/wrangler.jsonc', '.glass/worker.js', '.glass/migrations/', '.glass/credentials.json (git-ignored)', 'AGENTS.md', '.claude/skills/glass/SKILL.md', '.mcp.json'],
+      files: ['.glass/config.json', '.glass/wrangler.jsonc', '.glass/worker.js', '.glass/migrations/', '.glass/credentials.json (git-ignored)', 'AGENTS.md', '.claude/skills/glass/SKILL.md', '.mcp.json', ...(options.ci === false ? [] : [CI_WORKFLOW_PATH])],
     };
     if (quiet) printJson(plan);
     else {
@@ -219,9 +226,12 @@ export async function init(options: InitOptions, deps: InitDeps = {}): Promise<v
     const framework = detectFramework(readPackageJson(root));
     const snippet = FRAMEWORKS[framework].snippet({ host: config.host, project });
     const written = options.agentFiles === false ? [] : writeAgentFiles({ root, host: config.host, project, snippet });
+    const workflow = options.ci === false ? null : writeCiWorkflow(root);
+    if (workflow && workflow.status !== 'kept') written.push(workflow.path);
+    const ci = workflow ? { workflow: workflow.path, status: workflow.status, branch: workflow.branch, secret: workflow.secret, next: ciNextSteps(workflow) } : null;
 
     if (quiet) {
-      printJson({ host: config.host, project, dashboard: `${config.host}/app`, framework, snippet, written, steps });
+      printJson({ host: config.host, project, dashboard: `${config.host}/app`, framework, snippet, written, ci, steps });
       return;
     }
     line();
@@ -236,6 +246,12 @@ export async function init(options: InitOptions, deps: InitDeps = {}): Promise<v
       line(color.bold('Written for your agent'));
       for (const f of written) line(`  ${f}`);
       line(`  .glass/ ${color.dim('(deployment config: commit it; credentials.json is git-ignored)')}`);
+    }
+    if (ci) {
+      line();
+      line(color.bold('Upgrades deploy from CI'));
+      line(color.dim(`  ${ci.workflow} deploys the version pinned in .glass/config.json. Agents: finish these steps now.`));
+      for (const [i, step] of ci.next.entries()) line(`  ${i + 1}. ${step}`);
     }
     line();
     line(`Dashboard: ${color.cyan(`${config.host}/app`)} ${color.dim('(sign in with the key from `npx @glassanalytics/cli key`)')}`);

@@ -1,19 +1,22 @@
 /**
  * `glass upgrade` — redeploy the Worker bundled with this CLI version and
- * apply new migrations. `glass status` — check a deployment end to end.
+ * apply new migrations. When `.github/workflows/glass.yml` exists (see
+ * `glass ci`), a run outside CI only stages the files and CI deploys them.
+ * `glass ci` — write that workflow. `glass status` — check a deployment end to end.
  * `glass key` — print connection details for the dashboard or an agent.
  */
 
 import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { GLASS_VERSION, UPGRADE_COMMAND, isNewerThan } from '@glassanalytics/core/version';
+import { GLASS_VERSION, isNewerThan, UPGRADE_COMMAND } from '@glassanalytics/core/version';
+import { CI_WORKFLOW_PATH, ciNextSteps, defaultBranch, hasCiWorkflow, inCi, writeCiWorkflow } from '../ci.ts';
 import { call } from '../client.ts';
 import { deploy, ensureBucket, installWorkerFiles, migrate, putSecrets, renderWranglerConfig } from '../cloudflare/provision.ts';
-import { type Wrangler, createWrangler } from '../cloudflare/wrangler.ts';
-import { UsageError, connection, glassDir, loadConfig, loadCredentials, projectRoot, saveConfig } from '../config.ts';
-import { ask } from '../prompt.ts';
+import { createWrangler, type Wrangler } from '../cloudflare/wrangler.ts';
+import { connection, glassDir, loadConfig, loadCredentials, projectRoot, saveConfig, UsageError } from '../config.ts';
 import { color, line, ok, printJson, skip } from '../output.ts';
+import { ask } from '../prompt.ts';
 
 /** Where the built Worker lives: next to the CLI bundle when installed, or in the repo during development. */
 export function workerBundleDir(): string {
@@ -25,14 +28,81 @@ export function workerBundleDir(): string {
   throw new UsageError('The Worker bundle is missing.', 'If you are working on Glass itself, run `pnpm build` first.');
 }
 
-export async function upgrade(options: { token?: string; json?: boolean }, deps: { wrangler?: (auth: { token: string; accountId: string }, cwd: string) => Wrangler } = {}): Promise<void> {
-  const root = projectRoot();
+export interface UpgradeOptions {
+  token?: string;
+  json?: boolean;
+  /** Deploy as a CI runner: no prompts, Worker secrets left as they are. Defaults to true when CI=true. */
+  ci?: boolean;
+  /** Deploy from this machine even though a Glass CI workflow exists. */
+  local?: boolean;
+  /** Allow replacing a newer deployed Worker with this CLI's older one. */
+  allowDowngrade?: boolean;
+}
+
+export interface UpgradeDeps {
+  wrangler?: (auth: { token: string; accountId: string }, cwd: string) => Wrangler;
+  fetcher?: typeof fetch;
+  root?: string;
+  bundleDir?: string;
+  env?: NodeJS.ProcessEnv;
+}
+
+/** The version the live Worker reports, or null if it can't be reached quickly. */
+async function liveVersion(host: string, fetcher: typeof fetch): Promise<string | null> {
+  if (!host) return null;
+  try {
+    const res = await fetcher(`${host}/health`, { signal: AbortSignal.timeout(5000) });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { version?: unknown };
+    return typeof body.version === 'string' ? body.version : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function upgrade(options: UpgradeOptions, deps: UpgradeDeps = {}): Promise<void> {
+  const root = deps.root ?? projectRoot();
+  const env = deps.env ?? process.env;
   const config = loadConfig(root);
+  if (!config) throw new UsageError('No Glass deployment in this project.', 'Run `npx @glassanalytics/cli init` first.');
+  const ci = options.ci ?? inCi(env);
   const credentials = loadCredentials(root);
-  if (!config || !credentials) throw new UsageError('No Glass deployment in this project.', 'Run `npx @glassanalytics/cli init` first.');
-  const token = options.token ?? process.env.CLOUDFLARE_API_TOKEN ?? (await ask('Cloudflare API token', { flag: '--token (or CLOUDFLARE_API_TOKEN)', secret: true }));
-  const wrangler = (deps.wrangler ?? createWrangler)({ token, accountId: config.accountId }, root);
+  if (!credentials && !ci) throw new UsageError('No .glass/credentials.json in this project.', 'Run `npx @glassanalytics/cli init` again to restore keys, or deploy from CI (`glass upgrade --ci`), which leaves Worker secrets as they are.');
   const dir = glassDir(root);
+  const bundle = deps.bundleDir ?? workerBundleDir();
+
+  // Never replace a newer Worker with an older one: CLI and Worker versions are the same number,
+  // so an older CLI (an `npx` cache, a stale pin) would silently drop features and migrations.
+  const live = await liveVersion(config.host, deps.fetcher ?? fetch);
+  const deployed = [config.version, live].filter((v): v is string => Boolean(v)).sort((a, b) => (isNewerThan(a, b) ? -1 : 1))[0];
+  if (deployed && isNewerThan(deployed, GLASS_VERSION) && !options.allowDowngrade) {
+    throw new UsageError(
+      `This deployment runs Glass ${deployed}, which is newer than this CLI (${GLASS_VERSION}). Nothing was changed.`,
+      `Run \`${UPGRADE_COMMAND}\` (or npx @glassanalytics/cli@${deployed} or later). --allow-downgrade forces the older Worker.`,
+    );
+  }
+  const from = config.version;
+
+  // With a CI workflow, a laptop upgrade only stages files; the workflow deploys them.
+  if (hasCiWorkflow(root) && !ci && !options.local) {
+    installWorkerFiles(dir, bundle);
+    config.version = GLASS_VERSION;
+    writeFileSync(join(dir, 'wrangler.jsonc'), renderWranglerConfig(config));
+    saveConfig(config, root);
+    const branch = defaultBranch(root);
+    if (options.json) {
+      printJson({ from, to: GLASS_VERSION, staged: true, deploy: CI_WORKFLOW_PATH, next: `Commit .glass/ and push to ${branch}` });
+      return;
+    }
+    ok(`Staged Glass ${from === GLASS_VERSION ? GLASS_VERSION : `${from} → ${GLASS_VERSION}`} in .glass/ (nothing deployed)`);
+    line(`  Commit .glass/ and push to ${branch}; ${CI_WORKFLOW_PATH} migrates and deploys it.`);
+    line(color.dim('  Deploying from this machine instead: glass upgrade --local'));
+    return;
+  }
+
+  const token = options.token ?? env.CLOUDFLARE_API_TOKEN ?? (ci ? undefined : await ask('Cloudflare API token', { flag: '--token (or CLOUDFLARE_API_TOKEN)', secret: true }));
+  if (!token) throw new UsageError('CLOUDFLARE_API_TOKEN is not set.', `In CI, map the repository secret to it (see ${CI_WORKFLOW_PATH}).`);
+  const wrangler = (deps.wrangler ?? createWrangler)({ token, accountId: config.accountId }, root);
   const report = (status: 'ok' | 'created' | 'skipped', label: string, detail?: string) => {
     if (options.json) return;
     (status === 'skipped' ? skip : ok)(`${label}${detail ? color.dim(` (${detail})`) : ''}`);
@@ -42,28 +112,50 @@ export async function upgrade(options: { token?: string; json?: boolean }, deps:
   if (!config.replay && (await ensureBucket(wrangler, `${config.name}-replays`, config.eu, report, 'session replay'))) {
     config.replay = { bucket: `${config.name}-replays` };
   }
-  installWorkerFiles(dir, workerBundleDir());
+  installWorkerFiles(dir, bundle);
   const configPath = join(dir, 'wrangler.jsonc');
   writeFileSync(configPath, renderWranglerConfig(config));
   await migrate(wrangler, config.d1.name, configPath);
   report('ok', 'Migrations applied');
   await deploy(wrangler, configPath);
-  await putSecrets(
-    wrangler,
-    {
-      GLASS_ADMIN_KEY: credentials.adminKey,
-      GLASS_READ_KEY: credentials.readKey,
-      GLASS_SALT_SECRET: credentials.saltSecret,
-      // CF_API_TOKEN (lake mode) is set by init and left alone here, so a narrower token you set stays.
-    },
-    configPath,
-    dir,
-  );
-  const from = config.version;
+  if (credentials) {
+    await putSecrets(
+      wrangler,
+      {
+        GLASS_ADMIN_KEY: credentials.adminKey,
+        GLASS_READ_KEY: credentials.readKey,
+        GLASS_SALT_SECRET: credentials.saltSecret,
+        // CF_API_TOKEN (lake mode) is set by init and left alone here, so a narrower token you set stays.
+      },
+      configPath,
+      dir,
+    );
+  } else {
+    report('skipped', 'Worker secrets', 'no credentials.json here; the keys set by init stay in place');
+  }
   config.version = GLASS_VERSION;
   saveConfig(config, root);
-  if (options.json) printJson({ from, to: GLASS_VERSION, host: config.host, replay: Boolean(config.replay) });
+  if (options.json) printJson({ from, to: GLASS_VERSION, host: config.host, replay: Boolean(config.replay), staged: false });
   else ok(`Glass ${from === GLASS_VERSION ? GLASS_VERSION : `${from} upgraded to ${GLASS_VERSION}`} is live at ${config.host}`);
+  if (!ci && !hasCiWorkflow(root) && !options.json) {
+    line(color.dim(`  Tip: \`glass ci\` writes ${CI_WORKFLOW_PATH} so future upgrades deploy from CI instead of this machine.`));
+  }
+}
+
+/** `glass ci`: write (or refresh) the GitHub Actions workflow that deploys Glass. */
+export function ci(options: { branch?: string; secret?: string; json?: boolean }, deps: { root?: string } = {}): void {
+  const root = deps.root ?? projectRoot();
+  if (!loadConfig(root)) throw new UsageError('No Glass deployment in this project.', 'Run `npx @glassanalytics/cli init` first.');
+  const result = writeCiWorkflow(root, { branch: options.branch, secret: options.secret });
+  const next = ciNextSteps(result);
+  if (options.json) {
+    printJson({ ...result, next });
+    return;
+  }
+  (result.status === 'kept' ? skip : ok)(`${result.path} ${result.status === 'kept' ? 'already exists (left as is)' : result.status}`);
+  line();
+  line(color.bold('Finish CI setup'));
+  for (const [i, step] of next.entries()) line(`  ${i + 1}. ${step}`);
 }
 
 export async function status(options: { json?: boolean }): Promise<void> {

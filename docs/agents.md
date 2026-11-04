@@ -44,7 +44,7 @@ Every result includes a `summary` sentence, the `sql` that ran, and a `dashboard
 
 ### Recipes
 
-- **"First look at this project."** `overview` → `list_events`. If `upgradeAvailable` is set (also on `/health` and in MCP initialize instructions), tell the user to run `npx @glassanalytics/cli@latest upgrade`. For every name in `undocumented`, find the capture site in code (or ask), then `define_event` with a how/when description and property meanings before building queries on those events.
+- **"First look at this project."** `overview` → `list_events`. If `upgradeAvailable` is set (also on `/health` and in MCP initialize instructions), tell the user. With their go-ahead, run `npx @glassanalytics/cli@latest upgrade`, which stages `.glass/` when `.github/workflows/glass.yml` exists, then commit and push so CI deploys it. Don't deploy Glass from a laptop. For every name in `undocumented`, find the capture site in code (or ask), then `define_event` with a how/when description and property meanings before building queries on those events.
 - **"Why did X drop?"** `overview` → `query_funnel` with `breakdown: "browser"` (or `utm_source`, `device`) → `list_replays` with `with_errors: true` → `summarise_replay`.
 - **"Add tracking for Y."** `instrument` with the event name → add the code → deploy → `describe_event` to confirm it arrives → `define_event` with how/when it fires and what each property means.
 - **"Test Z."** `create_experiment` with a goal → branch on `glass.flag(key)` in code → `update_experiment` with `start` → later `experiment_results` → `update_experiment` with `ship`.

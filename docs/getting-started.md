@@ -32,6 +32,7 @@ It will:
 3. Create a project named after your `package.json` (override with `--project`).
 4. Send a test event and check it arrived.
 5. Print the install snippet for your framework, and write files for your coding agent: `AGENTS.md` (and `CLAUDE.md` if you have one), `.claude/skills/glass/SKILL.md` and `.mcp.json`.
+6. Write `.github/workflows/glass.yml`, so later upgrades deploy from CI rather than from your machine (see [Upgrading](#upgrading)).
 
 It also creates `.glass/` in your project. Commit it (`config.json`, `wrangler.jsonc`, `worker.js`, `migrations/`); `credentials.json` holds your keys and is git-ignored automatically.
 
@@ -47,6 +48,7 @@ Useful flags:
 | `--lake` | Store events in Iceberg on R2 instead of D1 (beta; for high volume) |
 | `--no-replay` | Skip replay storage |
 | `--no-agent-files` | Don't write AGENTS.md, SKILL.md or .mcp.json |
+| `--no-ci` | Don't write `.github/workflows/glass.yml` |
 | `--json` | Machine-readable output |
 
 `glass init` is safe to re-run: it finds existing resources and keeps your keys.
@@ -102,11 +104,25 @@ Prefer the MCP `define_event` tool so you can set property meanings in the same 
 
 ## Upgrading
 
+Init is the only deploy that has to run on your machine. After that, the Glass version is pinned in `.glass/config.json` and `.github/workflows/glass.yml` deploys whatever `.glass/` holds when it changes on your default branch.
+
+One-time setup, right after init (agents should do this as part of init):
+
+1. Add a repository secret `CLOUDFLARE_API_TOKEN` holding a Cloudflare API token with the same scopes as init: `gh secret set CLOUDFLARE_API_TOKEN`.
+2. Commit `.glass/` and `.github/workflows/glass.yml` and push. (`credentials.json` stays git-ignored; the Worker's keys were set by init and survive every deploy.)
+
+To upgrade:
+
 ```sh
-npx @glassanalytics/cli@latest upgrade
+npx @glassanalytics/cli@latest upgrade   # stages the new Worker, migrations and version into .glass/; deploys nothing
+git add .glass && git commit -m "Upgrade Glass" && git push   # or open a PR; CI migrates and deploys
 ```
 
-This copies the new Worker into `.glass/`, applies new migrations and redeploys.
+In CI, the workflow runs `npx @glassanalytics/cli@<pinned version> upgrade --ci`, which applies migrations and redeploys without prompts or local credentials.
+
+- No workflow yet (installed before this existed, or with `--no-ci`)? `npx @glassanalytics/cli ci` writes it. Options: `--branch`, `--secret`. A workflow you have edited by hand (without the generated header) is left alone.
+- No GitHub Actions? Without the workflow, `glass upgrade` deploys directly, as before. `glass upgrade --local` forces a direct deploy even when the workflow exists; use it only in emergencies, since the repo then no longer matches what is live.
+- `glass upgrade` refuses to replace a newer Worker with an older one (for example a stale `npx` cache). Use `@latest`. `--allow-downgrade` overrides this.
 
 You'll also be told when an upgrade is available: the dashboard shows a banner after login, `glass status` (and other CLI commands) print a reminder, and MCP/`overview` include `upgradeAvailable` so agents can ask you to run the command above.
 

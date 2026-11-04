@@ -14,7 +14,7 @@ import { events, person, projects, query, replays, sql } from './commands/data.t
 import { experiments, flags as flagCommands } from './commands/flags.ts';
 import { init } from './commands/init.ts';
 import { mcpBridge } from './commands/mcp.ts';
-import { key, status, upgrade } from './commands/upgrade.ts';
+import { ci, key, status, upgrade } from './commands/upgrade.ts';
 import { UsageError } from './config.ts';
 import { color, fail, line } from './output.ts';
 import { warnIfOutdated } from './upgrade-check.ts';
@@ -32,8 +32,16 @@ ${color.bold('Set up')}
     --eu                           Keep data in the EU jurisdiction
     --no-replay                    Skip session replay storage
     --no-agent-files               Don't write AGENTS.md, SKILL.md or .mcp.json
+    --no-ci                        Don't write .github/workflows/glass.yml
     --dry-run                      Show what would be created
-  glass upgrade                  Redeploy this version of Glass and migrate
+  glass upgrade                  Move to this CLI's version of Glass and migrate
+                                   With .github/workflows/glass.yml: stage into .glass/ only;
+                                   commit and push, and CI deploys it
+    --ci                           Deploy as CI (no prompts; default when CI=true)
+    --local                        Deploy from here even though a CI workflow exists
+    --allow-downgrade              Replace a newer deployed Worker with this older one
+  glass ci [--branch main]       Write the workflow that deploys Glass from CI
+    --secret <name>                Repo secret with the Cloudflare token (default CLOUDFLARE_API_TOKEN)
   glass status                   Check the deployment end to end
   glass key [--read]             Print the dashboard URL and API key
 
@@ -69,12 +77,12 @@ Docs: https://github.com/ISNIT0/glass-analytics`;
 
 // Every option must be declared: undeclared options would parse as booleans and lose their values.
 const STRING_OPTIONS = [
-  'token', 'account', 'project', 'name', 'route',
+  'token', 'account', 'project', 'name', 'route', 'branch', 'secret',
   'from', 'to', 'event', 'math', 'property', 'interval', 'breakdown', 'steps', 'window',
   'cohort', 'return', 'period', 'periods', 'spec', 'where', 'limit', 'days', 'describe', 'person',
   'rollout', 'variants', 'rules', 'description', 'goal', 'flag', 'value', 'hypothesis', 'variant',
 ];
-const BOOLEAN_OPTIONS = ['json', 'lake', 'eu', 'no-replay', 'no-agent-files', 'dry-run', 'read', 'sql', 'errors', 'enable', 'disable', 'delete'];
+const BOOLEAN_OPTIONS = ['json', 'lake', 'eu', 'no-replay', 'no-agent-files', 'no-ci', 'ci', 'local', 'allow-downgrade', 'dry-run', 'read', 'sql', 'errors', 'enable', 'disable', 'delete'];
 
 export async function main(argv: string[]): Promise<void> {
   const { values, positionals } = parseArgs({
@@ -95,7 +103,7 @@ export async function main(argv: string[]): Promise<void> {
   if (!command || command === 'help' || (flags.help && !command)) return line(HELP);
 
   // Surface an outdated Worker before the real command (skip setup/status/mcp noise).
-  const skipUpgradeWarn = new Set(['init', 'upgrade', 'deploy', 'status', 'doctor', 'mcp', 'key']);
+  const skipUpgradeWarn = new Set(['init', 'upgrade', 'deploy', 'ci', 'status', 'doctor', 'mcp', 'key']);
   if (command && !skipUpgradeWarn.has(command)) {
     await warnIfOutdated({ json: Boolean(flags.json) });
   }
@@ -112,12 +120,21 @@ export async function main(argv: string[]): Promise<void> {
         eu: flags.eu === true ? true : undefined,
         replay: flags['no-replay'] ? false : undefined,
         agentFiles: flags['no-agent-files'] ? false : undefined,
+        ci: flags['no-ci'] ? false : undefined,
         dryRun: Boolean(flags['dry-run']),
         json: Boolean(flags.json),
       });
     case 'upgrade':
     case 'deploy':
-      return upgrade({ token: str(flags.token), json: Boolean(flags.json) });
+      return upgrade({
+        token: str(flags.token),
+        json: Boolean(flags.json),
+        ci: flags.ci === true ? true : undefined,
+        local: Boolean(flags.local),
+        allowDowngrade: Boolean(flags['allow-downgrade']),
+      });
+    case 'ci':
+      return ci({ branch: str(flags.branch), secret: str(flags.secret), json: Boolean(flags.json) });
     case 'status':
     case 'doctor':
       return status({ json: Boolean(flags.json) });

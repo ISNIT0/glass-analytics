@@ -15,7 +15,8 @@ npx @glassanalytics/cli query funnel --steps '$pageview,signup_completed'
 npx @glassanalytics/cli sql "SELECT event, COUNT(*) AS n FROM events GROUP BY event"
 npx @glassanalytics/cli flags set new-checkout --variants control:50,test:50
 npx @glassanalytics/cli mcp                          # MCP server over stdio (what .mcp.json runs)
-npx @glassanalytics/cli upgrade                      # deploy a new version
+npx @glassanalytics/cli@latest upgrade               # stage a new version into .glass/ (CI deploys it)
+npx @glassanalytics/cli ci                           # write the GitHub Actions workflow that deploys .glass/
 npx @glassanalytics/cli --help
 ```
 
