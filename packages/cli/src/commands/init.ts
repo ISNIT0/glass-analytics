@@ -52,6 +52,10 @@ export interface InitOptions {
   lake?: boolean;
   eu?: boolean;
   route?: string;
+  /** Remove a route set by an earlier init. */
+  noRoute?: boolean;
+  /** Delete events older than this many days. */
+  retentionDays?: number;
   replay?: boolean;
   agentFiles?: boolean;
   /** Write the GitHub Actions workflow that deploys upgrades (default true). */
@@ -69,6 +73,20 @@ export interface InitDeps {
   bundleDir?: string;
   /** Delay between health checks, ms. */
   pollMs?: number;
+}
+
+/**
+ * "acme.com", "acme.com/_glass" and "acme.com/_glass/*" all mean the same route. Accepting the bare
+ * host also saves people from shells that expand the unquoted `*`.
+ */
+export function normaliseRoute(input: string | undefined): string | undefined {
+  if (!input) return undefined;
+  const bare = input
+    .trim()
+    .replace(/^https?:\/\//, '')
+    .replace(/\/+$/, '');
+  if (!bare.includes('/')) return `${bare}/_glass/*`;
+  return bare.endsWith('/*') ? bare : `${bare}/*`;
 }
 
 function defaultProjectId(root: string): string {
@@ -116,6 +134,22 @@ async function waitForWorker(
     `The Worker at ${host} did not come up.`,
     'Run `glass status` in a minute; if it persists, `glass upgrade` redeploys.',
   );
+}
+
+/** Retry while the new Worker's secrets are still propagating (missing key, 401, 5xx). */
+async function settle<T>(fn: () => Promise<T>, pollMs: number, attempts = 8): Promise<T> {
+  for (let i = 1; ; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const transient = /is not set on this Worker|unauthori[sz]ed|401|50\d|fetch failed/i.test(
+        message,
+      );
+      if (!transient || i >= attempts) throw err;
+      await new Promise((r) => setTimeout(r, pollMs));
+    }
+  }
 }
 
 export async function init(options: InitOptions, deps: InitDeps = {}): Promise<void> {
@@ -167,11 +201,14 @@ export async function init(options: InitOptions, deps: InitDeps = {}): Promise<v
     );
   report('ok', `Cloudflare token works (account ${account.name})`);
 
-  const name = options.name ?? existing?.name ?? 'glass';
   const project = options.project ?? existing?.project ?? defaultProjectId(root);
+  // Named after the project, so several sites can each have their own Glass in one account.
+  // (A shared default would make the second site redeploy, and re-route, the first site's Worker.)
+  const name = options.name ?? existing?.name ?? `glass-${project}`;
   const lake = options.lake ?? existing?.store === 'lake';
   const eu = options.eu ?? existing?.eu ?? false;
-  const route = options.route ?? existing?.route ?? null;
+  const route = options.noRoute ? null : (normaliseRoute(options.route) ?? existing?.route ?? null);
+  const retentionDays = options.retentionDays ?? existing?.retentionDays ?? null;
   const wantReplay = options.replay ?? true;
 
   if (options.dryRun) {
@@ -248,6 +285,7 @@ export async function init(options: InitOptions, deps: InitDeps = {}): Promise<v
       replay,
       lake: lakeConfig,
       route,
+      retentionDays,
       eu,
       version: GLASS_VERSION,
     };
@@ -285,11 +323,17 @@ export async function init(options: InitOptions, deps: InitDeps = {}): Promise<v
     report('ok', `Worker deployed at ${config.host}`);
 
     await waitForWorker(config.host, credentials.adminKey, fetcher, deps.pollMs ?? 1500);
-    await call(
-      'POST',
-      '/api/projects',
-      { id: project },
-      { host: config.host, key: credentials.adminKey, fetcher },
+    // Secrets reach every Cloudflare location a few seconds after the Worker answers somewhere,
+    // so a request can still land where GLASS_ADMIN_KEY isn't set yet: retry those.
+    await settle(
+      () =>
+        call(
+          'POST',
+          '/api/projects',
+          { id: project },
+          { host: config.host, key: credentials.adminKey, fetcher },
+        ),
+      deps.pollMs ?? 1500,
     );
     report('ok', `Project "${project}" ready`);
     const auth = { host: config.host, key: credentials.adminKey, fetcher };
@@ -363,6 +407,21 @@ export async function init(options: InitOptions, deps: InitDeps = {}): Promise<v
     line(
       `Then track what matters: ${color.cyan("glass.capture('signup_completed', { plan: 'pro' })")}`,
     );
+    line();
+    line(color.bold('Before you ship it'));
+    line(
+      `  Cookie banner? Load Glass with ${color.cyan('data-persistence="cookieless"')} (it stores nothing on the device) and call ${color.cyan('glass.consent(true)')} on Accept. Session replay starts after consent.`,
+    );
+    line(
+      '  Add Glass to your privacy page: your own analytics, in your Cloudflare account, cookieless until consent.',
+    );
+    line(
+      `  Already sending events to GA, Meta or PostHog? Add ${color.cyan('glass.capture')} to that same helper, then mark the events that mean success with the ${color.cyan('mark_event')} tool.`,
+    );
+    if (!route)
+      line(
+        `  Not on Cloudflare (Vercel, Netlify)? Load from ${color.cyan(config.host)} directly. A rewrite proxy hides visitors' IPs, which breaks countries and cookieless counts.`,
+      );
     if (written.length) {
       line();
       line(color.bold('Written for your agent'));

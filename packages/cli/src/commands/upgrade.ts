@@ -65,6 +65,8 @@ export interface UpgradeOptions {
   local?: boolean;
   /** Allow replacing a newer deployed Worker with this CLI's older one. */
   allowDowngrade?: boolean;
+  /** Delete events older than this many days (0 keeps them forever). Saved in .glass/config.json. */
+  retentionDays?: number;
 }
 
 export interface UpgradeDeps {
@@ -97,6 +99,14 @@ export async function upgrade(options: UpgradeOptions, deps: UpgradeDeps = {}): 
       'No Glass deployment in this project.',
       'Run `npx @glassanalytics/cli init` first.',
     );
+  if (options.retentionDays !== undefined) {
+    if (!Number.isInteger(options.retentionDays) || options.retentionDays < 0)
+      throw new UsageError(
+        '--retention-days takes a whole number of days.',
+        'For example --retention-days 400; 0 keeps events forever.',
+      );
+    config.retentionDays = options.retentionDays || null;
+  }
   const ci = options.ci ?? inCi(env);
   const credentials = loadCredentials(root);
   if (!credentials && !ci)

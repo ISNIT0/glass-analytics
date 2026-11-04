@@ -22,9 +22,9 @@ import { beforeEach, describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { GLASS_VERSION } from '@glassanalytics/core/version';
 import { testApp } from '../../worker/test/harness.ts';
-import { agentsSection, upsertSection } from '../src/agent-files.ts';
-import type { RunResult, Wrangler } from '../src/cloudflare/wrangler.ts';
-import { init } from '../src/commands/init.ts';
+import { agentsSection, importsAgentsMd, upsertSection } from '../src/agent-files.ts';
+import { type RunResult, type Wrangler, WranglerError } from '../src/cloudflare/wrangler.ts';
+import { init, normaliseRoute } from '../src/commands/init.ts';
 import { mcpBridge } from '../src/commands/mcp.ts';
 import { ci, upgrade } from '../src/commands/upgrade.ts';
 
@@ -165,8 +165,9 @@ describe('glass init', () => {
     const config = JSON.parse(readFileSync(join(root, '.glass', 'config.json'), 'utf8'));
     assert.equal(config.host, HOST);
     assert.equal(config.project, 'web-app');
-    assert.deepEqual(config.d1, { name: 'glass', id: 'db-uuid-1' });
-    assert.deepEqual(config.replay, { bucket: 'glass-replays' });
+    // Named after the project, so another site in the same account gets its own Worker.
+    assert.deepEqual(config.d1, { name: 'glass-web-app', id: 'db-uuid-1' });
+    assert.deepEqual(config.replay, { bucket: 'glass-web-app-replays' });
 
     const wranglerConfig = readFileSync(join(root, '.glass', 'wrangler.jsonc'), 'utf8');
     assert.match(wranglerConfig, /"database_id": "db-uuid-1"/);
@@ -492,5 +493,34 @@ describe('glass upgrade', () => {
       readFileSync(join(root, '.github', 'workflows', 'glass.yml'), 'utf8'),
       'name: mine\n',
     );
+  });
+});
+
+describe('onboarding details', () => {
+  it('accepts a route as a bare host, a path, or the full pattern', () => {
+    for (const input of ['acme.com', 'https://acme.com/', 'acme.com/_glass', 'acme.com/_glass/*']) {
+      assert.equal(normaliseRoute(input), 'acme.com/_glass/*', input);
+    }
+    assert.equal(normaliseRoute(undefined), undefined);
+  });
+
+  it("doesn't copy the Glass section into a CLAUDE.md that imports AGENTS.md", () => {
+    const dir = mkdtempSync(join(tmpdir(), 'glass-md-'));
+    const claude = join(dir, 'CLAUDE.md');
+    writeFileSync(claude, '@AGENTS.md\n');
+    assert.equal(importsAgentsMd(claude), true);
+    writeFileSync(claude, '# Notes\n\nNo import here.\n');
+    assert.equal(importsAgentsMd(claude), false);
+  });
+
+  it('shows why wrangler failed, not the end of its upload log', () => {
+    const stdout = Array.from({ length: 30 }, (_, i) => `binding line ${i}`).join('\n');
+    const err = new WranglerError(['deploy'], {
+      code: 1,
+      stdout,
+      stderr: 'X [ERROR] A request to the Cloudflare API failed: route not permitted',
+    });
+    assert.match(err.message, /route not permitted/);
+    assert.doesNotMatch(err.message, /binding line 29/);
   });
 });

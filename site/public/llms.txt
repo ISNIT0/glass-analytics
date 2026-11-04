@@ -5,7 +5,7 @@
 ## Install (for coding agents)
 
 1. In the user's project, run `npx @glassanalytics/cli init`. It needs a Cloudflare API token, from the `CLOUDFLARE_API_TOKEN` environment variable or the `--token` flag. In non-interactive shells, also pass `--account <id>` when the token can see several accounts.
-   - Optional flags: `--project <id>`, `--eu` (EU data jurisdiction), `--lake` (Iceberg storage for high volume), `--route example.com/_glass/*` (first-party serving), `--dry-run`.
+   - Optional flags: `--project <id>`, `--eu` (EU data jurisdiction), `--lake` (Iceberg storage for high volume), `--route example.com` (first-party serving at /_glass), `--dry-run`.
    - Token permissions: Account › Workers Scripts › Edit; Account › D1 › Edit; Account › Workers R2 Storage › Edit; Account › Account Settings › Read.
 2. `glass init` prints the install snippet for the detected framework. Add it to the site's <head>, for example:
    `<script defer src="https://glass.<subdomain>.workers.dev/s.js" data-project="<project>"></script>`

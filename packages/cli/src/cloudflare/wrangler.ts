@@ -24,7 +24,9 @@ export class WranglerError extends Error {
   readonly result: RunResult;
   readonly args: string[];
   constructor(args: string[], result: RunResult) {
-    const output = `${result.stderr}\n${result.stdout}`.trim().split('\n').slice(-12).join('\n');
+    // The reason is in stderr; stdout (bindings, upload sizes) is long and would push it out of view.
+    const tail = (text: string, n: number) => text.trim().split('\n').slice(-n).join('\n');
+    const output = result.stderr.trim() ? tail(result.stderr, 15) : tail(result.stdout, 12);
     super(`wrangler ${args.slice(0, 3).join(' ')} failed:\n${output}`);
     this.args = args;
     this.result = result;

@@ -32,6 +32,8 @@ export interface GlassConfig {
   } | null;
   /** Optional route on your own domain, e.g. "acme.com/_glass/*". */
   route: string | null;
+  /** Delete events older than this many days (D1 store). Unset keeps them. */
+  retentionDays?: number | null;
   eu: boolean;
   /** Glass version last deployed. */
   version: string;

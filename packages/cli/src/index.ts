@@ -27,7 +27,9 @@ ${color.bold('Set up')}
     --account <id>                 Cloudflare account id (or CLOUDFLARE_ACCOUNT_ID)
     --project <id>                 Project id (default: package.json name)
     --name <name>                  Worker and resource name (default: glass)
-    --route <host/_glass/*>        Also serve from your domain, e.g. acme.com/_glass/*
+    --route <host>                 Also serve from your domain at /_glass, e.g. --route acme.com
+    --no-route                     Remove the route set by an earlier init
+    --retention-days <n>           Delete events older than n days (default: keep)
     --lake                         Store events in Iceberg on R2 (Pipelines + Basin SQL)
     --eu                           Keep data in the EU jurisdiction
     --no-replay                    Skip session replay storage
@@ -40,6 +42,7 @@ ${color.bold('Set up')}
     --ci                           Deploy as CI (no prompts; default when CI=true)
     --local                        Deploy from here even though a CI workflow exists
     --allow-downgrade              Replace a newer deployed Worker with this older one
+    --retention-days <n>           Delete events older than n days (0 keeps them)
   glass ci [--branch main]       Write the workflow that deploys Glass from CI
     --secret <name>                Repo secret with the Cloudflare token (default CLOUDFLARE_API_TOKEN)
   glass status                   Check the deployment end to end
@@ -116,12 +119,14 @@ const STRING_OPTIONS = [
   'value',
   'hypothesis',
   'variant',
+  'retention-days',
 ];
 const BOOLEAN_OPTIONS = [
   'json',
   'lake',
   'eu',
   'no-replay',
+  'no-route',
   'no-agent-files',
   'no-ci',
   'ci',
@@ -177,6 +182,8 @@ export async function main(argv: string[]): Promise<void> {
         project: str(flags.project),
         name: str(flags.name),
         route: str(flags.route),
+        noRoute: Boolean(flags['no-route']),
+        retentionDays: flags['retention-days'] ? Number(flags['retention-days']) : undefined,
         lake: flags.lake === true ? true : undefined,
         eu: flags.eu === true ? true : undefined,
         replay: flags['no-replay'] ? false : undefined,
@@ -193,6 +200,8 @@ export async function main(argv: string[]): Promise<void> {
         ci: flags.ci === true ? true : undefined,
         local: Boolean(flags.local),
         allowDowngrade: Boolean(flags['allow-downgrade']),
+        retentionDays:
+          flags['retention-days'] !== undefined ? Number(flags['retention-days']) : undefined,
       });
     case 'ci':
       return ci({

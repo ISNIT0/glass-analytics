@@ -186,6 +186,7 @@ export function renderWranglerConfig(config: GlassConfig): string {
     vars.CF_ACCOUNT_ID = config.accountId;
   }
   if (config.route) vars.GLASS_PUBLIC_URL = `https://${config.route.replace(/\/\*$/, '')}`;
+  if (config.retentionDays) vars.GLASS_RETENTION_DAYS = String(config.retentionDays);
   const wrangler: Record<string, unknown> = {
     name: config.name,
     main: 'worker.js',

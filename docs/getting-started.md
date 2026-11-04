@@ -38,20 +38,28 @@ It also creates `.glass/` in your project. Commit it (`config.json`, `wrangler.j
 
 Useful flags:
 
-| Flag                        |                                                                                    |
-| --------------------------- | ---------------------------------------------------------------------------------- |
-| `--dry-run`                 | Show what would be created, change nothing                                         |
-| `--account <id>`            | Choose the account non-interactively                                               |
-| `--project <id>`            | Project id (lowercase letters, digits, `-`, `_`)                                   |
-| `--eu`                      | Create the database and buckets in the EU jurisdiction                             |
-| `--route acme.com/_glass/*` | Also serve Glass from your own domain (first-party, so ad blockers don't block it) |
-| `--lake`                    | Store events in Iceberg on R2 instead of D1 (beta; for high volume)                |
-| `--no-replay`               | Skip replay storage                                                                |
-| `--no-agent-files`          | Don't write AGENTS.md, SKILL.md or .mcp.json                                       |
-| `--no-ci`                   | Don't write `.github/workflows/glass.yml`                                          |
-| `--json`                    | Machine-readable output                                                            |
+| Flag                   |                                                                                                                                          |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `--dry-run`            | Show what would be created, change nothing                                                                                               |
+| `--account <id>`       | Choose the account non-interactively                                                                                                     |
+| `--project <id>`       | Project id (lowercase letters, digits, `-`, `_`)                                                                                         |
+| `--eu`                 | Create the database and buckets in the EU jurisdiction                                                                                   |
+| `--route acme.com`     | Also serve Glass from your own domain at `/_glass` (first-party, so ad blockers don't block it). Needs the domain on Cloudflare, proxied |
+| `--no-route`           | Remove a route set by an earlier init                                                                                                    |
+| `--retention-days <n>` | Delete events older than n days (also on `glass upgrade`)                                                                                |
+| `--lake`               | Store events in Iceberg on R2 instead of D1 (beta; for high volume)                                                                      |
+| `--no-replay`          | Skip replay storage                                                                                                                      |
+| `--no-agent-files`     | Don't write AGENTS.md, SKILL.md or .mcp.json                                                                                             |
+| `--no-ci`              | Don't write `.github/workflows/glass.yml`                                                                                                |
+| `--json`               | Machine-readable output                                                                                                                  |
 
 `glass init` is safe to re-run: it finds existing resources and keeps your keys.
+
+Each deployment is named after its project (`glass-<project>`: Worker, D1 database, replay bucket), so several sites can each have their own Glass in one Cloudflare account. Pass `--name` to choose another.
+
+**Sites not on Cloudflare** (Vercel, Netlify): load the snippet straight from the Worker's URL. A rewrite or proxy from your own domain makes every visitor look like the proxy's server, which breaks countries and cookieless visitor counts.
+
+**Cookie banners:** load Glass with `data-persistence="cookieless"` (it stores nothing on the device, so it can run before consent) and call `glass.consent(true)` when the visitor accepts, `glass.consent(false)` when they reject. Session replay and cross-day visitor ids start after consent. Add Glass to your privacy page.
 
 ## 3. Add the snippet
 

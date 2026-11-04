@@ -35,6 +35,9 @@ This project uses Glass for analytics, session replay, feature flags and A/B tes
 Tracking (project \`${o.project}\`):
 - Install (${o.snippet.file}): \`${o.snippet.code.split('\n').pop()}\`
 - Custom events: \`glass.capture('signup_completed', { plan: 'pro' })\`. After login: \`glass.identify(user.id, { plan })\`.
+- Consent: if the site has a cookie banner, load Glass with \`data-persistence="cookieless"\` and call \`glass.consent(true)\` when the visitor accepts (\`false\` on reject). Cookieless stores nothing on the device; session replay starts after consent. Mention Glass on the privacy page.
+- If the code already has an analytics helper (a \`track()\` that calls gtag, fbq or PostHog), add \`glass.capture\` inside it rather than at every call site.
+- Events that mean success (signup, purchase, pledge): \`mark_event\` with role "conversion" so Reports show conversion rates per source.
 - ${EVENT_NAMING_GUIDE}
 - After adding an event and deploying, confirm it arrives: \`npx @glassanalytics/cli events <name>\` (or MCP \`describe_event\`).
 - ${EVENT_DOCUMENTATION_GUIDE}
@@ -47,6 +50,13 @@ Upgrades (the Worker version is pinned in \`.glass/config.json\`):
 - Do not deploy Glass from a laptop (\`glass upgrade --local\`, wrangler) once the workflow exists, and never commit \`.glass/credentials.json\`.
 - \`glass upgrade\` refuses to replace a newer Worker with an older CLI. If it does, use \`@latest\`; do not pass \`--allow-downgrade\`.
 ${END}`;
+}
+
+/** True when CLAUDE.md pulls in AGENTS.md (`@AGENTS.md`), so it needs no copy of the section. */
+export function importsAgentsMd(path: string): boolean {
+  if (!existsSync(path)) return false;
+  const text = readFileSync(path, 'utf8');
+  return /^@AGENTS\.md\s*$/m.test(text) && !text.includes(START);
 }
 
 /** Insert or replace the Glass section in a markdown file. */
@@ -141,7 +151,12 @@ export function writeAgentFiles(o: AgentFileOptions): string[] {
   const written: string[] = [];
   const section = agentsSection(o);
   if (upsertSection(join(o.root, 'AGENTS.md'), section, true)) written.push('AGENTS.md');
-  if (upsertSection(join(o.root, 'CLAUDE.md'), section, false)) written.push('CLAUDE.md');
+  // A CLAUDE.md that only imports AGENTS.md already gets the section; writing it twice duplicates it.
+  if (
+    !importsAgentsMd(join(o.root, 'CLAUDE.md')) &&
+    upsertSection(join(o.root, 'CLAUDE.md'), section, false)
+  )
+    written.push('CLAUDE.md');
   const skill = join(o.root, '.claude', 'skills', 'glass', 'SKILL.md');
   mkdirSync(dirname(skill), { recursive: true });
   writeFileSync(skill, skillFile(o));
