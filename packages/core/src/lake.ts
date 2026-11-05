@@ -4,8 +4,9 @@
  * and the Worker (which writes to them).
  *
  * Pipelines stream schemas cannot be changed after creation, so treat these as
- * versioned: a change needs new streams (e.g. `glass_events_v2`) and a
- * migration step in `dataflare upgrade`.
+ * versioned: a change needs new streams and a migration step in
+ * `dataflare upgrade`. Stream names are per deployment (`<name>_events`; see
+ * lakeResourceNames in the CLI).
  */
 
 import { EVENT_COLUMNS } from './events.ts';
@@ -23,7 +24,6 @@ export const LAKE_VERSION = 1;
 
 export const LAKE_TABLES = {
   events: {
-    stream: 'glass_events',
     fields: [
       ...EVENT_COLUMNS.map(
         (name): StreamField => ({
@@ -36,7 +36,6 @@ export const LAKE_TABLES = {
     ],
   },
   identities: {
-    stream: 'glass_identities',
     fields: [
       { name: 'project', type: 'string', required: true },
       { name: 'distinct_id', type: 'string', required: true },

@@ -25,6 +25,7 @@ import { fileURLToPath } from 'node:url';
 import { GLASS_VERSION } from '@dataflare/core/version';
 import { testApp } from '../../worker/test/harness.ts';
 import { agentsSection, importsAgentsMd, upsertSection } from '../src/agent-files.ts';
+import { lakeResourceNames } from '../src/cloudflare/provision.ts';
 import { type RunResult, type Wrangler, WranglerError } from '../src/cloudflare/wrangler.ts';
 import { init, normaliseRoute } from '../src/commands/init.ts';
 import { mcpBridge } from '../src/commands/mcp.ts';
@@ -66,13 +67,11 @@ function fakeWrangler(worker: ReturnType<typeof testApp>, options: FakeOptions =
       }
       if (cmd.startsWith('r2 bucket catalog enable')) return ok('Warehouse: acct_glass-data');
       for (const kind of ['streams', 'sinks'] as const) {
-        if (cmd.startsWith(`pipelines ${kind} list`)) return ok(JSON.stringify(state[kind]));
         if (cmd.startsWith(`pipelines ${kind} create`)) {
           state[kind].push({ id: `${kind}-${args[3]}`, name: args[3]! });
           return ok();
         }
       }
-      if (cmd.startsWith('pipelines list')) return ok(JSON.stringify(state.pipelines));
       if (cmd.startsWith('pipelines create')) {
         state.pipelines.push({ id: `p-${args[2]}`, name: args[2]! });
         return ok();
@@ -93,10 +92,22 @@ function fakeWrangler(worker: ReturnType<typeof testApp>, options: FakeOptions =
   return { wrangler, commands, state };
 }
 
-/** Routes Cloudflare API calls to a stub and Worker calls to the in-process app. */
-function fetcherFor(worker: ReturnType<typeof testApp>): typeof fetch {
+/**
+ * Routes Cloudflare API calls to a stub and Worker calls to the in-process app. Pipelines list
+ * calls are answered from the fake Wrangler's state, as the real API would.
+ */
+function fetcherFor(
+  worker: ReturnType<typeof testApp>,
+  state?: ReturnType<typeof fakeWrangler>['state'],
+): typeof fetch {
   return (async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input instanceof Request ? input.url : input);
+    const pipelines = url.match(/\/pipelines\/v1\/(streams|sinks|pipelines)\?/);
+    if (pipelines) {
+      const kind = pipelines[1] as 'streams' | 'sinks' | 'pipelines';
+      const result = state?.[kind] ?? [];
+      return Response.json({ success: true, result, result_info: { total_count: result.length } });
+    }
     if (url.startsWith('https://api.cloudflare.com/client/v4/accounts')) {
       return Response.json({ success: true, result: [{ id: 'acct-1', name: 'Test Account' }] });
     }
@@ -276,18 +287,22 @@ describe('dataflare init', () => {
       {
         root,
         wrangler: () => fake.wrangler,
-        fetcher: fetcherFor(worker),
+        fetcher: fetcherFor(worker, fake.state),
         bundleDir: BUNDLE,
         pollMs: 1,
       },
     );
+    const config = JSON.parse(readFileSync(join(root, '.glass', 'config.json'), 'utf8'));
+    const events = lakeResourceNames(config.name, 'events');
+    const identities = lakeResourceNames(config.name, 'identities');
+    assert.match(events.stream, /^glass_[a-z0-9_]+_events$/);
     const created = fake.commands
       .filter((c) => c.includes('create'))
       .map((c) => c.slice(0, 4).join(' '));
-    assert.ok(created.includes('pipelines streams create glass_events'));
-    assert.ok(created.includes('pipelines sinks create glass_events_sink'));
-    assert.ok(created.includes('pipelines create glass_identities --sql'));
-    const sink = fake.commands.find((c) => c[2] === 'create' && c[3] === 'glass_events_sink')!;
+    assert.ok(created.includes(`pipelines streams create ${events.stream}`));
+    assert.ok(created.includes(`pipelines sinks create ${events.sink}`));
+    assert.ok(created.includes(`pipelines create ${identities.pipeline} --sql`));
+    const sink = fake.commands.find((c) => c[2] === 'create' && c[3] === events.sink)!;
     assert.deepEqual(sink.slice(sink.indexOf('--type'), sink.indexOf('--type') + 2), [
       '--type',
       'r2-data-catalog',
@@ -300,8 +315,46 @@ describe('dataflare init', () => {
     );
     const wranglerConfig = readFileSync(join(root, '.glass', 'wrangler.jsonc'), 'utf8');
     assert.match(wranglerConfig, /"GLASS_STORE": "lake"/);
-    assert.match(wranglerConfig, /"stream": "streams-glass_events"/);
+    assert.match(wranglerConfig, new RegExp(`"stream": "streams-${events.stream}"`));
     assert.equal(worker.env.CF_API_TOKEN, 'cf-token', 'the query token is stored as a secret');
+  });
+
+  it("creates its own Pipelines resources when another deployment's exist", async () => {
+    const root = tempProject();
+    const fake = fakeWrangler(worker);
+    // Another lake deployment in the same account (and the pre-rename fixed names).
+    for (const name of ['glass_events', 'glass_other_events']) {
+      fake.state.streams.push({ id: `other-${name}`, name });
+      fake.state.sinks.push({ id: `other-${name}-sink`, name: `${name}_sink` });
+      fake.state.pipelines.push({ id: `other-${name}-p`, name });
+    }
+    await init(
+      { token: 'cf-token', lake: true, json: true },
+      {
+        root,
+        wrangler: () => fake.wrangler,
+        fetcher: fetcherFor(worker, fake.state),
+        bundleDir: BUNDLE,
+        pollMs: 1,
+      },
+    );
+    const config = JSON.parse(readFileSync(join(root, '.glass', 'config.json'), 'utf8'));
+    const { stream, sink } = lakeResourceNames(config.name, 'events');
+    assert.equal(config.lake.streams.events, `streams-${stream}`);
+    assert.ok(fake.commands.some((c) => c[1] === 'sinks' && c[2] === 'create' && c[3] === sink));
+  });
+
+  it('refuses lake mode in the EU jurisdiction', async () => {
+    const root = tempProject();
+    const fake = fakeWrangler(worker);
+    await assert.rejects(
+      init(
+        { token: 'cf-token', lake: true, eu: true, json: true },
+        { root, wrangler: () => fake.wrangler, fetcher: fetcherFor(worker), bundleDir: BUNDLE },
+      ),
+      /Basin Catalog does not support R2 buckets in a jurisdiction/,
+    );
+    assert.equal(fake.commands.filter((c) => c.includes('create')).length, 0);
   });
 
   it('changes nothing in a dry run', async () => {

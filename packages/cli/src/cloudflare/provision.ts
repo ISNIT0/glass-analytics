@@ -73,16 +73,62 @@ export async function ensureBucket(
   }
 }
 
-async function findByName(
-  wrangler: Wrangler,
-  kind: 'streams' | 'sinks' | null,
-  name: string,
-): Promise<{ id: string; name: string } | undefined> {
-  const args = kind
-    ? ['pipelines', kind, 'list', '--json', '--per-page', '100']
-    : ['pipelines', 'list', '--json', '--per-page', '100'];
-  const items = parseJsonOutput<{ id: string; name: string }[]>(await must(wrangler, args));
-  return items.find((i) => i.name === name);
+/** One Pipelines resource, as the REST API lists it. */
+export interface PipelinesItem {
+  id: string;
+  name: string;
+}
+
+/** Lists streams, sinks or pipelines in the account. */
+export type PipelinesLister = (kind: 'streams' | 'sinks' | 'pipelines') => Promise<PipelinesItem[]>;
+
+/**
+ * Lists Pipelines resources through the REST API. (`wrangler pipelines sinks list --json` prints a
+ * JavaScript object literal rather than JSON, so the CLI can't parse it.)
+ */
+export function pipelinesLister(
+  fetcher: typeof fetch,
+  auth: { token: string; accountId: string },
+): PipelinesLister {
+  return async (kind) => {
+    const items: PipelinesItem[] = [];
+    for (let page = 1; page < 100; page++) {
+      const res = await fetcher(
+        `https://api.cloudflare.com/client/v4/accounts/${auth.accountId}/pipelines/v1/${kind}?per_page=100&page=${page}`,
+        { headers: { Authorization: `Bearer ${auth.token}` } },
+      );
+      const body = (await res.json().catch(() => null)) as {
+        success?: boolean;
+        result?: PipelinesItem[];
+        result_info?: { total_count?: number };
+        errors?: { message?: string }[];
+      } | null;
+      if (!res.ok || !body?.success || !Array.isArray(body.result)) {
+        const why = body?.errors?.[0]?.message ?? `HTTP ${res.status}`;
+        throw new Error(`Could not list Pipelines ${kind}: ${why}`);
+      }
+      items.push(...body.result);
+      if (body.result.length < 100 || items.length >= (body.result_info?.total_count ?? 0)) break;
+    }
+    return items;
+  };
+}
+
+/**
+ * Names of one deployment's Pipelines resources. Stream, sink and pipeline names are unique per
+ * account, so they carry the deployment name: a fixed `glass_events` would make a second lake
+ * deployment find the first one's resources and skip creating its own, losing its events.
+ */
+export function lakeResourceNames(
+  deployment: string,
+  table: LakeTable,
+): { stream: string; sink: string; pipeline: string } {
+  const prefix = deployment
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  const stream = `${prefix}_${table}`;
+  return { stream, sink: `${stream}_sink`, pipeline: stream };
 }
 
 /**
@@ -92,10 +138,19 @@ async function findByName(
  */
 export async function ensureLake(
   wrangler: Wrangler,
-  options: { bucket: string; namespace: string; token: string; eu: boolean; dir: string },
+  options: {
+    /** Deployment (Worker) name; Pipelines resource names are derived from it. */
+    name: string;
+    bucket: string;
+    namespace: string;
+    token: string;
+    dir: string;
+    list: PipelinesLister;
+  },
   report: ProvisionReport,
 ): Promise<{ bucket: string; namespace: string; streams: Record<LakeTable, string> }> {
-  if (!(await ensureBucket(wrangler, options.bucket, options.eu, report, 'event lake'))) {
+  // Basin Catalog doesn't support buckets in a jurisdiction (init refuses --lake with --eu).
+  if (!(await ensureBucket(wrangler, options.bucket, false, report, 'event lake'))) {
     throw new Error(
       'Lake mode needs R2. Enable R2 in the Cloudflare dashboard, then run `dataflare init --lake` again.',
     );
@@ -120,9 +175,14 @@ export async function ensureLake(
 
   const streams = {} as Record<LakeTable, string>;
   for (const table of Object.keys(LAKE_TABLES) as LakeTable[]) {
-    const streamName = LAKE_TABLES[table].stream;
-    const sinkName = `${streamName}_sink`;
-    let stream = await findByName(wrangler, 'streams', streamName);
+    const {
+      stream: streamName,
+      sink: sinkName,
+      pipeline: pipelineName,
+    } = lakeResourceNames(options.name, table);
+    const find = async (kind: 'streams' | 'sinks' | 'pipelines', name: string) =>
+      (await options.list(kind)).find((i) => i.name === name);
+    let stream = await find('streams', streamName);
     if (!stream) {
       const schemaPath = join(options.dir, 'schemas', `${table}.json`);
       mkdirSync(join(options.dir, 'schemas'), { recursive: true });
@@ -137,12 +197,12 @@ export async function ensureLake(
         '--http-enabled',
         'false',
       ]);
-      stream = await findByName(wrangler, 'streams', streamName);
+      stream = await find('streams', streamName);
       if (!stream) throw new Error(`Created stream "${streamName}" but could not find it.`);
       report('created', `Pipelines stream "${streamName}"`);
     }
     streams[table] = stream.id;
-    if (!(await findByName(wrangler, 'sinks', sinkName))) {
+    if (!(await find('sinks', sinkName))) {
       await must(wrangler, [
         'pipelines',
         'sinks',
@@ -163,15 +223,15 @@ export async function ensureLake(
       ]);
       report('created', `Iceberg table "${options.namespace}.${table}"`);
     }
-    if (!(await findByName(wrangler, null, streamName))) {
+    if (!(await find('pipelines', pipelineName))) {
       await must(wrangler, [
         'pipelines',
         'create',
-        streamName,
+        pipelineName,
         '--sql',
         `INSERT INTO ${sinkName} SELECT * FROM ${streamName}`,
       ]);
-      report('created', `Pipeline "${streamName}"`);
+      report('created', `Pipeline "${pipelineName}"`);
     }
   }
   return { bucket: options.bucket, namespace: options.namespace, streams };

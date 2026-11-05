@@ -1333,6 +1333,43 @@ describe('lake store', () => {
     assert.doesNotMatch(trendsSql, /json_extract|strftime/);
   });
 
+  it('calls fetch as a plain function, as Workers require', async () => {
+    const { LakeStore } = await import('../src/stores/lake.ts');
+    const realFetch = globalThis.fetch;
+    // Workers' fetch throws when called with any other `this`, e.g. as a method of the store.
+    globalThis.fetch = function (this: unknown) {
+      if (this !== undefined && this !== globalThis) throw new TypeError('Illegal invocation');
+      return Promise.resolve(Response.json({ success: true, result: { rows: [{ n: 1 }] } }));
+    } as typeof fetch;
+    try {
+      const store = new LakeStore({
+        CF_ACCOUNT_ID: 'a',
+        LAKE_BUCKET: 'b',
+        CF_API_TOKEN: 't',
+      } as never);
+      assert.deepEqual(await store.query('SELECT 1 AS n'), [{ n: 1 }]);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  it('reads the Basin SQL response format', async () => {
+    const { normaliseRows } = await import('../src/stores/lake.ts');
+    // Recorded from production Basin SQL (5 Nov 2026); request_id shortened.
+    const body = {
+      result: {
+        request_id: 'dqe-prod-1',
+        schema: [{ name: 'n', descriptor: { type: { name: 'int64' }, nullable: false } }],
+        rows: [{ n: 178 }],
+        metrics: { r2_requests_count: 3, files_scanned: 5, bytes_scanned: 7954, cache_hits: 0 },
+      },
+      success: true,
+      errors: [],
+      messages: [],
+    };
+    assert.deepEqual(normaliseRows(body), [{ n: 178 }]);
+  });
+
   it('normalises the result shapes analytics APIs return', async () => {
     const { normaliseRows } = await import('../src/stores/lake.ts');
     assert.deepEqual(normaliseRows([{ a: 1 }]), [{ a: 1 }]);

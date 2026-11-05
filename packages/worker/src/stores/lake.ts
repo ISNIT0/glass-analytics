@@ -28,9 +28,11 @@ export class LakeStore implements EventStore {
   private readonly env: Env;
   private readonly fetcher: typeof fetch;
 
-  constructor(env: Env, fetcher: typeof fetch = fetch) {
+  constructor(env: Env, fetcher?: typeof fetch) {
     this.env = env;
-    this.fetcher = fetcher;
+    // Not `this.fetcher = fetch`: Workers throw "Illegal invocation" when fetch is called as a
+    // method of another object, which `this.fetcher(...)` does.
+    this.fetcher = fetcher ?? ((input, init) => fetch(input, init));
     this.dialect = basin(env.LAKE_NAMESPACE ?? 'glass');
   }
 

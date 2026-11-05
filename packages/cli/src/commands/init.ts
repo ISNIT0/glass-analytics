@@ -24,6 +24,7 @@ import {
   listAccounts,
   migrate,
   type ProvisionReport,
+  pipelinesLister,
   putSecrets,
   renderWranglerConfig,
   TOKEN_SCOPES,
@@ -207,6 +208,11 @@ export async function init(options: InitOptions, deps: InitDeps = {}): Promise<v
   const name = options.name ?? existing?.name ?? `glass-${project}`;
   const lake = options.lake ?? existing?.store === 'lake';
   const eu = options.eu ?? existing?.eu ?? false;
+  if (lake && eu)
+    throw new UsageError(
+      'Lake mode cannot keep data in the EU jurisdiction: Basin Catalog does not support R2 buckets in a jurisdiction yet.',
+      'Use the D1 store with --eu, or lake mode without --eu.',
+    );
   const route = options.noRoute ? null : (normaliseRoute(options.route) ?? existing?.route ?? null);
   const retentionDays = options.retentionDays ?? existing?.retentionDays ?? null;
   const wantReplay = options.replay ?? true;
@@ -270,7 +276,14 @@ export async function init(options: InitOptions, deps: InitDeps = {}): Promise<v
     const lakeConfig = lake
       ? await ensureLake(
           wrangler,
-          { bucket: `${name}-data`, namespace: 'glass', token, eu, dir },
+          {
+            name,
+            bucket: `${name}-data`,
+            namespace: 'glass',
+            token,
+            dir,
+            list: pipelinesLister(fetcher, { token, accountId: account.id }),
+          },
           report,
         )
       : null;
