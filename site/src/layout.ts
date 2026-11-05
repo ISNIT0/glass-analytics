@@ -130,8 +130,8 @@ export function layout(o: PageOptions): string {
     )
     .join('\n');
   const glass = GLASS_HOST
-    ? `<script defer src="${GLASS_HOST}/s.js" data-project="${GLASS_PROJECT}" data-persistence="cookieless"></script>`
-    : '<!-- Dataflare measures this site with Dataflare once GLASS_HOST is set in site/src/config.ts. -->';
+    ? `<script defer src="${GLASS_HOST}/s.js" data-project="${GLASS_PROJECT}" data-persistence="cookieless" data-replay-sample-rate="1" data-replay-cookieless="true"></script>`
+    : '';
   const active = (href: string) => (o.path.startsWith(href) ? ' aria-current="page"' : '');
   return `<!doctype html>
 <html lang="en">

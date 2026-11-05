@@ -1,0 +1,19 @@
+{
+  "name": "dataflare-site-analytics",
+  "accountId": "8ae803d586d7d8326ef1bc4837640b65",
+  "host": "https://dataflare-site-analytics.isnit.workers.dev",
+  "project": "dataflare-site",
+  "store": "d1",
+  "d1": {
+    "name": "dataflare-site-analytics",
+    "id": "73d412b2-5ebe-478a-8c81-9fea572e8c7a"
+  },
+  "replay": {
+    "bucket": "dataflare-site-analytics-replays"
+  },
+  "lake": null,
+  "route": null,
+  "retentionDays": null,
+  "eu": true,
+  "version": "0.6.2"
+}

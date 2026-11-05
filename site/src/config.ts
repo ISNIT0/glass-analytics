@@ -10,12 +10,13 @@ export const AGENT_PROMPT =
   "Add Dataflare analytics to this project: run `npx dataflare-cli init`, track signups and purchases, then show me today's visitors.";
 
 /**
- * Dataflare measuring its own site. Leave empty until a Dataflare Worker exists for
- * the site; when set, every page loads the SDK in cookieless mode and the
- * copy buttons send events.
+ * Dataflare measuring its own site: the deployment in .glass/ (`dataflare init`),
+ * upgraded by .github/workflows/glass.yml. Every page loads the SDK in cookieless
+ * mode and records every visit for session replay, storing nothing on the device;
+ * the copy buttons send events. Empty string removes it.
  */
-export const GLASS_HOST = '';
-export const GLASS_PROJECT = 'glass-site';
+export const GLASS_HOST = 'https://dataflare-site-analytics.isnit.workers.dev';
+export const GLASS_PROJECT = 'dataflare-site';
 
 /**
  * Meta Pixel for the website's own ad measurement (page views, plus the copy

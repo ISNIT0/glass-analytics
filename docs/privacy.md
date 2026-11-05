@@ -1,6 +1,6 @@
 # Privacy
 
-Dataflare runs entirely in your Cloudflare account. There is no Dataflare service: events, people, recordings and keys live in your D1 database, your R2 buckets and your Worker's secrets. Nothing is sent to the Dataflare project or to any third party, and the dashboard and SDK load no third-party resources. (The Dataflare website, which is separate from your deployment, uses the Meta Pixel to measure its own ads.)
+Dataflare runs entirely in your Cloudflare account. There is no Dataflare service: events, people, recordings and keys live in your D1 database, your R2 buckets and your Worker's secrets. Nothing is sent to the Dataflare project or to any third party, and the dashboard and SDK load no third-party resources. (The Dataflare website, which is separate from your deployment, measures itself with its own Dataflare deployment, cookieless and with session replay that stores nothing on the device, and uses the Meta Pixel to measure its own ads.)
 
 ## What is stored
 

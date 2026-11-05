@@ -7,6 +7,7 @@
       "!**/node_modules",
       "!**/.wrangler",
       "!**/.glass",
+      "!.github/workflows/glass.yml",
       "!site/public/demo"
     ]
   },
