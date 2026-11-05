@@ -26,7 +26,12 @@ import { GLASS_VERSION } from '@dataflare/core/version';
 import { testApp } from '../../worker/test/harness.ts';
 import { agentsSection, importsAgentsMd, upsertSection } from '../src/agent-files.ts';
 import { lakeResourceNames } from '../src/cloudflare/provision.ts';
-import { type RunResult, type Wrangler, WranglerError } from '../src/cloudflare/wrangler.ts';
+import {
+  localWrangler,
+  type RunResult,
+  type Wrangler,
+  WranglerError,
+} from '../src/cloudflare/wrangler.ts';
 import { init, normaliseRoute } from '../src/commands/init.ts';
 import { lakeMaintain, PYICEBERG } from '../src/commands/lake.ts';
 import { mcpBridge } from '../src/commands/mcp.ts';
@@ -646,6 +651,12 @@ describe('onboarding details', () => {
       assert.equal(normaliseRoute(input), 'acme.com/_glass/*', input);
     }
     assert.equal(normaliseRoute(undefined), undefined);
+  });
+
+  it('runs the installed wrangler rather than downloading one with npx', () => {
+    const bin = localWrangler();
+    assert.ok(bin?.endsWith(join('wrangler', 'bin', 'wrangler.js')), String(bin));
+    assert.ok(existsSync(bin));
   });
 
   it("doesn't copy the Dataflare section into a CLAUDE.md that imports AGENTS.md", () => {
