@@ -25,7 +25,11 @@ import { fileURLToPath } from 'node:url';
 import { GLASS_VERSION } from '@dataflare/core/version';
 import { testApp } from '../../worker/test/harness.ts';
 import { agentsSection, importsAgentsMd, upsertSection } from '../src/agent-files.ts';
-import { lakeResourceNames, renderWranglerConfig } from '../src/cloudflare/provision.ts';
+import {
+  lakeResourceNames,
+  renderWranglerConfig,
+  replayBucketConfig,
+} from '../src/cloudflare/provision.ts';
 import {
   localWrangler,
   type RunResult,
@@ -819,5 +823,64 @@ describe('lake maintenance', () => {
     mkdirSync(join(root, '.glass'));
     writeFileSync(join(root, '.glass', 'config.json'), JSON.stringify({ store: 'd1', lake: null }));
     await assert.rejects(lakeMaintain({ token: 't' }, { root }), /keeps events in D1/);
+  });
+});
+
+describe('generated wrangler config', () => {
+  const base: GlassConfig = {
+    name: 'glass-web-app',
+    accountId: 'acc',
+    host: HOST,
+    project: 'web-app',
+    store: 'd1',
+    d1: { name: 'glass-web-app', id: 'db' },
+    replay: null,
+    lake: null,
+    route: null,
+    eu: false,
+    version: GLASS_VERSION,
+  };
+  const render = (config: Partial<GlassConfig>) =>
+    JSON.parse(renderWranglerConfig({ ...base, ...config }).replace(/^\/\/.*\n/, '')) as {
+      r2_buckets?: Record<string, string>[];
+      routes?: unknown[];
+    };
+
+  it('binds an EU replay bucket with its jurisdiction', () => {
+    assert.deepEqual(render({ replay: replayBucketConfig('r', false, null) }).r2_buckets, [
+      { binding: 'REPLAYS', bucket_name: 'r' },
+    ]);
+    assert.deepEqual(render({ eu: true, replay: replayBucketConfig('r', true, null) }).r2_buckets, [
+      { binding: 'REPLAYS', bucket_name: 'r', jurisdiction: 'eu' },
+    ]);
+  });
+
+  it('moves a pre-0.8.1 EU deployment to its EU bucket and keeps the old one as legacy', () => {
+    // Before 0.8.1 an EU config recorded no jurisdiction, and the Worker wrote to a
+    // default-jurisdiction bucket of the same name.
+    const migrated = replayBucketConfig('r', true, { bucket: 'r' });
+    assert.deepEqual(migrated, { bucket: 'r', jurisdiction: 'eu', legacyBucket: 'r' });
+    assert.deepEqual(render({ eu: true, replay: migrated }).r2_buckets, [
+      { binding: 'REPLAYS', bucket_name: 'r', jurisdiction: 'eu' },
+      { binding: 'REPLAYS_LEGACY', bucket_name: 'r' },
+    ]);
+    // Running upgrade again keeps the legacy bucket, and a current config gains none.
+    assert.deepEqual(replayBucketConfig('r', true, migrated), migrated);
+    assert.deepEqual(replayBucketConfig('r', true, { bucket: 'r', jurisdiction: 'eu' }), {
+      bucket: 'r',
+      jurisdiction: 'eu',
+    });
+    assert.deepEqual(replayBucketConfig('r', false, { bucket: 'r' }), { bucket: 'r' });
+  });
+
+  it('leaves the zone of a route to Wrangler, so multi-label domains work', () => {
+    for (const route of [
+      'example.com/_glass/*',
+      'analytics.example.co.uk/_glass/*',
+      'a.team.example.com/_glass/*',
+    ]) {
+      assert.deepEqual(render({ route }).routes, [route]);
+    }
+    assert.equal(render({}).routes, undefined);
   });
 });
