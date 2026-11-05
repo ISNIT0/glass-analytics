@@ -59,7 +59,7 @@ The core tests execute every compiler on real SQLite against the production migr
 | `@dataflare/dashboard` | no (bundled into the Worker) | The dashboard                                              |
 | `dataflare`            | npm                          | CLI, carrying the built Worker and migrations              |
 
-Versioning the CLI and the Worker together means `npx dataflare@x upgrade` always deploys exactly the Worker that CLI was tested with.
+Versioning the CLI and the Worker together means `npx dataflare-cli@x upgrade` always deploys exactly the Worker that CLI was tested with.
 
 ## Why not…
 

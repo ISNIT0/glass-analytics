@@ -248,7 +248,7 @@ function upgradeNotice(): HTMLElement | null {
         'p',
         {},
         'A read-only demo with sample data from a made-up writing app. Your own Dataflare runs in your Cloudflare account: ',
-        h('code', {}, 'npx dataflare init'),
+        h('code', {}, 'npx dataflare-cli init'),
       ),
       h(
         'a',
@@ -542,7 +542,7 @@ async function start(): Promise<void> {
         ? {
             version: health.version,
             latest: health.latest,
-            command: health.upgradeCommand ?? 'npx dataflare@latest upgrade',
+            command: health.upgradeCommand ?? 'npx dataflare-cli@latest upgrade',
           }
         : null;
   } catch {

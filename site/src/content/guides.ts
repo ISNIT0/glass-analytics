@@ -83,7 +83,7 @@ Dataflare is open-source analytics that runs in your own Cloudflare account: web
 From your project's root, with a [Cloudflare API token](/docs/getting-started/#1-create-an-api-token):
 
 \`\`\`sh
-CLOUDFLARE_API_TOKEN=… npx dataflare init
+CLOUDFLARE_API_TOKEN=… npx dataflare-cli init
 \`\`\`
 
 \`dataflare init\` detects ${name} from your \`package.json\`, creates the database, the replay bucket and the Worker, and prints the snippet below with your real host and project filled in. It also writes \`AGENTS.md\`, a Claude Code skill and \`.mcp.json\`, so your coding agent can do the next steps for you.
@@ -119,18 +119,18 @@ Name events \`object_action\` in the past tense (\`signup_completed\`, \`invite_
 ## 4. Check it works
 
 \`\`\`sh
-npx dataflare status
-npx dataflare events signup_completed
+npx dataflare-cli status
+npx dataflare-cli events signup_completed
 \`\`\`
 
-Then open \`${HOST}/app\` (sign in with \`npx dataflare key\`), or ask your agent: *"Which traffic source converts best to signup?"*
+Then open \`${HOST}/app\` (sign in with \`npx dataflare-cli key\`), or ask your agent: *"Which traffic source converts best to signup?"*
 
 ## Serve it from your own domain
 
 Ad blockers often block third-party analytics domains. Serve Dataflare from a path on your own site instead, if your domain is on Cloudflare:
 
 \`\`\`sh
-npx dataflare init --route example.com
+npx dataflare-cli init --route example.com
 \`\`\`
 
 Then use \`https://example.com/_glass\` as the host in the snippet.
@@ -161,7 +161,7 @@ const TOPICS: Guide[] = [
     kind: 'topic',
     body: `Dataflare was built to be installed and queried by coding agents. Paste this into Claude Code, Cursor, Codex or any agent that can run commands:
 
-> Add Dataflare analytics to this project: run \`npx dataflare init\`, track signups and purchases, then show me today's visitors.
+> Add Dataflare analytics to this project: run \`npx dataflare-cli init\`, track signups and purchases, then show me today's visitors.
 
 ## What the agent gets
 
@@ -169,7 +169,7 @@ const TOPICS: Guide[] = [
 
 - **\`AGENTS.md\`** (and \`CLAUDE.md\` if you have one): how to name events, how to document them, and how to verify they arrive.
 - **\`.claude/skills/glass/SKILL.md\`**: a skill with the query recipes below.
-- **\`.mcp.json\`**: an MCP server entry (\`npx dataflare mcp\`) that forwards to your Worker with the key from \`.glass/credentials.json\`, so no secret goes into the config file.
+- **\`.mcp.json\`**: an MCP server entry (\`npx dataflare-cli mcp\`) that forwards to your Worker with the key from \`.glass/credentials.json\`, so no secret goes into the config file.
 
 From then on the agent has the [MCP tools](/docs/agents/#tools): overview, trends, funnels, retention, sources, site health, people, cohorts, replays, flags, experiments and read-only SQL. Every result includes a one-sentence summary, the SQL that ran and a link to the same view in the dashboard, so you can check its work.
 
@@ -183,7 +183,7 @@ From then on the agent has the [MCP tools](/docs/agents/#tools): overview, trend
 ## Keep agents read-only if you prefer
 
 \`\`\`sh
-npx dataflare key --read
+npx dataflare-cli key --read
 \`\`\`
 
 Use the read key for agents that shouldn't change flags or experiments; write tools then return a clear error.
@@ -322,12 +322,12 @@ Each person enters the experiment at their first exposure, and counts as convert
 - an **R2 bucket** for session recordings.
 
 \`\`\`sh
-CLOUDFLARE_API_TOKEN=… npx dataflare init
+CLOUDFLARE_API_TOKEN=… npx dataflare-cli init
 \`\`\`
 
 ## Upgrades from CI, not from your laptop
 
-\`dataflare init\` writes \`.github/workflows/glass.yml\`. To upgrade, run \`npx dataflare@latest upgrade\`, which stages the new version in \`.glass/\`, then commit and push; CI deploys it. Dataflare refuses to replace a newer Worker with an older one.
+\`dataflare init\` writes \`.github/workflows/glass.yml\`. To upgrade, run \`npx dataflare-cli@latest upgrade\`, which stages the new version in \`.glass/\`, then commit and push; CI deploys it. Dataflare refuses to replace a newer Worker with an older one.
 
 ## Limits to know about
 

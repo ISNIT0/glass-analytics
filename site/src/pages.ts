@@ -353,7 +353,7 @@ export function changelogPage(md: string): string {
     description:
       'What changed in each Dataflare release: the CLI, Worker, dashboard and SDK share one version.',
     crumbs: [{ name: 'Changelog', path: '/changelog/' }],
-    body: `<div class="page-head"><p class="eyebrow">Changelog</p><h1>What's new in Dataflare</h1><p class="lede">The CLI, Worker, dashboard and SDK share one version. Upgrade with <code>npx dataflare@latest upgrade</code>, then let CI deploy it.</p></div><article class="prose narrow changelog">${html}</article>`,
+    body: `<div class="page-head"><p class="eyebrow">Changelog</p><h1>What's new in Dataflare</h1><p class="lede">The CLI, Worker, dashboard and SDK share one version. Upgrade with <code>npx dataflare-cli@latest upgrade</code>, then let CI deploy it.</p></div><article class="prose narrow changelog">${html}</article>`,
   });
 }
 

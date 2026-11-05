@@ -7,7 +7,7 @@ Everything in Dataflare is available to agents in three equivalent ways. They ca
 `dataflare init` adds this to `.mcp.json`, which Claude Code, Cursor and other MCP clients read:
 
 ```json
-{ "mcpServers": { "glass": { "command": "npx", "args": ["-y", "dataflare", "mcp"] } } }
+{ "mcpServers": { "glass": { "command": "npx", "args": ["-y", "dataflare-cli", "mcp"] } } }
 ```
 
 `dataflare mcp` is a small stdio bridge that forwards to your Worker's `/mcp` endpoint with the key from `.glass/credentials.json`, so no secret goes into the config file. Clients that support remote servers can connect directly instead:
@@ -16,7 +16,7 @@ Everything in Dataflare is available to agents in three equivalent ways. They ca
 claude mcp add --transport http glass https://glass.<you>.workers.dev/mcp --header "Authorization: Bearer $GLASS_API_KEY"
 ```
 
-Use the read-only key (`npx dataflare key --read`) for agents that shouldn't change flags or experiments; write tools then return a clear error.
+Use the read-only key (`npx dataflare-cli key --read`) for agents that shouldn't change flags or experiments; write tools then return a clear error.
 
 ### Tools
 
@@ -52,7 +52,7 @@ Every result includes a `summary` sentence, the `sql` that ran, and a `dashboard
 
 ### Recipes
 
-- **"First look at this project."** `overview` → `list_events`. If `upgradeAvailable` is set (also on `/health` and in MCP initialize instructions), tell the user. With their go-ahead, run `npx dataflare@latest upgrade`, which stages `.glass/` when `.github/workflows/glass.yml` exists, then commit and push so CI deploys it. Don't deploy Dataflare from a laptop. For every name in `undocumented`, find the capture site in code (or ask), then `define_event` with a how/when description and property meanings before building queries on those events.
+- **"First look at this project."** `overview` → `list_events`. If `upgradeAvailable` is set (also on `/health` and in MCP initialize instructions), tell the user. With their go-ahead, run `npx dataflare-cli@latest upgrade`, which stages `.glass/` when `.github/workflows/glass.yml` exists, then commit and push so CI deploys it. Don't deploy Dataflare from a laptop. For every name in `undocumented`, find the capture site in code (or ask), then `define_event` with a how/when description and property meanings before building queries on those events.
 - **"Why did X drop?"** `overview` → `query_funnel` with `breakdown: "browser"` (or `utm_source`, `device`) → `list_replays` with `did_event` (the step before) and `not_event` (the step after), `sort: "most_frustrated"` → `summarise_replay` → `replay_snapshot` at the moment it goes wrong → grep the selector in the code → `annotate_replay` with what you found.
 - **"What's annoying users?"** `analyse_replays` for the period → open the top findings' example links with `summarise_replay`.
 - **"Add tracking for Y."** `instrument` with the event name → add the code → deploy → `describe_event` to confirm it arrives → `define_event` with how/when it fires and what each property means → if it means success (a signup, purchase, pledge), `mark_event` with role `conversion`.
@@ -64,19 +64,19 @@ Every result includes a `summary` sentence, the `sql` that ran, and a `dashboard
 All commands accept `--json`. In a project set up with `dataflare init` they need no configuration; elsewhere set `GLASS_HOST`, `GLASS_API_KEY` and optionally `GLASS_PROJECT`.
 
 ```sh
-npx dataflare query web --from -7d
-npx dataflare query trends --event signup_completed --math unique_persons --interval week --breakdown utm_source
-npx dataflare query funnel --steps '$pageview,signup_started,signup_completed' --window 1d --where 'device=mobile'
-npx dataflare query retention --cohort signup_completed --return '$pageview' --period week
-npx dataflare query funnel --spec '{"steps":[{"event":"a"},{"event":"b"}],"from":"-90d"}' --sql
-npx dataflare sql "SELECT path, COUNT(*) AS n FROM events WHERE event = '\$pageview' GROUP BY path ORDER BY n DESC LIMIT 10"
-npx dataflare events signup_completed
-npx dataflare replays --errors --url /checkout --not purchase
-npx dataflare replays summary <session-id>
-npx dataflare replays snapshot <session-id> --at 01:24
-npx dataflare replays analyse --from -7d
-npx dataflare flags set new-checkout --variants control:50,test:50
-npx dataflare experiments create checkout-v2 --goal purchase_completed
+npx dataflare-cli query web --from -7d
+npx dataflare-cli query trends --event signup_completed --math unique_persons --interval week --breakdown utm_source
+npx dataflare-cli query funnel --steps '$pageview,signup_started,signup_completed' --window 1d --where 'device=mobile'
+npx dataflare-cli query retention --cohort signup_completed --return '$pageview' --period week
+npx dataflare-cli query funnel --spec '{"steps":[{"event":"a"},{"event":"b"}],"from":"-90d"}' --sql
+npx dataflare-cli sql "SELECT path, COUNT(*) AS n FROM events WHERE event = '\$pageview' GROUP BY path ORDER BY n DESC LIMIT 10"
+npx dataflare-cli events signup_completed
+npx dataflare-cli replays --errors --url /checkout --not purchase
+npx dataflare-cli replays summary <session-id>
+npx dataflare-cli replays snapshot <session-id> --at 01:24
+npx dataflare-cli replays analyse --from -7d
+npx dataflare-cli flags set new-checkout --variants control:50,test:50
+npx dataflare-cli experiments create checkout-v2 --goal purchase_completed
 ```
 
 ## HTTP

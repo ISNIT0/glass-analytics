@@ -2,7 +2,7 @@
 
 The browser SDK for [Dataflare](https://github.com/ISNIT0/glass-analytics): open-source, agent-first analytics that runs in your own Cloudflare account.
 
-You need a Dataflare deployment first: run `npx dataflare init` in your project.
+You need a Dataflare deployment first: run `npx dataflare-cli init` in your project.
 
 ```sh
 npm i dataflare-web

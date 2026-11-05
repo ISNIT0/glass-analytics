@@ -19,7 +19,7 @@ body:
   - type: textarea
     id: status
     attributes:
-      label: Output of `npx dataflare status --json`
+      label: Output of `npx dataflare-cli status --json`
       description: Remove anything private. Never paste API keys.
       render: json
   - type: dropdown

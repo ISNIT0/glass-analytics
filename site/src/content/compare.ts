@@ -95,7 +95,7 @@ export const COMPETITORS: Competitor[] = [
       '`dataflare init` writes agent instructions, a Claude Code skill and an MCP config, and every query result carries its SQL and a dashboard link.',
     ],
     switching: [
-      'Run `npx dataflare init` and add the script tag next to PostHog for a week, so you can compare numbers.',
+      'Run `npx dataflare-cli init` and add the script tag next to PostHog for a week, so you can compare numbers.',
       'Rename `posthog.capture(...)` calls to `glass.capture(...)`; event names and properties carry over unchanged. `posthog.identify(id, props)` becomes `glass.identify(id, props)`.',
       'Recreate your key funnels and retention charts in Insights, or ask your agent to (the MCP tools take the same shapes).',
       'Move flags: `posthog.getFeatureFlag(key)` becomes `glass.flag(key)`. Create the flag with the same key in Dataflare first.',
@@ -139,7 +139,7 @@ export const COMPETITORS: Competitor[] = [
       'Loads nothing from third-party domains when you serve Dataflare from your own domain with `--route`.',
     ],
     switching: [
-      'Run `npx dataflare init` and add the script tag; keep GA4 running in parallel while you compare.',
+      'Run `npx dataflare-cli init` and add the script tag; keep GA4 running in parallel while you compare.',
       'Map your GA4 key events to `glass.capture()` calls. Pageviews, referrers, UTM tags, countries and devices are collected automatically.',
       'Mark your conversions as key events so Reports show conversion by source.',
       "When you're happy, remove the gtag snippet (and, if you can, your cookie banner's analytics category).",
@@ -180,7 +180,7 @@ export const COMPETITORS: Competitor[] = [
       'Raw SQL on every event, and an MCP server so your agent can query it.',
     ],
     switching: [
-      'Run `npx dataflare init` and add the script tag alongside Plausible.',
+      'Run `npx dataflare-cli init` and add the script tag alongside Plausible.',
       '`plausible("Signup", { props: { plan } })` becomes `glass.capture("signup_completed", { plan })`.',
       'Use cookieless mode (`data-persistence="cookieless"`) if you want the same no-cookie behaviour as Plausible.',
     ],
@@ -220,7 +220,7 @@ export const COMPETITORS: Competitor[] = [
       'Built for coding agents from install: instructions, a skill and an MCP server are written for you.',
     ],
     switching: [
-      'Run `npx dataflare init` and add the script tag.',
+      'Run `npx dataflare-cli init` and add the script tag.',
       '`amplitude.track(name, props)` becomes `glass.capture(name, props)`; `setUserId` plus `identify` becomes `glass.identify(id, props)`.',
       'Recreate key charts in Insights; the filter editor and breakdowns work the same way (where/and on any event or person property).',
     ],
@@ -257,7 +257,7 @@ export const COMPETITORS: Competitor[] = [
       'An MCP server and CLI written into your project by `dataflare init`, so your agent can query and instrument straight away.',
     ],
     switching: [
-      'Run `npx dataflare init` and add the script tag.',
+      'Run `npx dataflare-cli init` and add the script tag.',
       '`mixpanel.track(name, props)` becomes `glass.capture(name, props)`; `mixpanel.identify(id)` plus `people.set(props)` becomes `glass.identify(id, props)`.',
       'Recreate funnels and retention in Insights or ask your agent to.',
     ],
@@ -292,7 +292,7 @@ export const COMPETITORS: Competitor[] = [
       'People: identify() links anonymous visits to users, so funnels span signup.',
     ],
     switching: [
-      'Run `npx dataflare init` and add the script tag.',
+      'Run `npx dataflare-cli init` and add the script tag.',
       '`umami.track(name, data)` becomes `glass.capture(name, data)`.',
     ],
     sources: [
@@ -328,7 +328,7 @@ export const COMPETITORS: Competitor[] = [
     ],
     switching: [
       'Keep Web Analytics if you like; Dataflare runs alongside it.',
-      'Run `npx dataflare init`, add the script tag, and add `glass.capture()` for the actions that matter.',
+      'Run `npx dataflare-cli init`, add the script tag, and add `glass.capture()` for the actions that matter.',
     ],
     sources: [
       ['About Cloudflare Web Analytics', 'https://developers.cloudflare.com/web-analytics/about/'],

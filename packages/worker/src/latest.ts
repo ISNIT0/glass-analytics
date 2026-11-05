@@ -5,7 +5,7 @@
  * Failures are silent: an unreachable registry must never break health checks.
  */
 
-const NPM_LATEST = 'https://registry.npmjs.org/dataflare/latest';
+const NPM_LATEST = 'https://registry.npmjs.org/dataflare-cli/latest';
 const CACHE_MS = 60 * 60 * 1000;
 
 type Fetcher = (input: string, init?: RequestInit) => Promise<Response>;

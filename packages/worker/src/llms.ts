@@ -36,14 +36,14 @@ ${EVENT_DOCUMENTATION_GUIDE}
 ## Query (MCP)
 
 MCP endpoint: ${base}/mcp (Streamable HTTP, header "Authorization: Bearer <key>").
-stdio clients: \`npx dataflare mcp\` in a project set up with \`dataflare init\`.
+stdio clients: \`npx dataflare-cli mcp\` in a project set up with \`dataflare init\`.
 
 Tools:
 ${TOOLS.map((t) => `- ${t.name}: ${t.description}`).join('\n')}
 
 ## Keep Dataflare up to date
 
-\`GET ${base}/health\` reports \`version\`, \`latest\` and \`upgradeAvailable\`. When \`upgradeAvailable\` is true (also surfaced on \`overview\` and in MCP initialize instructions), tell the user to run \`npx dataflare@latest upgrade\` — do not upgrade yourself.
+\`GET ${base}/health\` reports \`version\`, \`latest\` and \`upgradeAvailable\`. When \`upgradeAvailable\` is true (also surfaced on \`overview\` and in MCP initialize instructions), tell the user to run \`npx dataflare-cli@latest upgrade\` — do not upgrade yourself.
 
 ## Query (HTTP)
 

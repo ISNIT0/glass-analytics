@@ -26,8 +26,8 @@ A flag has a rollout percentage, optional variants, and optional targeting rules
 - Change the `salt` to reshuffle everyone.
 
 ```sh
-npx dataflare flags set beta-editor --rollout 10
-npx dataflare flags set beta-editor --rules '[{"conditions":[{"property":"person.plan","value":"pro"}],"rollout":100}]'
+npx dataflare-cli flags set beta-editor --rollout 10
+npx dataflare-cli flags set beta-editor --rules '[{"conditions":[{"property":"person.plan","value":"pro"}],"rollout":100}]'
 ```
 
 ## Experiments
@@ -35,7 +35,7 @@ npx dataflare flags set beta-editor --rules '[{"conditions":[{"property":"person
 An experiment is a multivariate flag plus a goal event:
 
 ```sh
-npx dataflare experiments create checkout-v2 --goal purchase_completed --hypothesis "A one-page checkout converts better"
+npx dataflare-cli experiments create checkout-v2 --goal purchase_completed --hypothesis "A one-page checkout converts better"
 ```
 
 This creates the experiment as a draft, plus a `checkout-v2` flag with `control` and `test` at 50/50, disabled until you start. In code, read the flag where the variant is shown:
@@ -44,7 +44,7 @@ This creates the experiment as a draft, plus a `checkout-v2` flag with `control`
 if (glass.flag('checkout-v2') === 'test') renderOnePageCheckout();
 ```
 
-Then `npx dataflare experiments start checkout-v2`, wait, and read `npx dataflare experiments results checkout-v2`. Ship the winner with `npx dataflare experiments ship checkout-v2 test`; everyone gets that variant from then on.
+Then `npx dataflare-cli experiments start checkout-v2`, wait, and read `npx dataflare-cli experiments results checkout-v2`. Ship the winner with `npx dataflare-cli experiments ship checkout-v2 test`; everyone gets that variant from then on.
 
 ## How results are computed
 

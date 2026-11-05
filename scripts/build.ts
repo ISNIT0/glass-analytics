@@ -144,7 +144,7 @@ await bundle({
   format: 'esm',
   target: 'node20',
   platform: 'node',
-  // Bundle @dataflare/* into the CLI so `npx dataflare` works
+  // Bundle @dataflare/* into the CLI so `npx dataflare-cli` works
   // without installing workspace packages. Wrangler stays a real dependency.
   external: ['wrangler'],
   banner: { js: '#!/usr/bin/env node' },

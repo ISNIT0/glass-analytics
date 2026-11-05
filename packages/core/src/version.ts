@@ -6,7 +6,7 @@
 export const GLASS_VERSION = '0.6.0';
 
 /** Canonical command to bring a deployment up to date. */
-export const UPGRADE_COMMAND = 'npx dataflare@latest upgrade';
+export const UPGRADE_COMMAND = 'npx dataflare-cli@latest upgrade';
 
 /** Parse a dotted version like "1.2.3" (pre-release suffixes ignored). */
 export function parseSemver(version: string): [number, number, number] | null {

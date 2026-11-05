@@ -327,7 +327,7 @@ async function screenshots(): Promise<void> {
       <div style="display:flex;align-items:center;gap:12px;font-size:28px;font-weight:700;letter-spacing:-.01em"><span style="width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,#7fd6bd,#2a7a67);display:inline-block"></span>Dataflare Analytics</div>
       <div style="margin-top:38px;font-size:54px;line-height:1.05;font-weight:700;letter-spacing:-.03em">Product analytics that lives in your Cloudflare account.</div>
       <div style="margin-top:26px;font-size:22px;color:#a9bdb5;line-height:1.4">Web analytics, funnels, session replay and A/B tests. Open source, and your agent can query it.</div>
-      <div style="margin-top:34px;display:inline-block;font:22px ui-monospace,Menlo,monospace;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:14px 20px">$ npx dataflare init</div>
+      <div style="margin-top:34px;display:inline-block;font:22px ui-monospace,Menlo,monospace;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:14px 20px">$ npx dataflare-cli init</div>
     </div>
     <img src="data:image/webp;base64,${shot}" style="position:absolute;left:640px;top:70px;width:900px;border-radius:14px;box-shadow:0 30px 80px rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.12)">
   </body></html>`);

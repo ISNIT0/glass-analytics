@@ -1,4 +1,4 @@
-# dataflare
+# dataflare-cli
 
 ## 0.6.0
 

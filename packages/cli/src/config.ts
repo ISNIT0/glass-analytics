@@ -105,7 +105,7 @@ export function connection(): { host: string; key: string; project: string | und
   if (!host || !key) {
     throw new UsageError(
       'No Dataflare deployment found here.',
-      'Run `npx dataflare init` in your project, or set GLASS_HOST and GLASS_API_KEY.',
+      'Run `npx dataflare-cli init` in your project, or set GLASS_HOST and GLASS_API_KEY.',
     );
   }
   return {

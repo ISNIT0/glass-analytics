@@ -5,9 +5,9 @@
 
 export const SITE_URL = 'https://dataflare.dev';
 export const REPO = 'https://github.com/ISNIT0/glass-analytics';
-export const INSTALL = 'npx dataflare init';
+export const INSTALL = 'npx dataflare-cli init';
 export const AGENT_PROMPT =
-  "Add Dataflare analytics to this project: run `npx dataflare init`, track signups and purchases, then show me today's visitors.";
+  "Add Dataflare analytics to this project: run `npx dataflare-cli init`, track signups and purchases, then show me today's visitors.";
 
 /**
  * Dataflare measuring its own site. Leave empty until a Dataflare Worker exists for

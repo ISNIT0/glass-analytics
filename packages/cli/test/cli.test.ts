@@ -210,7 +210,7 @@ describe('dataflare init', () => {
     );
     assert.deepEqual(JSON.parse(readFileSync(join(root, '.mcp.json'), 'utf8')).mcpServers.glass, {
       command: 'npx',
-      args: ['-y', 'dataflare', 'mcp'],
+      args: ['-y', 'dataflare-cli', 'mcp'],
     });
 
     const workflow = readFileSync(join(root, '.github', 'workflows', 'glass.yml'), 'utf8');
@@ -505,7 +505,7 @@ describe('dataflare upgrade', () => {
     );
     await quiet(async () => ci({ json: true }, { root }));
     const workflow = readFileSync(path, 'utf8');
-    assert.match(workflow, /npx -y "dataflare@\$\{version\}" upgrade --ci/);
+    assert.match(workflow, /npx -y "dataflare-cli@\$\{version\}" upgrade --ci/);
     assert.doesNotMatch(workflow, /@glassanalytics/);
   });
 });

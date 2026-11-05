@@ -442,7 +442,7 @@ export async function init(options: InitOptions, deps: InitDeps = {}): Promise<v
     }
     line();
     line(
-      `Dashboard: ${color.cyan(`${config.host}/app`)} ${color.dim('(sign in with the key from `npx dataflare key`)')}`,
+      `Dashboard: ${color.cyan(`${config.host}/app`)} ${color.dim('(sign in with the key from `npx dataflare-cli key`)')}`,
     );
   } catch (err) {
     if (

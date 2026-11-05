@@ -22,12 +22,12 @@ Web analytics, funnels and retention, session replay, feature flags and A/B test
 </picture>
 
 ```sh
-npx dataflare init
+npx dataflare-cli init
 ```
 
 Or paste this into your coding agent:
 
-> Add Dataflare analytics to this project: run `npx dataflare init`, track signups and purchases, then show me today's visitors.
+> Add Dataflare analytics to this project: run `npx dataflare-cli init`, track signups and purchases, then show me today's visitors.
 
 ## Why Dataflare
 
@@ -65,7 +65,7 @@ Each comparison on the site says where the other product is the better choice: [
 2. **Deploy** from your project directory:
 
    ```sh
-   CLOUDFLARE_API_TOKEN=… npx dataflare init
+   CLOUDFLARE_API_TOKEN=… npx dataflare-cli init
    ```
 
    This creates the database, the replay bucket and the Worker, then prints the snippet for your framework.
@@ -80,9 +80,9 @@ Each comparison on the site says where the other product is the better choice: [
    glass.capture('signup_completed', { plan: 'pro' });
    glass.identify(user.id, { plan: user.plan }); // after login
    ```
-5. **Ask.** Open `https://glass.<you>.workers.dev/app` (sign in with `npx dataflare key`), or ask your agent: _"Which traffic source converts best to signup?"_
+5. **Ask.** Open `https://glass.<you>.workers.dev/app` (sign in with `npx dataflare-cli key`), or ask your agent: _"Which traffic source converts best to signup?"_
 
-Run `npx dataflare status` any time to check everything end to end. See [docs/getting-started.md](docs/getting-started.md) for frameworks, custom domains and EU data residency.
+Run `npx dataflare-cli status` any time to check everything end to end. See [docs/getting-started.md](docs/getting-started.md) for frameworks, custom domains and EU data residency.
 
 ## What you get
 

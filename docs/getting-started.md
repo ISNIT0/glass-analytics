@@ -22,7 +22,7 @@ The token is used by the CLI on your machine. It is not stored by Dataflare, exc
 From your project's root:
 
 ```sh
-CLOUDFLARE_API_TOKEN=… npx dataflare init
+CLOUDFLARE_API_TOKEN=… npx dataflare-cli init
 ```
 
 It will:
@@ -99,16 +99,16 @@ Name events `object_action` in snake_case and past tense. Put details in propert
 Document every custom event once it is shipping — agents and teammates need to know **how and when** it fires, and **what each property means**:
 
 ```sh
-npx dataflare events signup_completed --describe "Fired when the user finishes signup after email verification."
+npx dataflare-cli events signup_completed --describe "Fired when the user finishes signup after email verification."
 ```
 
 Prefer the MCP `define_event` tool so you can set property meanings in the same call (`plan` → chosen plan id, etc.). `list_events` returns an `undocumented` list; clear it before building funnels or trends on those events.
 
 ## 5. Look at the data
 
-- **Dashboard:** `https://glass.<you>.workers.dev/app`. Sign in with the key from `npx dataflare key`. Share a view-only dashboard with `npx dataflare key --read`.
+- **Dashboard:** `https://glass.<you>.workers.dev/app`. Sign in with the key from `npx dataflare-cli key`. Share a view-only dashboard with `npx dataflare-cli key --read`.
 - **Your agent:** with `.mcp.json` in place, ask "what were our top traffic sources this week?". See [agents.md](agents.md).
-- **Terminal:** `npx dataflare query web --from -7d`, `npx dataflare events`, `npx dataflare --help`.
+- **Terminal:** `npx dataflare-cli query web --from -7d`, `npx dataflare-cli events`, `npx dataflare-cli --help`.
 
 ## Upgrading
 
@@ -122,13 +122,13 @@ One-time setup, right after init (agents should do this as part of init):
 To upgrade:
 
 ```sh
-npx dataflare@latest upgrade   # stages the new Worker, migrations and version into .glass/; deploys nothing
+npx dataflare-cli@latest upgrade   # stages the new Worker, migrations and version into .glass/; deploys nothing
 git add .glass && git commit -m "Upgrade Dataflare" && git push   # or open a PR; CI migrates and deploys
 ```
 
-In CI, the workflow runs `npx dataflare@<pinned version> upgrade --ci`, which applies migrations and redeploys without prompts or local credentials.
+In CI, the workflow runs `npx dataflare-cli@<pinned version> upgrade --ci`, which applies migrations and redeploys without prompts or local credentials.
 
-- No workflow yet (installed before this existed, or with `--no-ci`)? `npx dataflare ci` writes it. Options: `--branch`, `--secret`. A workflow you have edited by hand (without the generated header) is left alone.
+- No workflow yet (installed before this existed, or with `--no-ci`)? `npx dataflare-cli ci` writes it. Options: `--branch`, `--secret`. A workflow you have edited by hand (without the generated header) is left alone.
 - No GitHub Actions? Without the workflow, `dataflare upgrade` deploys directly, as before. `dataflare upgrade --local` forces a direct deploy even when the workflow exists; use it only in emergencies, since the repo then no longer matches what is live.
 - `dataflare upgrade` refuses to replace a newer Worker with an older one (for example a stale `npx` cache). Use `@latest`. `--allow-downgrade` overrides this.
 
