@@ -19,7 +19,7 @@ export interface Competitor {
   table: Record<Row, string>;
   /** Where the other product is the better choice. */
   theyWin: string[];
-  /** Where Glass is the better choice. */
+  /** Where Dataflare is the better choice. */
   glassWins: string[];
   /** Moving over: concrete steps. */
   switching: string[];
@@ -68,9 +68,9 @@ export const COMPETITORS: Competitor[] = [
     name: 'PostHog',
     what: 'an all-in-one product platform: analytics, replay, flags, experiments, surveys and more',
     description:
-      'Glass vs PostHog: both are open source with analytics, session replay, flags and experiments. PostHog is a hosted platform; Glass runs in your own Cloudflare account.',
+      'Dataflare vs PostHog: both are open source with analytics, session replay, flags and experiments. PostHog is a hosted platform; Dataflare runs in your own Cloudflare account.',
     verdict:
-      'PostHog is the closest product to Glass and does far more: surveys, a data warehouse, error tracking, mobile SDKs and a hosted cloud with a team behind it. Choose Glass if you want the core of that (web and product analytics, replay, flags and experiments) running in your own Cloudflare account, with no vendor, no usage-based bill and an agent that can query it from the first minute.',
+      'PostHog is the closest product to Dataflare and does far more: surveys, a data warehouse, error tracking, mobile SDKs and a hosted cloud with a team behind it. Choose Dataflare if you want the core of that (web and product analytics, replay, flags and experiments) running in your own Cloudflare account, with no vendor, no usage-based bill and an agent that can query it from the first minute.',
     table: {
       data: 'PostHog Cloud (US or EU), or your own servers',
       license: 'Open source (MIT, with some paid features under a separate licence)',
@@ -89,16 +89,16 @@ export const COMPETITORS: Competitor[] = [
       'Years of production use at very large scale.',
     ],
     glassWins: [
-      'There is no Glass server: the Worker, database and recordings are in your Cloudflare account, under your contracts and your data region.',
+      'There is no Dataflare server: the Worker, database and recordings are in your Cloudflare account, under your contracts and your data region.',
       "No usage-based bill from a vendor. You pay Cloudflare's list prices, which for most sites means $0 or the $5 Workers Paid plan.",
       'Self-hosting needs no servers, Docker or ClickHouse cluster. One command deploys it, and CI upgrades it.',
-      '`glass init` writes agent instructions, a Claude Code skill and an MCP config, and every query result carries its SQL and a dashboard link.',
+      '`dataflare init` writes agent instructions, a Claude Code skill and an MCP config, and every query result carries its SQL and a dashboard link.',
     ],
     switching: [
-      'Run `npx @glassanalytics/cli init` and add the script tag next to PostHog for a week, so you can compare numbers.',
+      'Run `npx dataflare init` and add the script tag next to PostHog for a week, so you can compare numbers.',
       'Rename `posthog.capture(...)` calls to `glass.capture(...)`; event names and properties carry over unchanged. `posthog.identify(id, props)` becomes `glass.identify(id, props)`.',
       'Recreate your key funnels and retention charts in Insights, or ask your agent to (the MCP tools take the same shapes).',
-      'Move flags: `posthog.getFeatureFlag(key)` becomes `glass.flag(key)`. Create the flag with the same key in Glass first.',
+      'Move flags: `posthog.getFeatureFlag(key)` becomes `glass.flag(key)`. Create the flag with the same key in Dataflare first.',
     ],
     sources: [
       ['PostHog pricing', 'https://posthog.com/pricing'],
@@ -111,9 +111,9 @@ export const COMPETITORS: Competitor[] = [
     name: 'Google Analytics',
     what: "Google's free web and app analytics (GA4)",
     description:
-      'Glass vs Google Analytics 4: GA4 is free and tied into Google Ads. Glass is open source, keeps data in your Cloudflare account, and adds funnels, session replay and A/B tests.',
+      'Dataflare vs Google Analytics 4: GA4 is free and tied into Google Ads. Dataflare is open source, keeps data in your Cloudflare account, and adds funnels, session replay and A/B tests.',
     verdict:
-      "Google Analytics is free, everywhere, and the right tool if you buy Google Ads and want conversions to flow into them. Choose Glass if you'd rather not send visitor data to Google, want a dashboard you can read without training, need session replay or A/B tests, or want your coding agent to answer questions about your traffic.",
+      "Google Analytics is free, everywhere, and the right tool if you buy Google Ads and want conversions to flow into them. Choose Dataflare if you'd rather not send visitor data to Google, want a dashboard you can read without training, need session replay or A/B tests, or want your coding agent to answer questions about your traffic.",
     table: {
       data: "Google's servers",
       license: 'Proprietary',
@@ -136,10 +136,10 @@ export const COMPETITORS: Competitor[] = [
       'Cookieless mode stores nothing on the device.',
       'Session replay, feature flags and A/B tests in the same place as your analytics.',
       'Every number shows the SQL behind it, and raw events are yours to query without an export pipeline.',
-      'Loads nothing from third-party domains when you serve Glass from your own domain with `--route`.',
+      'Loads nothing from third-party domains when you serve Dataflare from your own domain with `--route`.',
     ],
     switching: [
-      'Run `npx @glassanalytics/cli init` and add the script tag; keep GA4 running in parallel while you compare.',
+      'Run `npx dataflare init` and add the script tag; keep GA4 running in parallel while you compare.',
       'Map your GA4 key events to `glass.capture()` calls. Pageviews, referrers, UTM tags, countries and devices are collected automatically.',
       'Mark your conversions as key events so Reports show conversion by source.',
       "When you're happy, remove the gtag snippet (and, if you can, your cookie banner's analytics category).",
@@ -154,9 +154,9 @@ export const COMPETITORS: Competitor[] = [
     name: 'Plausible',
     what: 'simple, privacy-friendly web analytics, hosted in the EU',
     description:
-      'Glass vs Plausible: both are cookieless and open source. Plausible is a hosted, single-page web analytics tool; Glass adds funnels, retention, session replay and A/B tests, and runs in your Cloudflare account.',
+      'Dataflare vs Plausible: both are cookieless and open source. Plausible is a hosted, single-page web analytics tool; Dataflare adds funnels, retention, session replay and A/B tests, and runs in your Cloudflare account.',
     verdict:
-      "Plausible is a lovely, focused product: one page of web stats, hosted in the EU, with nothing to run. Choose Glass if you've outgrown web stats and need product analytics (funnels, retention, people), session replay or experiments, or if you'd rather keep the data in your own Cloudflare account than pay a subscription.",
+      "Plausible is a lovely, focused product: one page of web stats, hosted in the EU, with nothing to run. Choose Dataflare if you've outgrown web stats and need product analytics (funnels, retention, people), session replay or experiments, or if you'd rather keep the data in your own Cloudflare account than pay a subscription.",
     table: {
       data: 'Plausible Cloud (EU), or your own servers (Community Edition)',
       license: 'Open source (AGPL-3.0, Community Edition)',
@@ -180,7 +180,7 @@ export const COMPETITORS: Competitor[] = [
       'Raw SQL on every event, and an MCP server so your agent can query it.',
     ],
     switching: [
-      'Run `npx @glassanalytics/cli init` and add the script tag alongside Plausible.',
+      'Run `npx dataflare init` and add the script tag alongside Plausible.',
       '`plausible("Signup", { props: { plan } })` becomes `glass.capture("signup_completed", { plan })`.',
       'Use cookieless mode (`data-persistence="cookieless"`) if you want the same no-cookie behaviour as Plausible.',
     ],
@@ -194,9 +194,9 @@ export const COMPETITORS: Competitor[] = [
     name: 'Amplitude',
     what: 'an enterprise product analytics platform',
     description:
-      'Glass vs Amplitude: Amplitude is a hosted analytics platform with a free plan. Glass is open source, runs in your Cloudflare account, and is queried by your coding agent.',
+      'Dataflare vs Amplitude: Amplitude is a hosted analytics platform with a free plan. Dataflare is open source, runs in your Cloudflare account, and is queried by your coding agent.',
     verdict:
-      'Amplitude is the reference for behavioural analytics: deep charts, governance and a large team behind it. Choose Glass if you want the essentials (trends, funnels, retention, cohorts, replay and experiments) in your own Cloudflare account, without per-event pricing or a sales call, and with SQL you can read under every number.',
+      'Amplitude is the reference for behavioural analytics: deep charts, governance and a large team behind it. Choose Dataflare if you want the essentials (trends, funnels, retention, cohorts, replay and experiments) in your own Cloudflare account, without per-event pricing or a sales call, and with SQL you can read under every number.',
     table: {
       data: "Amplitude's cloud (US or EU)",
       license: 'Proprietary',
@@ -220,7 +220,7 @@ export const COMPETITORS: Competitor[] = [
       'Built for coding agents from install: instructions, a skill and an MCP server are written for you.',
     ],
     switching: [
-      'Run `npx @glassanalytics/cli init` and add the script tag.',
+      'Run `npx dataflare init` and add the script tag.',
       '`amplitude.track(name, props)` becomes `glass.capture(name, props)`; `setUserId` plus `identify` becomes `glass.identify(id, props)`.',
       'Recreate key charts in Insights; the filter editor and breakdowns work the same way (where/and on any event or person property).',
     ],
@@ -231,9 +231,9 @@ export const COMPETITORS: Competitor[] = [
     name: 'Mixpanel',
     what: 'a hosted product analytics platform',
     description:
-      'Glass vs Mixpanel: Mixpanel is hosted product analytics with a free plan. Glass is open source, runs in your Cloudflare account, and includes session replay, flags and experiments.',
+      'Dataflare vs Mixpanel: Mixpanel is hosted product analytics with a free plan. Dataflare is open source, runs in your Cloudflare account, and includes session replay, flags and experiments.',
     verdict:
-      "Mixpanel is fast, polished event analytics with a generous free plan. Choose Glass if you want your events in your own Cloudflare account, prefer Cloudflare's prices to per-event tiers, or want an agent to answer analytics questions with the SQL to back them up.",
+      "Mixpanel is fast, polished event analytics with a generous free plan. Choose Dataflare if you want your events in your own Cloudflare account, prefer Cloudflare's prices to per-event tiers, or want an agent to answer analytics questions with the SQL to back them up.",
     table: {
       data: "Mixpanel's cloud (US or EU)",
       license: 'Proprietary',
@@ -254,10 +254,10 @@ export const COMPETITORS: Competitor[] = [
       'Data stays in your Cloudflare account.',
       "No per-event tiers: Cloudflare's list prices instead.",
       'Open source (MIT): read and change everything.',
-      'An MCP server and CLI written into your project by `glass init`, so your agent can query and instrument straight away.',
+      'An MCP server and CLI written into your project by `dataflare init`, so your agent can query and instrument straight away.',
     ],
     switching: [
-      'Run `npx @glassanalytics/cli init` and add the script tag.',
+      'Run `npx dataflare init` and add the script tag.',
       '`mixpanel.track(name, props)` becomes `glass.capture(name, props)`; `mixpanel.identify(id)` plus `people.set(props)` becomes `glass.identify(id, props)`.',
       'Recreate funnels and retention in Insights or ask your agent to.',
     ],
@@ -268,9 +268,9 @@ export const COMPETITORS: Competitor[] = [
     name: 'Umami',
     what: 'open-source, cookieless web analytics, self-hosted or on Umami Cloud',
     description:
-      'Glass vs Umami: both are open source and cookieless. Umami needs a server and database to self-host; Glass deploys into your Cloudflare account with one command and adds session replay, flags and A/B tests.',
+      'Dataflare vs Umami: both are open source and cookieless. Umami needs a server and database to self-host; Dataflare deploys into your Cloudflare account with one command and adds session replay, flags and A/B tests.',
     verdict:
-      'Umami is a clean, open-source web analytics tool with funnels and retention, and a free cloud tier. Choose Glass if you want to self-host without running a server or database, or need session replay and experiments without moving to a higher plan.',
+      'Umami is a clean, open-source web analytics tool with funnels and retention, and a free cloud tier. Choose Dataflare if you want to self-host without running a server or database, or need session replay and experiments without moving to a higher plan.',
     table: {
       data: 'Umami Cloud, or your own server and database',
       license: 'Open source (MIT)',
@@ -287,12 +287,12 @@ export const COMPETITORS: Competitor[] = [
       'A long-standing, popular project with a large community.',
     ],
     glassWins: [
-      'Self-hosting without a server, Docker or Postgres: Glass is a Worker, D1 and R2 in your Cloudflare account.',
+      'Self-hosting without a server, Docker or Postgres: Dataflare is a Worker, D1 and R2 in your Cloudflare account.',
       'Session replay with agent-readable transcripts, feature flags and A/B tests.',
       'People: identify() links anonymous visits to users, so funnels span signup.',
     ],
     switching: [
-      'Run `npx @glassanalytics/cli init` and add the script tag.',
+      'Run `npx dataflare init` and add the script tag.',
       '`umami.track(name, data)` becomes `glass.capture(name, data)`.',
     ],
     sources: [
@@ -305,9 +305,9 @@ export const COMPETITORS: Competitor[] = [
     name: 'Cloudflare Web Analytics',
     what: "Cloudflare's free, privacy-first web analytics",
     description:
-      'Glass vs Cloudflare Web Analytics: both run on Cloudflare. Web Analytics is free page-view stats with no custom events; Glass adds events, funnels, people, session replay and A/B tests in your own account.',
+      'Dataflare vs Cloudflare Web Analytics: both run on Cloudflare. Web Analytics is free page-view stats with no custom events; Dataflare adds events, funnels, people, session replay and A/B tests in your own account.',
     verdict:
-      "Cloudflare Web Analytics is free and needs no setup if your site is already behind Cloudflare. It counts page views and visitors, and doesn't support custom events. Glass runs on the same platform, in your account, and covers what comes next: events, funnels, retention, people, replay and experiments.",
+      "Cloudflare Web Analytics is free and needs no setup if your site is already behind Cloudflare. It counts page views and visitors, and doesn't support custom events. Dataflare runs on the same platform, in your account, and covers what comes next: events, funnels, retention, people, replay and experiments.",
     table: {
       data: "Cloudflare's analytics platform",
       license: 'Proprietary',
@@ -327,8 +327,8 @@ export const COMPETITORS: Competitor[] = [
       'An MCP server for your coding agent.',
     ],
     switching: [
-      'Keep Web Analytics if you like; Glass runs alongside it.',
-      'Run `npx @glassanalytics/cli init`, add the script tag, and add `glass.capture()` for the actions that matter.',
+      'Keep Web Analytics if you like; Dataflare runs alongside it.',
+      'Run `npx dataflare init`, add the script tag, and add `glass.capture()` for the actions that matter.',
     ],
     sources: [
       ['About Cloudflare Web Analytics', 'https://developers.cloudflare.com/web-analytics/about/'],

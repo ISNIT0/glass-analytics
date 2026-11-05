@@ -2,7 +2,7 @@
   "project": "demo",
   "event": "$exposure",
   "sampled": 500,
-  "lastSeen": "2026-11-04T18:52:58.324Z",
+  "lastSeen": "2026-11-05T07:48:07.941Z",
   "description": "",
   "owner": "",
   "properties": [
@@ -25,14 +25,14 @@
       ],
       "coverage": 1,
       "examples": [
-        "test",
-        "control"
+        "control",
+        "test"
       ],
       "description": ""
     }
   ],
   "summary": "\"$exposure\": 2 properties across the latest 500 events.",
   "sql": [
-    "SELECT props, ts_ms FROM events\nWHERE project = 'demo' AND event = '$exposure' AND ts_ms >= 1791234480542\nORDER BY ts_ms DESC LIMIT 500"
+    "SELECT props, ts_ms FROM events\nWHERE project = 'demo' AND event = '$exposure' AND ts_ms >= 1791282552261\nORDER BY ts_ms DESC LIMIT 500"
   ]
 }

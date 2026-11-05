@@ -1,6 +1,6 @@
 /**
- * Copyable prompts for a coding agent. Glass is built to be driven by an agent
- * with the Glass MCP server; these cards turn "what should I ask it?" into one
+ * Copyable prompts for a coding agent. Dataflare is built to be driven by an agent
+ * with the Dataflare MCP server; these cards turn "what should I ask it?" into one
  * click. Each set can be hidden, and stays hidden in this browser.
  */
 
@@ -77,7 +77,7 @@ export function promptStrip(id: string, title: string, prompts: AgentPrompt[]): 
   return el;
 }
 
-const GLASS = 'Use the Glass MCP tools';
+const GLASS = 'Use the Dataflare MCP tools';
 
 export const HOME_PROMPTS: AgentPrompt[] = [
   {

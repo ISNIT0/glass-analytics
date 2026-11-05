@@ -1,4 +1,4 @@
-# @glassanalytics/cli
+# dataflare
 
 ## 0.5.0
 

@@ -2,7 +2,7 @@
  * Local development server: the real Worker code on Node, with D1 as a SQLite
  * file and R2 as a folder, plus the demo site on a second port.
  *
- *   pnpm dev            → Glass on http://localhost:8787, demo site on http://localhost:8788
+ *   pnpm dev            → Dataflare on http://localhost:8787, demo site on http://localhost:8788
  *
  * Nothing here talks to Cloudflare. For workerd fidelity use `pnpm dev:wrangler`.
  * The e2e tests start this server with in-memory storage.
@@ -99,7 +99,7 @@ export async function startDevServer(
   const glassPort = await listen(glass, options.port ?? 8787);
   const glassUrl = `http://127.0.0.1:${glassPort}`;
 
-  // The demo site, with the Glass host filled in.
+  // The demo site, with the Dataflare host filled in.
   const demoDir = join(repo, 'examples', 'demo-site');
   const demo = createServer((req, res) => {
     const path = (req.url ?? '/').split('?')[0]!.replace(/\/$/, '/index.html');
@@ -134,7 +134,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
     port: Number(process.env.PORT ?? 8787),
     demoPort: Number(process.env.DEMO_PORT ?? 8788),
   });
-  console.log(`Glass      ${server.glassUrl}/app   (key: dev-admin-key)`);
+  console.log(`Dataflare      ${server.glassUrl}/app   (key: dev-admin-key)`);
   console.log(`Demo site  ${server.demoUrl}/`);
   console.log(`MCP        ${server.glassUrl}/mcp`);
   console.log('Data is kept in .glass-dev/ (delete it to start fresh).');

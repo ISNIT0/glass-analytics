@@ -3,8 +3,8 @@
  * agents can discover everything from `GET /api`.
  */
 
-import { experimentSpec, filterSchema, INSIGHTS, sqlSpec } from '@glassanalytics/core/insights';
-import { GLASS_VERSION } from '@glassanalytics/core/version';
+import { experimentSpec, filterSchema, INSIGHTS, sqlSpec } from '@dataflare/core/insights';
+import { GLASS_VERSION } from '@dataflare/core/version';
 import { z } from 'zod/v4';
 import { requireScope, type Scope } from './auth.ts';
 import type { Env } from './env.ts';
@@ -34,7 +34,7 @@ export function apiRouter(service: GlassService, env: Env, request: Request): Ro
 
   r.get('/api', () =>
     json({
-      name: 'Glass',
+      name: 'Dataflare',
       version: GLASS_VERSION,
       scope,
       store: service.store.kind,
@@ -77,7 +77,7 @@ export function apiRouter(service: GlassService, env: Env, request: Request): Ro
         'POST /api/reports/health':
           'Errors over time, sessions affected, likely 404 pages and the slowest pages',
         'GET /api/usage':
-          'What Glass adds to the Cloudflare bill, projected per month, with ways to cut it',
+          'What Dataflare adds to the Cloudflare bill, projected per month, with ways to cut it',
         'GET /api/replays?has=rage_clicks&url=/checkout&not_event=purchase&sort=most_frustrated':
           'Find recorded sessions',
         'GET /api/replays/analyse?from=-7d':

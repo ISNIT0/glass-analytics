@@ -4,7 +4,7 @@
  * of bottle glass — float green, cobalt, amber, ruby — defined in styles.css.
  */
 
-import { addMonths } from '@glassanalytics/core/time';
+import { addMonths } from '@dataflare/core/time';
 import { type Child, h, mount, s } from '../dom.ts';
 import { bucketLabel, count, duration, percent } from '../format.ts';
 import { href } from '../state.ts';

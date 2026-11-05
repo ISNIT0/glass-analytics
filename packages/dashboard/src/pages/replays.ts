@@ -409,7 +409,7 @@ function list(route: Route): Node[] {
 
   const agentPrompt = () => {
     const parts = [...has].map((x) => x.replace('_', ' '));
-    return `Using the Glass MCP tools, run analyse_replays${parts.length ? ` on sessions with ${parts.join(' and ')}` : ''}${state.url ? ` that visited ${state.url}` : ''} for ${scope().from}, then open the worst examples with summarise_replay and replay_snapshot. Tell me what is frustrating users and where in the code to fix it.`;
+    return `Using the Dataflare MCP tools, run analyse_replays${parts.length ? ` on sessions with ${parts.join(' and ')}` : ''}${state.url ? ` that visited ${state.url}` : ''} for ${scope().from}, then open the worst examples with summarise_replay and replay_snapshot. Tell me what is frustrating users and where in the code to fix it.`;
   };
 
   return [
@@ -443,10 +443,14 @@ function list(route: Route): Node[] {
           params(),
         );
         if (!r.enabled)
-          return empty('Enable R2 in your Cloudflare account, then run glass upgrade.', undefined, {
-            icon: 'replay',
-            title: 'Session replay is off',
-          });
+          return empty(
+            'Enable R2 in your Cloudflare account, then run dataflare upgrade.',
+            undefined,
+            {
+              icon: 'replay',
+              title: 'Session replay is off',
+            },
+          );
         const filtered = Boolean(state.q || has.size || extraCount);
         if (r.replays.length === 0) {
           return filtered
@@ -460,7 +464,7 @@ function list(route: Route): Node[] {
                 { icon: 'search', title: 'No matches' },
               )
             : empty(
-                'Set data-replay-sample-rate="0.1" on the script tag to record 10% of sessions. Inputs are masked. Loading Glass cookieless? Replay waits for consent unless you also add data-replay-cookieless="true".',
+                'Set data-replay-sample-rate="0.1" on the script tag to record 10% of sessions. Inputs are masked. Loading Dataflare cookieless? Replay waits for consent unless you also add data-replay-cookieless="true".',
                 h(
                   'a',
                   { class: 'button', href: href('settings') },
@@ -654,10 +658,14 @@ function patterns(): Node[] {
           limit: 100,
         });
         if (!a.enabled)
-          return empty('Enable R2 in your Cloudflare account, then run glass upgrade.', undefined, {
-            icon: 'replay',
-            title: 'Session replay is off',
-          });
+          return empty(
+            'Enable R2 in your Cloudflare account, then run dataflare upgrade.',
+            undefined,
+            {
+              icon: 'replay',
+              title: 'Session replay is off',
+            },
+          );
         return [
           h(
             'p',
@@ -868,7 +876,7 @@ function detail(session: string, route: Route): Node[] {
   const linkAtNow = () =>
     `${location.origin}${location.pathname}${href(`replays/${session}`, { t: String(Math.round(transcriptTime())) })}`;
   const agentPrompt = () =>
-    `Using the Glass MCP tools, read session ${session} with summarise_replay, then use replay_snapshot at ${clock(transcriptTime())} to see what was on screen. Tell me what went wrong and where in the code to fix it.`;
+    `Using the Dataflare MCP tools, read session ${session} with summarise_replay, then use replay_snapshot at ${clock(transcriptTime())} to see what was on screen. Tell me what went wrong and where in the code to fix it.`;
 
   const loadSummary = async () => {
     summary = await api.get<SummaryResponse>(
@@ -1138,7 +1146,7 @@ function detail(session: string, route: Route): Node[] {
         if (current && follow && playing) current.scrollIntoView({ block: 'nearest' });
         lastCurrent = index;
       }
-      // The recording's own URL marks (page loads and client-side navigation), else Glass pageviews.
+      // The recording's own URL marks (page loads and client-side navigation), else Dataflare pageviews.
       const mark =
         urlMarks.filter((m) => m.ts <= now + 50).at(-1)?.href ??
         summary?.timeline.filter((i) => i.kind === 'page' && i.ts <= now + 50).at(-1)?.url ??

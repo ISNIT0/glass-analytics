@@ -1,6 +1,6 @@
 /**
  * Regenerate the landing page's product images and the public demo from a
- * real Glass build with synthetic data (scripts/demo-data.ts):
+ * real Dataflare build with synthetic data (scripts/demo-data.ts):
  *
  *   site/public/img/*.webp     dashboard screenshots, light and dark
  *   site/public/img/og.png     the social preview card
@@ -36,7 +36,7 @@ const server = await startDevServer({ memory: true, port: 0, demoPort: 0 });
 const G = server.glassUrl;
 console.log('seeding…', await seedDemo(server));
 
-// The example site is served as a public-looking host but loads Glass from 127.0.0.1,
+// The example site is served as a public-looking host but loads Dataflare from 127.0.0.1,
 // which Chrome's private/local network checks would block. Local and synthetic only.
 const browser = await chromium.launch({
   args: [
@@ -324,10 +324,10 @@ async function screenshots(): Promise<void> {
   await card.setContent(`<!doctype html><html><body style="margin:0;width:1200px;height:630px;overflow:hidden;background:#0d1714;font-family:ui-sans-serif,system-ui,-apple-system,sans-serif;color:#eef5f2">
     <div style="position:absolute;inset:0;background:radial-gradient(900px 500px at 85% 10%,rgba(62,170,140,.28),transparent 60%)"></div>
     <div style="position:absolute;left:64px;top:64px;width:520px">
-      <div style="display:flex;align-items:center;gap:12px;font-size:28px;font-weight:700;letter-spacing:-.01em"><span style="width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,#7fd6bd,#2a7a67);display:inline-block"></span>Glass Analytics</div>
+      <div style="display:flex;align-items:center;gap:12px;font-size:28px;font-weight:700;letter-spacing:-.01em"><span style="width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,#7fd6bd,#2a7a67);display:inline-block"></span>Dataflare Analytics</div>
       <div style="margin-top:38px;font-size:54px;line-height:1.05;font-weight:700;letter-spacing:-.03em">Product analytics that lives in your Cloudflare account.</div>
       <div style="margin-top:26px;font-size:22px;color:#a9bdb5;line-height:1.4">Web analytics, funnels, session replay and A/B tests. Open source, and your agent can query it.</div>
-      <div style="margin-top:34px;display:inline-block;font:22px ui-monospace,Menlo,monospace;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:14px 20px">$ npx @glassanalytics/cli init</div>
+      <div style="margin-top:34px;display:inline-block;font:22px ui-monospace,Menlo,monospace;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:14px 20px">$ npx dataflare init</div>
     </div>
     <img src="data:image/webp;base64,${shot}" style="position:absolute;left:640px;top:70px;width:900px;border-radius:14px;box-shadow:0 30px 80px rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.12)">
   </body></html>`);
@@ -435,8 +435,8 @@ async function demo(): Promise<void> {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Live demo · Glass Analytics</title>
-<meta name="description" content="Click through a Glass Analytics dashboard with sample data: web analytics, funnels, retention, session replay, feature flags and A/B tests.">
+<title>Live demo · Dataflare Analytics</title>
+<meta name="description" content="Click through a Dataflare Analytics dashboard with sample data: web analytics, funnels, retention, session replay, feature flags and A/B tests.">
 <link rel="canonical" href="/demo/">
 <meta name="glass-base" content="">
 <meta name="glass-demo" content="/demo/data">

@@ -1,11 +1,11 @@
--- Glass D1 schema, v1.
+-- Dataflare D1 schema, v1.
 --
--- D1 always holds Glass's mutable state (projects, persons, identities, flags,
+-- D1 always holds Dataflare's mutable state (projects, persons, identities, flags,
 -- experiments, replay index). In the default "d1" store it also holds events;
 -- in "lake" mode events live in Iceberg tables with the same columns.
 --
 -- Never edit a migration that has shipped. Add a new numbered file instead;
--- `glass upgrade` applies pending migrations with `wrangler d1 migrations apply`.
+-- `dataflare upgrade` applies pending migrations with `wrangler d1 migrations apply`.
 
 CREATE TABLE IF NOT EXISTS projects (
   id TEXT PRIMARY KEY,

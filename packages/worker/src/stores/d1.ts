@@ -1,13 +1,13 @@
-import { EVENT_COLUMNS, type StoredEvent } from '@glassanalytics/core/events';
-import type { Row } from '@glassanalytics/core/insights/types';
-import { sqlite } from '@glassanalytics/core/sql/dialect';
+import { EVENT_COLUMNS, type StoredEvent } from '@dataflare/core/events';
+import type { Row } from '@dataflare/core/insights/types';
+import { sqlite } from '@dataflare/core/sql/dialect';
 import type { D1Database } from '../env.ts';
 import type { EventStore, IdentityLink } from './types.ts';
 
 const INSERT = `INSERT OR IGNORE INTO events (${EVENT_COLUMNS.join(', ')}) VALUES (${EVENT_COLUMNS.map(() => '?').join(', ')})`;
 const BATCH_SIZE = 50;
 
-/** Events stored in D1 alongside Glass's other tables. */
+/** Events stored in D1 alongside Dataflare's other tables. */
 export class D1Store implements EventStore {
   readonly kind = 'd1';
   readonly dialect = sqlite;

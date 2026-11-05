@@ -1,5 +1,5 @@
 /**
- * `glass mcp` — an MCP server over stdio that forwards to the deployed
+ * `dataflare mcp` — an MCP server over stdio that forwards to the deployed
  * Worker's `/mcp` endpoint, adding the API key from `.glass/credentials.json`.
  *
  * This is what `.mcp.json` runs, so the key never has to be written into
@@ -53,7 +53,7 @@ export async function mcpBridge(
           id: message.id ?? null,
           error: {
             code: -32603,
-            message: `Glass returned HTTP ${res.status}: ${text.slice(0, 200)}`,
+            message: `Dataflare returned HTTP ${res.status}: ${text.slice(0, 200)}`,
           },
         });
         return;

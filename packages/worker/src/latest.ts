@@ -1,11 +1,11 @@
 /**
- * Look up the newest published Glass CLI version on npm so /health and the
- * dashboard can tell operators (and agents) when to run `glass upgrade`.
+ * Look up the newest published Dataflare CLI version on npm so /health and the
+ * dashboard can tell operators (and agents) when to run `dataflare upgrade`.
  *
  * Failures are silent: an unreachable registry must never break health checks.
  */
 
-const NPM_LATEST = 'https://registry.npmjs.org/@glassanalytics/cli/latest';
+const NPM_LATEST = 'https://registry.npmjs.org/dataflare/latest';
 const CACHE_MS = 60 * 60 * 1000;
 
 type Fetcher = (input: string, init?: RequestInit) => Promise<Response>;
@@ -29,7 +29,7 @@ export function peekLatestVersion(): string | null {
   return cache?.latest ?? null;
 }
 
-/** Cached lookup of the latest @glassanalytics/cli version on npm. */
+/** Cached lookup of the latest dataflare version on npm. */
 export async function fetchLatestVersion(): Promise<string | null> {
   if (cache && Date.now() - cache.at < CACHE_MS) return cache.latest;
   if (inflight) return inflight;

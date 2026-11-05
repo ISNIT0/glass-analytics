@@ -1,5 +1,5 @@
 /**
- * Projects: one Glass install can serve several sites or apps.
+ * Projects: one Dataflare install can serve several sites or apps.
  */
 
 import type { D1Database } from './env.ts';
@@ -87,7 +87,7 @@ export async function resolveProject(db: D1Database, requested?: string | null):
   const projects = await listProjects(db);
   if (projects.length === 1) return projects[0]!.id;
   if (projects.length === 0)
-    throw new HttpError(404, 'No projects yet', 'Create one with `glass projects add <id>`.');
+    throw new HttpError(404, 'No projects yet', 'Create one with `dataflare projects add <id>`.');
   throw new HttpError(
     400,
     `Several projects exist; pass "project": one of ${projects.map((p) => `"${p.id}"`).join(', ')}`,

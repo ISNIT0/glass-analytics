@@ -5,119 +5,119 @@
   "cohorts": [
     {
       "start": 1788739200000,
-      "size": 34,
+      "size": 20,
       "counts": [
-        34,
-        4,
-        3,
-        3,
-        6,
-        6,
+        20,
         1,
-        9
+        3,
+        3,
+        4,
+        1,
+        2,
+        3
       ],
       "rates": [
         1,
-        0.11764705882352941,
-        0.08823529411764706,
-        0.08823529411764706,
-        0.17647058823529413,
-        0.17647058823529413,
-        0.029411764705882353,
-        0.2647058823529412
+        0.05,
+        0.15,
+        0.15,
+        0.2,
+        0.05,
+        0.1,
+        0.15
       ]
     },
     {
       "start": 1789344000000,
-      "size": 53,
+      "size": 39,
       "counts": [
-        53,
-        3,
-        8,
-        8,
-        12,
-        9,
-        3,
-        4
+        39,
+        2,
+        5,
+        5,
+        6,
+        5,
+        5,
+        3
       ],
       "rates": [
         1,
-        0.05660377358490566,
-        0.1509433962264151,
-        0.1509433962264151,
-        0.22641509433962265,
-        0.16981132075471697,
-        0.05660377358490566,
-        0.07547169811320754
+        0.05128205128205128,
+        0.1282051282051282,
+        0.1282051282051282,
+        0.15384615384615385,
+        0.1282051282051282,
+        0.1282051282051282,
+        0.07692307692307693
       ]
     },
     {
       "start": 1789948800000,
-      "size": 70,
+      "size": 69,
       "counts": [
-        70,
-        10,
-        8,
-        13,
-        19,
+        69,
+        14,
+        14,
+        15,
+        17,
         12,
-        4,
+        3,
         0
       ],
       "rates": [
         1,
-        0.14285714285714285,
-        0.11428571428571428,
-        0.18571428571428572,
-        0.2714285714285714,
-        0.17142857142857143,
-        0.05714285714285714,
+        0.2028985507246377,
+        0.2028985507246377,
+        0.21739130434782608,
+        0.2463768115942029,
+        0.17391304347826086,
+        0.043478260869565216,
         0
       ]
     },
     {
       "start": 1790553600000,
-      "size": 67,
+      "size": 63,
       "counts": [
-        67,
-        11,
-        18,
-        15,
+        63,
         10,
+        8,
+        13,
+        17,
         7,
         0,
         0
       ],
       "rates": [
         1,
-        0.16417910447761194,
-        0.26865671641791045,
-        0.22388059701492538,
-        0.14925373134328357,
-        0.1044776119402985,
+        0.15873015873015872,
+        0.12698412698412698,
+        0.20634920634920634,
+        0.2698412698412698,
+        0.1111111111111111,
         0,
         0
       ]
     },
     {
       "start": 1791158400000,
-      "size": 82,
+      "size": 83,
       "counts": [
-        82,
-        17,
-        15,
+        83,
         20,
-        8,
+        20,
+        19,
+        9,
         0,
         0,
         0
       ],
       "rates": [
         1,
-        0.2073170731707317,
-        0.18292682926829268,
-        0.24390243902439024,
-        0.0975609756097561,
+        0.24096385542168675,
+        0.24096385542168675,
+        0.2289156626506024,
+        0.10843373493975904,
         0,
         0,
         0
@@ -125,12 +125,12 @@
     },
     {
       "start": 1791763200000,
-      "size": 100,
+      "size": 106,
       "counts": [
-        100,
-        24,
-        28,
-        20,
+        106,
+        23,
+        25,
+        19,
         0,
         0,
         0,
@@ -138,9 +138,9 @@
       ],
       "rates": [
         1,
-        0.24,
-        0.28,
-        0.2,
+        0.2169811320754717,
+        0.2358490566037736,
+        0.1792452830188679,
         0,
         0,
         0,
@@ -149,11 +149,11 @@
     },
     {
       "start": 1792368000000,
-      "size": 81,
+      "size": 89,
       "counts": [
-        81,
-        34,
-        10,
+        89,
+        23,
+        17,
         0,
         0,
         0,
@@ -162,8 +162,8 @@
       ],
       "rates": [
         1,
-        0.41975308641975306,
-        0.12345679012345678,
+        0.25842696629213485,
+        0.19101123595505617,
         0,
         0,
         0,
@@ -173,10 +173,10 @@
     },
     {
       "start": 1792972800000,
-      "size": 78,
+      "size": 100,
       "counts": [
-        78,
-        14,
+        100,
+        30,
         0,
         0,
         0,
@@ -186,7 +186,7 @@
       ],
       "rates": [
         1,
-        0.1794871794871795,
+        0.3,
         0,
         0,
         0,
@@ -197,9 +197,9 @@
     },
     {
       "start": 1793577600000,
-      "size": 37,
+      "size": 51,
       "counts": [
-        37,
+        51,
         0,
         0,
         0,
@@ -222,22 +222,22 @@
   ],
   "average": [
     1,
-    0.20707964601769913,
-    0.18480492813141683,
-    0.19458128078817735,
-    0.17973856209150327,
-    0.15178571428571427,
-    0.050955414012738856,
-    0.14942528735632185
+    0.21616871704745166,
+    0.19616204690831557,
+    0.19473684210526315,
+    0.19343065693430658,
+    0.13089005235602094,
+    0.078125,
+    0.1016949152542373
   ],
   "sql": [
-    "WITH ev AS (\n  SELECT e.*,\n    CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid\n  FROM events e\n  LEFT JOIN (\n    SELECT distinct_id, MIN(person_id) AS person_id\n    FROM identities\n    WHERE project = 'demo'\n    GROUP BY distinct_id\n  ) i ON i.distinct_id = e.distinct_id\n  WHERE e.project = 'demo'\n    AND e.ts_ms >= 1788988048103\n    AND e.ts_ms < 1793912848103\n    AND e.event IN ('signup_completed', 'document_created')\n),\nfirst_seen AS (\n  SELECT pid, MIN(ts_ms) AS t0\n  FROM ev\n  WHERE event = 'signup_completed' AND ts_ms < 1793826448103 AND 1 = 1\n  GROUP BY pid\n),\nc AS (SELECT pid, (((t0 / 86400000) - (((t0 / 86400000) + 3) % 7)) * 86400000) AS cbucket FROM first_seen),\na AS (\n  SELECT DISTINCT pid, (((ts_ms / 86400000) - (((ts_ms / 86400000) + 3) % 7)) * 86400000) AS abucket\n  FROM ev\n  WHERE event = 'document_created' AND 1 = 1\n)\nSELECT c.cbucket AS cohort, (a.abucket - c.cbucket) / 604800000 AS k, COUNT(DISTINCT c.pid) AS n\nFROM c JOIN a ON a.pid = c.pid\nWHERE a.abucket > c.cbucket AND (a.abucket - c.cbucket) / 604800000 <= 7\nGROUP BY c.cbucket, (a.abucket - c.cbucket) / 604800000\nUNION ALL\nSELECT cbucket AS cohort, 0 AS k, COUNT(*) AS n FROM c GROUP BY cbucket"
+    "WITH ev AS (\n  SELECT e.*,\n    CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid\n  FROM events e\n  LEFT JOIN (\n    SELECT distinct_id, MIN(person_id) AS person_id\n    FROM identities\n    WHERE project = 'demo'\n    GROUP BY distinct_id\n  ) i ON i.distinct_id = e.distinct_id\n  WHERE e.project = 'demo'\n    AND e.ts_ms >= 1789036119716\n    AND e.ts_ms < 1793960919716\n    AND e.event IN ('signup_completed', 'document_created')\n),\nfirst_seen AS (\n  SELECT pid, MIN(ts_ms) AS t0\n  FROM ev\n  WHERE event = 'signup_completed' AND ts_ms < 1793874519716 AND 1 = 1\n  GROUP BY pid\n),\nc AS (SELECT pid, (((t0 / 86400000) - (((t0 / 86400000) + 3) % 7)) * 86400000) AS cbucket FROM first_seen),\na AS (\n  SELECT DISTINCT pid, (((ts_ms / 86400000) - (((ts_ms / 86400000) + 3) % 7)) * 86400000) AS abucket\n  FROM ev\n  WHERE event = 'document_created' AND 1 = 1\n)\nSELECT c.cbucket AS cohort, (a.abucket - c.cbucket) / 604800000 AS k, COUNT(DISTINCT c.pid) AS n\nFROM c JOIN a ON a.pid = c.pid\nWHERE a.abucket > c.cbucket AND (a.abucket - c.cbucket) / 604800000 <= 7\nGROUP BY c.cbucket, (a.abucket - c.cbucket) / 604800000\nUNION ALL\nSELECT cbucket AS cohort, 0 AS k, COUNT(*) AS n FROM c GROUP BY cbucket"
   ],
   "range": {
-    "from": "2026-09-09T21:07:28.103Z",
-    "to": "2026-11-04T21:07:28.103Z"
+    "from": "2026-09-10T10:28:39.716Z",
+    "to": "2026-11-05T10:28:39.716Z"
   },
-  "summary": "602 people in 9 weekly cohorts. Average retention: week 1 20.7%, week 4 18.0%.",
+  "summary": "620 people in 9 weekly cohorts. Average retention: week 1 21.6%, week 4 19.3%.",
   "project": "demo",
-  "dashboard": "http://127.0.0.1:55244/app#/insights/retention?project=demo&spec=%7B%22from%22%3A%22-56d%22%2C%22cohortEvent%22%3A%7B%22event%22%3A%22signup_completed%22%7D%2C%22returnEvent%22%3A%7B%22event%22%3A%22document_created%22%7D%2C%22period%22%3A%22week%22%2C%22periods%22%3A7%7D"
+  "dashboard": "http://127.0.0.1:58904/app#/insights/retention?project=demo&spec=%7B%22from%22%3A%22-56d%22%2C%22cohortEvent%22%3A%7B%22event%22%3A%22signup_completed%22%7D%2C%22returnEvent%22%3A%7B%22event%22%3A%22document_created%22%7D%2C%22period%22%3A%22week%22%2C%22periods%22%3A7%7D"
 }

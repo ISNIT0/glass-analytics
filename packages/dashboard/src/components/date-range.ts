@@ -4,7 +4,7 @@
  * `to`) so every view stays a shareable link.
  */
 
-import { DAY_MS, resolveRange } from '@glassanalytics/core/time';
+import { DAY_MS, resolveRange } from '@dataflare/core/time';
 import { h } from '../dom.ts';
 import { go, prefs, type Route } from '../state.ts';
 import { icon } from './icons.ts';

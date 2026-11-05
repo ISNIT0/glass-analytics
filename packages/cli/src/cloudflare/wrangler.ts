@@ -1,7 +1,7 @@
 /**
  * Running Wrangler, Cloudflare's CLI.
  *
- * Glass provisions and deploys through Wrangler rather than raw API calls:
+ * Dataflare provisions and deploys through Wrangler rather than raw API calls:
  * Wrangler handles uploads, D1 migrations, secrets and Pipelines, and stays
  * current as Cloudflare's APIs change. The `Wrangler` interface keeps the rest
  * of the CLI testable with a fake runner.

@@ -2,7 +2,6 @@
   "kind": "trends",
   "interval": "day",
   "buckets": [
-    1791158400000,
     1791244800000,
     1791331200000,
     1791417600000,
@@ -32,7 +31,8 @@
     1793491200000,
     1793577600000,
     1793664000000,
-    1793750400000
+    1793750400000,
+    1793836800000
   ],
   "series": [
     {
@@ -50,39 +50,39 @@
         0,
         0,
         0,
-        0,
-        40,
+        18,
         25,
-        20,
-        35,
-        45,
-        50,
-        38,
-        61,
-        32,
-        29,
-        49,
-        45,
-        54,
-        61,
-        54,
         30,
+        29,
         35,
-        73,
-        43
+        38,
+        32,
+        51,
+        44,
+        46,
+        55,
+        44,
+        55,
+        55,
+        52,
+        31,
+        43,
+        48,
+        70,
+        31
       ],
-      "total": 826
+      "total": 842
     }
   ],
   "sql": [
-    "WITH ev AS (\n  SELECT e.*,\n    CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid\n  FROM events e\n  LEFT JOIN (\n    SELECT distinct_id, MIN(person_id) AS person_id\n    FROM identities\n    WHERE project = 'demo'\n    GROUP BY distinct_id\n  ) i ON i.distinct_id = e.distinct_id\n  WHERE e.project = 'demo'\n    AND e.ts_ms >= 1791234492135\n    AND e.ts_ms < 1793826492135\n    AND e.event IN ('$exposure')\n)\nSELECT bucket, bd, COUNT(*) AS agg\nFROM (SELECT ((ts_ms / 86400000) * 86400000) AS bucket, '' AS bd, pid, session_id, NULL AS val\n    FROM ev WHERE 1 = 1) t\nGROUP BY bucket, bd\nORDER BY bucket\nLIMIT 50000",
-    "WITH ev AS (\n  SELECT e.*,\n    CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid\n  FROM events e\n  LEFT JOIN (\n    SELECT distinct_id, MIN(person_id) AS person_id\n    FROM identities\n    WHERE project = 'demo'\n    GROUP BY distinct_id\n  ) i ON i.distinct_id = e.distinct_id\n  WHERE e.project = 'demo'\n    AND e.ts_ms >= 1791234492135\n    AND e.ts_ms < 1793826492135\n    AND e.event IN ('$exposure')\n)\nSELECT bd, COUNT(*) AS agg\nFROM (SELECT ((ts_ms / 86400000) * 86400000) AS bucket, '' AS bd, pid, session_id, NULL AS val\n    FROM ev WHERE 1 = 1) t\nGROUP BY bd\nORDER BY agg DESC\nLIMIT 1000"
+    "WITH ev AS (\n  SELECT e.*,\n    CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid\n  FROM events e\n  LEFT JOIN (\n    SELECT distinct_id, MIN(person_id) AS person_id\n    FROM identities\n    WHERE project = 'demo'\n    GROUP BY distinct_id\n  ) i ON i.distinct_id = e.distinct_id\n  WHERE e.project = 'demo'\n    AND e.ts_ms >= 1791282563871\n    AND e.ts_ms < 1793874563871\n    AND e.event IN ('$exposure')\n)\nSELECT bucket, bd, COUNT(*) AS agg\nFROM (SELECT ((ts_ms / 86400000) * 86400000) AS bucket, '' AS bd, pid, session_id, NULL AS val\n    FROM ev WHERE 1 = 1) t\nGROUP BY bucket, bd\nORDER BY bucket\nLIMIT 50000",
+    "WITH ev AS (\n  SELECT e.*,\n    CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid\n  FROM events e\n  LEFT JOIN (\n    SELECT distinct_id, MIN(person_id) AS person_id\n    FROM identities\n    WHERE project = 'demo'\n    GROUP BY distinct_id\n  ) i ON i.distinct_id = e.distinct_id\n  WHERE e.project = 'demo'\n    AND e.ts_ms >= 1791282563871\n    AND e.ts_ms < 1793874563871\n    AND e.event IN ('$exposure')\n)\nSELECT bd, COUNT(*) AS agg\nFROM (SELECT ((ts_ms / 86400000) * 86400000) AS bucket, '' AS bd, pid, session_id, NULL AS val\n    FROM ev WHERE 1 = 1) t\nGROUP BY bd\nORDER BY agg DESC\nLIMIT 1000"
   ],
   "range": {
-    "from": "2026-10-05T21:08:12.135Z",
-    "to": "2026-11-04T21:08:12.135Z"
+    "from": "2026-10-06T10:29:23.871Z",
+    "to": "2026-11-05T10:29:23.871Z"
   },
-  "summary": "2026-10-05 to 2026-11-04 by day. $exposure: 826",
+  "summary": "2026-10-06 to 2026-11-05 by day. $exposure: 842",
   "project": "demo",
-  "dashboard": "http://127.0.0.1:55244/app#/insights/trends?project=demo&spec=%7B%22from%22%3A%22-30d%22%2C%22series%22%3A%5B%7B%22event%22%3A%22%24exposure%22%7D%5D%2C%22interval%22%3A%22day%22%7D"
+  "dashboard": "http://127.0.0.1:58904/app#/insights/trends?project=demo&spec=%7B%22from%22%3A%22-30d%22%2C%22series%22%3A%5B%7B%22event%22%3A%22%24exposure%22%7D%5D%2C%22interval%22%3A%22day%22%7D"
 }

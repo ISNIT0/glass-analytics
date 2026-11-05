@@ -12,7 +12,7 @@ import { after, before, describe, it } from 'node:test';
 import { type Browser, type BrowserContext, chromium } from 'playwright';
 import { type DevServer, startDevServer } from '../packages/worker/test/server.ts';
 
-// Headless Chromium says "HeadlessChrome", which Glass filters as a bot; look like a real browser.
+// Headless Chromium says "HeadlessChrome", which Dataflare filters as a bot; look like a real browser.
 const UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 const SHOTS = new URL('../test-results/', import.meta.url).pathname;
@@ -52,7 +52,7 @@ async function eventually<T>(
   throw new Error(`Timed out waiting for ${label}: ${JSON.stringify(last).slice(0, 500)}`);
 }
 
-describe('Glass end to end', { timeout: 120_000 }, () => {
+describe('Dataflare end to end', { timeout: 120_000 }, () => {
   before(async () => {
     mkdirSync(SHOTS, { recursive: true });
     server = await startDevServer({ port: 0, demoPort: 0, memory: true });
@@ -299,7 +299,7 @@ describe('Glass end to end', { timeout: 120_000 }, () => {
   it('records cookieless visits without storing anything', async () => {
     const visitor = await browser.newContext({ userAgent: UA });
     const page = await visitor.newPage();
-    // The pricing page, with Glass loaded the way a site without consent loads it.
+    // The pricing page, with Dataflare loaded the way a site without consent loads it.
     await page.addInitScript(() => {
       new MutationObserver((_, observer) => {
         const tag = document.querySelector<HTMLScriptElement>('script[src$="/s.js"]');

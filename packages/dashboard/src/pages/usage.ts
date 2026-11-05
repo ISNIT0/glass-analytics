@@ -1,5 +1,5 @@
 /**
- * Usage & cost: what this Glass deployment adds to the Cloudflare bill,
+ * Usage & cost: what this Dataflare deployment adds to the Cloudflare bill,
  * projected to a month from the last 7 days, and how to cut it.
  * Data: `GET /api/usage` (also the `usage_and_cost` MCP tool).
  */
@@ -80,7 +80,7 @@ export function usagePage(_route: Route): Node[] {
   return [
     pageHeader(
       'Usage & cost',
-      'What Glass adds to your Cloudflare bill, projected to a month from the last 7 days, and how to keep it low.',
+      'What Dataflare adds to your Cloudflare bill, projected to a month from the last 7 days, and how to keep it low.',
     ),
     later(
       async () => {
@@ -221,7 +221,7 @@ export function usagePage(_route: Route): Node[] {
           h(
             'p',
             { class: 'muted small usage-note' },
-            `Estimates, not your bill: Glass can't see Cloudflare billing, so this is inferred from what it stored in the last ${u.window.days} days. Allowances on ${plan.name} are shared with your other Workers, so costs here assume Glass is the only thing using them. Prices checked ${u.prices.checked}: `,
+            `Estimates, not your bill: Dataflare can't see Cloudflare billing, so this is inferred from what it stored in the last ${u.window.days} days. Allowances on ${plan.name} are shared with your other Workers, so costs here assume Dataflare is the only thing using them. Prices checked ${u.prices.checked}: `,
             h(
               'a',
               {

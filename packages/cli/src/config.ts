@@ -35,7 +35,7 @@ export interface GlassConfig {
   /** Delete events older than this many days (D1 store). Unset keeps them. */
   retentionDays?: number | null;
   eu: boolean;
-  /** Glass version last deployed. */
+  /** Dataflare version last deployed. */
   version: string;
 }
 
@@ -104,8 +104,8 @@ export function connection(): { host: string; key: string; project: string | und
   const key = process.env.GLASS_API_KEY ?? credentials?.adminKey;
   if (!host || !key) {
     throw new UsageError(
-      'No Glass deployment found here.',
-      'Run `npx @glassanalytics/cli init` in your project, or set GLASS_HOST and GLASS_API_KEY.',
+      'No Dataflare deployment found here.',
+      'Run `npx dataflare init` in your project, or set GLASS_HOST and GLASS_API_KEY.',
     );
   }
   return {

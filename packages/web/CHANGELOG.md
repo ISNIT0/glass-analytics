@@ -1,4 +1,4 @@
-# @glassanalytics/web
+# dataflare-web
 
 ## 0.5.0
 

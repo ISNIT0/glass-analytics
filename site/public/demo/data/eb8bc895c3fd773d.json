@@ -12,7 +12,7 @@
     "startedAt": null,
     "endedAt": null,
     "shippedVariant": null,
-    "createdAt": 1793826279567
+    "createdAt": 1793874347020
   },
   "results": {
     "kind": "experiment",
@@ -53,14 +53,14 @@
     "winner": null,
     "estimatedDaysToSignificance": null,
     "sql": [
-      "WITH ev AS (\n  SELECT e.*,\n    CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid\n  FROM events e\n  LEFT JOIN (\n    SELECT distinct_id, MIN(person_id) AS person_id\n    FROM identities\n    WHERE project = 'demo'\n    GROUP BY distinct_id\n  ) i ON i.distinct_id = e.distinct_id\n  WHERE e.project = 'demo'\n    AND e.ts_ms >= 1793825679567\n    AND e.ts_ms < 1793826476179\n    AND e.event IN ('$exposure', 'subscription_started')\n),\nx AS (\n  SELECT pid, MIN(ts_ms) AS t0, MIN((CASE json_type(props, '$.\"variant\"') WHEN 'true' THEN 'true' WHEN 'false' THEN 'false' WHEN 'null' THEN NULL ELSE CAST(json_extract(props, '$.\"variant\"') AS TEXT) END)) AS variant, COUNT(DISTINCT (CASE json_type(props, '$.\"variant\"') WHEN 'true' THEN 'true' WHEN 'false' THEN 'false' WHEN 'null' THEN NULL ELSE CAST(json_extract(props, '$.\"variant\"') AS TEXT) END)) AS nv\n  FROM ev\n  WHERE event = '$exposure' AND (CASE json_type(props, '$.\"flag\"') WHEN 'true' THEN 'true' WHEN 'false' THEN 'false' WHEN 'null' THEN NULL ELSE CAST(json_extract(props, '$.\"flag\"') AS TEXT) END) = 'annual-billing-nudge'\n  GROUP BY pid\n),\nxe AS (SELECT pid, t0, variant FROM x WHERE nv = 1),\ng AS (\n  SELECT xe.pid, SUM(0) AS total\n  FROM xe JOIN ev ON ev.pid = xe.pid\n  WHERE ev.event = 'subscription_started' AND ev.ts_ms >= xe.t0 AND 1 = 1\n  GROUP BY xe.pid\n)\nSELECT xe.variant AS variant,\n  COUNT(*) AS exposures,\n  SUM(CASE WHEN g.pid IS NULL THEN 0 ELSE 1 END) AS conversions,\n  SUM(COALESCE(g.total, 0)) AS value_sum,\n  SUM(COALESCE(g.total, 0) * COALESCE(g.total, 0)) AS value_sumsq,\n  MIN(xe.t0) AS first_exposure,\n  (SELECT COUNT(*) FROM x WHERE nv > 1) AS multi\nFROM xe LEFT JOIN g ON g.pid = xe.pid\nGROUP BY xe.variant"
+      "WITH ev AS (\n  SELECT e.*,\n    CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid\n  FROM events e\n  LEFT JOIN (\n    SELECT distinct_id, MIN(person_id) AS person_id\n    FROM identities\n    WHERE project = 'demo'\n    GROUP BY distinct_id\n  ) i ON i.distinct_id = e.distinct_id\n  WHERE e.project = 'demo'\n    AND e.ts_ms >= 1793873747020\n    AND e.ts_ms < 1793874547877\n    AND e.event IN ('$exposure', 'subscription_started')\n),\nx AS (\n  SELECT pid, MIN(ts_ms) AS t0, MIN((CASE json_type(props, '$.\"variant\"') WHEN 'true' THEN 'true' WHEN 'false' THEN 'false' WHEN 'null' THEN NULL ELSE CAST(json_extract(props, '$.\"variant\"') AS TEXT) END)) AS variant, COUNT(DISTINCT (CASE json_type(props, '$.\"variant\"') WHEN 'true' THEN 'true' WHEN 'false' THEN 'false' WHEN 'null' THEN NULL ELSE CAST(json_extract(props, '$.\"variant\"') AS TEXT) END)) AS nv\n  FROM ev\n  WHERE event = '$exposure' AND (CASE json_type(props, '$.\"flag\"') WHEN 'true' THEN 'true' WHEN 'false' THEN 'false' WHEN 'null' THEN NULL ELSE CAST(json_extract(props, '$.\"flag\"') AS TEXT) END) = 'annual-billing-nudge'\n  GROUP BY pid\n),\nxe AS (SELECT pid, t0, variant FROM x WHERE nv = 1),\ng AS (\n  SELECT xe.pid, SUM(0) AS total\n  FROM xe JOIN ev ON ev.pid = xe.pid\n  WHERE ev.event = 'subscription_started' AND ev.ts_ms >= xe.t0 AND 1 = 1\n  GROUP BY xe.pid\n)\nSELECT xe.variant AS variant,\n  COUNT(*) AS exposures,\n  SUM(CASE WHEN g.pid IS NULL THEN 0 ELSE 1 END) AS conversions,\n  SUM(COALESCE(g.total, 0)) AS value_sum,\n  SUM(COALESCE(g.total, 0) * COALESCE(g.total, 0)) AS value_sumsq,\n  MIN(xe.t0) AS first_exposure,\n  (SELECT COUNT(*) FROM x WHERE nv > 1) AS multi\nFROM xe LEFT JOIN g ON g.pid = xe.pid\nGROUP BY xe.variant"
     ],
     "range": {
-      "from": "2026-11-04T20:54:39.567Z",
-      "to": "2026-11-04T21:07:56.179Z"
+      "from": "2026-11-05T10:15:47.020Z",
+      "to": "2026-11-05T10:29:07.877Z"
     },
     "summary": "No exposures to \"annual-billing-nudge\" yet."
   },
   "summary": "[draft] No exposures to \"annual-billing-nudge\" yet.",
-  "dashboard": "http://127.0.0.1:55244/app#/experiments/annual-billing-nudge?project=demo"
+  "dashboard": "http://127.0.0.1:58904/app#/experiments/annual-billing-nudge?project=demo"
 }

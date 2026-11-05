@@ -1,5 +1,5 @@
 /**
- * HTTP client for a deployed Glass Worker.
+ * HTTP client for a deployed Dataflare Worker.
  */
 
 import { connection, UsageError } from './config.ts';
@@ -22,7 +22,7 @@ export async function call<T = Record<string, unknown>>(
   }).catch((err: unknown) => {
     throw new UsageError(
       `Could not reach ${conn.host}: ${err instanceof Error ? err.message : String(err)}`,
-      'Check your network, or run `glass status`.',
+      'Check your network, or run `dataflare status`.',
     );
   });
   const data = (await res.json().catch(() => ({}))) as { error?: string; hint?: string };

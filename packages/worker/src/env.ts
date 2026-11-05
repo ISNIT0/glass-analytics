@@ -2,9 +2,9 @@
  * The Worker's environment: Cloudflare bindings, vars and secrets.
  *
  * The binding interfaces below are the narrow slices of Cloudflare's APIs that
- * Glass actually uses. Real bindings satisfy them structurally; the test
+ * Dataflare actually uses. Real bindings satisfy them structurally; the test
  * harness implements them over SQLite and memory. Keeping them narrow documents
- * exactly what Glass depends on, and is what makes alternative backends easy.
+ * exactly what Dataflare depends on, and is what makes alternative backends easy.
  */
 
 export interface D1Result<T = Record<string, unknown>> {

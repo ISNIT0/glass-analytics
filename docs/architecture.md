@@ -1,6 +1,6 @@
 # Architecture
 
-Glass is one Worker, one D1 database and one R2 bucket in the user's Cloudflare account, plus a CLI that deploys them. The optional lake store adds Cloudflare Pipelines and Iceberg tables.
+Dataflare is one Worker, one D1 database and one R2 bucket in the user's Cloudflare account, plus a CLI that deploys them. The optional lake store adds Cloudflare Pipelines and Iceberg tables.
 
 ```
                     ┌──────────────────────── your Cloudflare account ─────────────────────────┐
@@ -51,18 +51,18 @@ The core tests execute every compiler on real SQLite against the production migr
 
 ## Packages
 
-| Package                     | Published                    |                                                            |
-| --------------------------- | ---------------------------- | ---------------------------------------------------------- |
-| `@glassanalytics/core`      | no (bundled)                 | Event model, SQL, stats, flags, replay summaries, snippets |
-| `@glassanalytics/web`       | npm                          | Browser SDK                                                |
-| `@glassanalytics/worker`    | no (bundled into the CLI)    | The Worker                                                 |
-| `@glassanalytics/dashboard` | no (bundled into the Worker) | The dashboard                                              |
-| `@glassanalytics/cli`       | npm                          | CLI, carrying the built Worker and migrations              |
+| Package                | Published                    |                                                            |
+| ---------------------- | ---------------------------- | ---------------------------------------------------------- |
+| `@dataflare/core`      | no (bundled)                 | Event model, SQL, stats, flags, replay summaries, snippets |
+| `dataflare-web`        | npm                          | Browser SDK                                                |
+| `@dataflare/worker`    | no (bundled into the CLI)    | The Worker                                                 |
+| `@dataflare/dashboard` | no (bundled into the Worker) | The dashboard                                              |
+| `dataflare`            | npm                          | CLI, carrying the built Worker and migrations              |
 
-Versioning the CLI and the Worker together means `npx @glassanalytics/cli@x upgrade` always deploys exactly the Worker that CLI was tested with.
+Versioning the CLI and the Worker together means `npx dataflare@x upgrade` always deploys exactly the Worker that CLI was tested with.
 
 ## Why not…
 
-- **Analytics Engine** for the web view: it samples and keeps three months of data. D1 is exact and real-time at the volumes most Glass users have, and the lake covers large volumes. An Analytics Engine accelerator for real-time tiles at scale is on the roadmap.
+- **Analytics Engine** for the web view: it samples and keeps three months of data. D1 is exact and real-time at the volumes most Dataflare users have, and the lake covers large volumes. An Analytics Engine accelerator for real-time tiles at scale is on the roadmap.
 - **A Durable Object per session** for replay: R2 objects per chunk plus a D1 index do the job with fewer moving parts.
-- **A web framework** in the Worker: the routing Glass needs is ~60 lines (`http.ts`), and fewer dependencies are easier to audit.
+- **A web framework** in the Worker: the routing Dataflare needs is ~60 lines (`http.ts`), and fewer dependencies are easier to audit.

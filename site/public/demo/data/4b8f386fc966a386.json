@@ -1,8 +1,8 @@
 {
   "project": "demo",
   "event": "subscription_started",
-  "sampled": 70,
-  "lastSeen": "2026-11-03T17:52:52.993Z",
+  "sampled": 79,
+  "lastSeen": "2026-11-05T07:14:00.440Z",
   "description": "Fired when the first payment succeeds and the plan becomes active.",
   "owner": "Growth",
   "properties": [
@@ -39,14 +39,14 @@
       "examples": [
         "90",
         "9",
-        "290",
-        "29"
+        "29",
+        "290"
       ],
       "description": "First charge in USD."
     }
   ],
-  "summary": "\"subscription_started\": 3 properties across the latest 70 events.",
+  "summary": "\"subscription_started\": 3 properties across the latest 79 events.",
   "sql": [
-    "SELECT props, ts_ms FROM events\nWHERE project = 'demo' AND event = 'subscription_started' AND ts_ms >= 1791234484128\nORDER BY ts_ms DESC LIMIT 500"
+    "SELECT props, ts_ms FROM events\nWHERE project = 'demo' AND event = 'subscription_started' AND ts_ms >= 1791282555845\nORDER BY ts_ms DESC LIMIT 500"
   ]
 }

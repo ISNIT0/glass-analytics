@@ -22,7 +22,7 @@ const pkg = (name: string, ...parts: string[]) => join(root, 'packages', name, .
 const sizes: [string, number, number][] = [];
 
 // The dashboard upgrade banner compares Worker /health.version to the latest
-// @glassanalytics/cli on npm. Those must stay in lockstep or upgrades look stuck.
+// dataflare on npm. Those must stay in lockstep or upgrades look stuck.
 {
   const cliVersion = JSON.parse(readFileSync(pkg('cli', 'package.json'), 'utf8')).version as string;
   const versionSrc = readFileSync(pkg('core', 'src', 'version.ts'), 'utf8');
@@ -77,7 +77,7 @@ await bundle({
   minify: true,
 });
 // Type declarations for the npm package. The SDK's public types are self-contained,
-// so the emitted .d.ts files never reference the private @glassanalytics/core package.
+// so the emitted .d.ts files never reference the private @dataflare/core package.
 execFileSync(
   process.execPath,
   [join(root, 'node_modules', 'typescript', 'bin', 'tsc'), '-p', pkg('web', 'tsconfig.build.json')],
@@ -144,7 +144,7 @@ await bundle({
   format: 'esm',
   target: 'node20',
   platform: 'node',
-  // Bundle @glassanalytics/* into the CLI so `npx @glassanalytics/cli` works
+  // Bundle @dataflare/* into the CLI so `npx dataflare` works
   // without installing workspace packages. Wrangler stays a real dependency.
   external: ['wrangler'],
   banner: { js: '#!/usr/bin/env node' },

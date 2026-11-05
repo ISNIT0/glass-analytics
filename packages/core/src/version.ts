@@ -1,12 +1,12 @@
 /**
- * The Glass release version. Reported by the Worker's /health endpoint and
- * compared to the latest `@glassanalytics/cli` on npm. Must match
+ * The Dataflare release version. Reported by the Worker's /health endpoint and
+ * compared to the latest `dataflare` on npm. Must match
  * `packages/cli/package.json` — `pnpm build` enforces that.
  */
 export const GLASS_VERSION = '0.5.0';
 
 /** Canonical command to bring a deployment up to date. */
-export const UPGRADE_COMMAND = 'npx @glassanalytics/cli@latest upgrade';
+export const UPGRADE_COMMAND = 'npx dataflare@latest upgrade';
 
 /** Parse a dotted version like "1.2.3" (pre-release suffixes ignored). */
 export function parseSemver(version: string): [number, number, number] | null {
@@ -28,5 +28,5 @@ export function isNewerThan(a: string, b: string): boolean {
 }
 
 export function upgradeMessage(deployed: string, latest: string): string {
-  return `This Glass deployment is ${deployed}; ${latest} is available. Ask the user to run: ${UPGRADE_COMMAND}`;
+  return `This Dataflare deployment is ${deployed}; ${latest} is available. Ask the user to run: ${UPGRADE_COMMAND}`;
 }

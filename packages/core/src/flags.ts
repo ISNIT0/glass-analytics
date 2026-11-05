@@ -6,7 +6,7 @@
  * a hash of the flag key and the user's `distinct_id` — so the browser, the
  * Worker and your own servers always agree, with no shared state.
  *
- * We hash `distinct_id` (the device id), not the user id, because Glass keeps
+ * We hash `distinct_id` (the device id), not the user id, because Dataflare keeps
  * `distinct_id` stable across `identify()`: logging in never flips a user's
  * experiment variant mid-session.
  */

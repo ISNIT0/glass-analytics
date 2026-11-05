@@ -2,7 +2,6 @@
   "kind": "trends",
   "interval": "day",
   "buckets": [
-    1791158400000,
     1791244800000,
     1791331200000,
     1791417600000,
@@ -32,57 +31,58 @@
     1793491200000,
     1793577600000,
     1793664000000,
-    1793750400000
+    1793750400000,
+    1793836800000
   ],
   "series": [
     {
       "label": "signup_completed",
       "breakdown": null,
       "values": [
-        0,
-        10,
-        16,
-        14,
-        10,
-        13,
+        4,
         11,
+        13,
+        23,
+        10,
+        9,
+        9,
+        13,
+        23,
+        28,
+        17,
+        10,
         6,
+        7,
+        10,
+        12,
         15,
-        35,
+        16,
         18,
-        6,
-        12,
-        8,
-        12,
-        13,
-        12,
-        10,
-        12,
+        11,
+        17,
         14,
-        8,
-        6,
-        13,
-        15,
+        11,
         14,
-        14,
-        10,
-        6,
-        10,
         19,
-        8
+        15,
+        10,
+        11,
+        13,
+        16,
+        11
       ],
-      "total": 370
+      "total": 416
     }
   ],
   "sql": [
-    "WITH ev AS (\n  SELECT e.*,\n    CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid\n  FROM events e\n  LEFT JOIN (\n    SELECT distinct_id, MIN(person_id) AS person_id\n    FROM identities\n    WHERE project = 'demo'\n    GROUP BY distinct_id\n  ) i ON i.distinct_id = e.distinct_id\n  WHERE e.project = 'demo'\n    AND e.ts_ms >= 1791234496479\n    AND e.ts_ms < 1793826496479\n    AND e.event IN ('signup_completed')\n)\nSELECT bucket, bd, COUNT(*) AS agg\nFROM (SELECT ((ts_ms / 86400000) * 86400000) AS bucket, '' AS bd, pid, session_id, NULL AS val\n    FROM ev WHERE 1 = 1) t\nGROUP BY bucket, bd\nORDER BY bucket\nLIMIT 50000",
-    "WITH ev AS (\n  SELECT e.*,\n    CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid\n  FROM events e\n  LEFT JOIN (\n    SELECT distinct_id, MIN(person_id) AS person_id\n    FROM identities\n    WHERE project = 'demo'\n    GROUP BY distinct_id\n  ) i ON i.distinct_id = e.distinct_id\n  WHERE e.project = 'demo'\n    AND e.ts_ms >= 1791234496479\n    AND e.ts_ms < 1793826496479\n    AND e.event IN ('signup_completed')\n)\nSELECT bd, COUNT(*) AS agg\nFROM (SELECT ((ts_ms / 86400000) * 86400000) AS bucket, '' AS bd, pid, session_id, NULL AS val\n    FROM ev WHERE 1 = 1) t\nGROUP BY bd\nORDER BY agg DESC\nLIMIT 1000"
+    "WITH ev AS (\n  SELECT e.*,\n    CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid\n  FROM events e\n  LEFT JOIN (\n    SELECT distinct_id, MIN(person_id) AS person_id\n    FROM identities\n    WHERE project = 'demo'\n    GROUP BY distinct_id\n  ) i ON i.distinct_id = e.distinct_id\n  WHERE e.project = 'demo'\n    AND e.ts_ms >= 1791282568230\n    AND e.ts_ms < 1793874568230\n    AND e.event IN ('signup_completed')\n)\nSELECT bucket, bd, COUNT(*) AS agg\nFROM (SELECT ((ts_ms / 86400000) * 86400000) AS bucket, '' AS bd, pid, session_id, NULL AS val\n    FROM ev WHERE 1 = 1) t\nGROUP BY bucket, bd\nORDER BY bucket\nLIMIT 50000",
+    "WITH ev AS (\n  SELECT e.*,\n    CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid\n  FROM events e\n  LEFT JOIN (\n    SELECT distinct_id, MIN(person_id) AS person_id\n    FROM identities\n    WHERE project = 'demo'\n    GROUP BY distinct_id\n  ) i ON i.distinct_id = e.distinct_id\n  WHERE e.project = 'demo'\n    AND e.ts_ms >= 1791282568230\n    AND e.ts_ms < 1793874568230\n    AND e.event IN ('signup_completed')\n)\nSELECT bd, COUNT(*) AS agg\nFROM (SELECT ((ts_ms / 86400000) * 86400000) AS bucket, '' AS bd, pid, session_id, NULL AS val\n    FROM ev WHERE 1 = 1) t\nGROUP BY bd\nORDER BY agg DESC\nLIMIT 1000"
   ],
   "range": {
-    "from": "2026-10-05T21:08:16.479Z",
-    "to": "2026-11-04T21:08:16.479Z"
+    "from": "2026-10-06T10:29:28.230Z",
+    "to": "2026-11-05T10:29:28.230Z"
   },
-  "summary": "2026-10-05 to 2026-11-04 by day. signup_completed: 370",
+  "summary": "2026-10-06 to 2026-11-05 by day. signup_completed: 416",
   "project": "demo",
-  "dashboard": "http://127.0.0.1:55244/app#/insights/trends?project=demo&spec=%7B%22from%22%3A%22-30d%22%2C%22series%22%3A%5B%7B%22event%22%3A%22signup_completed%22%7D%5D%2C%22interval%22%3A%22day%22%7D"
+  "dashboard": "http://127.0.0.1:58904/app#/insights/trends?project=demo&spec=%7B%22from%22%3A%22-30d%22%2C%22series%22%3A%5B%7B%22event%22%3A%22signup_completed%22%7D%5D%2C%22interval%22%3A%22day%22%7D"
 }

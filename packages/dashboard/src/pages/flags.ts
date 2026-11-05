@@ -2,7 +2,7 @@
  * Feature flags: list, create and edit.
  */
 
-import type { FlagDefinition } from '@glassanalytics/core/flags';
+import type { FlagDefinition } from '@dataflare/core/flags';
 import { api } from '../api.ts';
 import { icon } from '../components/icons.ts';
 import { toggle } from '../components/menu.ts';

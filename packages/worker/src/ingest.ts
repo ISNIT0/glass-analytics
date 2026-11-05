@@ -20,10 +20,10 @@ import {
   type StoredEvent,
   type WireBatch,
   type WireEvent,
-} from '@glassanalytics/core/events';
-import { sha256Hex } from '@glassanalytics/core/hash';
-import { isBot, parseUserAgent } from '@glassanalytics/core/ua';
-import { parsePage, referrerHost } from '@glassanalytics/core/url';
+} from '@dataflare/core/events';
+import { sha256Hex } from '@dataflare/core/hash';
+import { isBot, parseUserAgent } from '@dataflare/core/ua';
+import { parsePage, referrerHost } from '@dataflare/core/url';
 import type { D1Database, Env } from './env.ts';
 import { HttpError, readJson } from './http.ts';
 import { getProject } from './projects.ts';
@@ -80,7 +80,7 @@ export async function handleIngest(
     throw new HttpError(
       404,
       `Unknown project "${batch.project}"`,
-      'Create it with `glass projects add <id>` or check data-project.',
+      'Create it with `dataflare projects add <id>` or check data-project.',
     );
   }
   if (

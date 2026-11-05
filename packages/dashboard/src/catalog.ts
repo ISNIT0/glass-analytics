@@ -42,7 +42,7 @@ export interface PropertyValue {
 }
 
 const SYSTEM_DOCS: Record<string, string> = {
-  $pageview: 'Automatic page view captured by the Glass snippet whenever the URL changes.',
+  $pageview: 'Automatic page view captured by the Dataflare snippet whenever the URL changes.',
   $pageleave: 'Fired when the user leaves a page (tab hide or navigation). Used for time-on-page.',
   $click: 'Automatic click on links, buttons and elements with data-glass-event.',
   $exception: 'Uncaught JavaScript error or unhandled promise rejection.',

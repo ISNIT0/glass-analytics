@@ -23,8 +23,8 @@
  * search, sorting and cross-session analysis don't re-read every chunk.
  */
 
-import type { RrwebEvent } from '@glassanalytics/core/replay-summary';
-import { parseUserAgent } from '@glassanalytics/core/ua';
+import type { RrwebEvent } from '@dataflare/core/replay-summary';
+import { parseUserAgent } from '@dataflare/core/ua';
 import type { D1Database, Env, R2Bucket } from './env.ts';
 import { HttpError } from './http.ts';
 import { cookielessIds, requestInfo } from './ingest.ts';
@@ -43,7 +43,7 @@ function requireBucket(env: Env): R2Bucket {
     throw new HttpError(
       501,
       'Session replay is not enabled on this deployment',
-      'Enable R2 on your Cloudflare account, then run `glass upgrade`.',
+      'Enable R2 on your Cloudflare account, then run `dataflare upgrade`.',
     );
   }
   return env.REPLAYS;

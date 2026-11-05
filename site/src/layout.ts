@@ -62,13 +62,13 @@ export const FOOTER: { title: string; links: [string, string][] }[] = [
   {
     title: 'Compare',
     links: [
-      ['Glass vs PostHog', '/vs/posthog/'],
-      ['Glass vs Google Analytics', '/vs/google-analytics/'],
-      ['Glass vs Plausible', '/vs/plausible/'],
-      ['Glass vs Amplitude', '/vs/amplitude/'],
-      ['Glass vs Mixpanel', '/vs/mixpanel/'],
-      ['Glass vs Umami', '/vs/umami/'],
-      ['Glass vs Cloudflare Web Analytics', '/vs/cloudflare-web-analytics/'],
+      ['Dataflare vs PostHog', '/vs/posthog/'],
+      ['Dataflare vs Google Analytics', '/vs/google-analytics/'],
+      ['Dataflare vs Plausible', '/vs/plausible/'],
+      ['Dataflare vs Amplitude', '/vs/amplitude/'],
+      ['Dataflare vs Mixpanel', '/vs/mixpanel/'],
+      ['Dataflare vs Umami', '/vs/umami/'],
+      ['Dataflare vs Cloudflare Web Analytics', '/vs/cloudflare-web-analytics/'],
     ],
   },
   {
@@ -115,7 +115,7 @@ export function layout(o: PageOptions): string {
     ? {
         '@context': 'https://schema.org',
         '@type': 'BreadcrumbList',
-        itemListElement: [{ name: 'Glass', path: '/' }, ...o.crumbs].map((c, i) => ({
+        itemListElement: [{ name: 'Dataflare', path: '/' }, ...o.crumbs].map((c, i) => ({
           '@type': 'ListItem',
           position: i + 1,
           name: c.name,
@@ -131,7 +131,7 @@ export function layout(o: PageOptions): string {
     .join('\n');
   const glass = GLASS_HOST
     ? `<script defer src="${GLASS_HOST}/s.js" data-project="${GLASS_PROJECT}" data-persistence="cookieless"></script>`
-    : '<!-- Glass measures this site with Glass once GLASS_HOST is set in site/src/config.ts. -->';
+    : '<!-- Dataflare measures this site with Dataflare once GLASS_HOST is set in site/src/config.ts. -->';
   const active = (href: string) => (o.path.startsWith(href) ? ' aria-current="page"' : '');
   return `<!doctype html>
 <html lang="en">
@@ -143,7 +143,7 @@ export function layout(o: PageOptions): string {
 <link rel="canonical" href="${url}">
 ${o.noindex ? '<meta name="robots" content="noindex">' : ''}
 <meta property="og:type" content="website">
-<meta property="og:site_name" content="Glass Analytics">
+<meta property="og:site_name" content="Dataflare Analytics">
 <meta property="og:title" content="${esc(o.title)}">
 <meta property="og:description" content="${esc(o.description)}">
 <meta property="og:url" content="${url}">
@@ -167,12 +167,12 @@ ${pixel.body}
 <a class="skip" href="#main">Skip to content</a>
 <header class="site-header">
   <div class="header-inner">
-    <a class="brand" href="/">${MARK}<span>Glass</span></a>
+    <a class="brand" href="/">${MARK}<span>Dataflare</span></a>
     <nav class="nav" aria-label="Site">
       ${NAV.map(([label, href]) => `<a href="${href}"${active(href)}>${label}</a>`).join('\n      ')}
     </nav>
     <div class="header-actions">
-      <a class="icon-link" href="${REPO}" aria-label="Glass on GitHub">${GITHUB_ICON}</a>
+      <a class="icon-link" href="${REPO}" aria-label="Dataflare on GitHub">${GITHUB_ICON}</a>
       <a class="button small primary" href="/docs/getting-started/">Get started</a>
     </div>
     <button class="menu-button" type="button" aria-expanded="false" aria-controls="mobile-nav" aria-label="Menu"><span></span><span></span></button>
@@ -188,7 +188,7 @@ ${o.body}
 <footer class="site-footer">
   <div class="footer-inner">
     <div class="footer-brand">
-      <a class="brand" href="/">${MARK}<span>Glass</span></a>
+      <a class="brand" href="/">${MARK}<span>Dataflare</span></a>
       <p>Open-source analytics that runs in your own Cloudflare account. MIT licensed.</p>
       <div class="command small" data-copy-source><code><span class="prompt" aria-hidden="true">$ </span>${INSTALL}</code><button type="button" class="copy" data-copy="${INSTALL}" data-event="install_command_copied">Copy</button></div>
     </div>
@@ -199,7 +199,7 @@ ${o.body}
           .join('')}</ul></div>`,
     ).join('\n    ')}
   </div>
-  <p class="footer-note">Glass is an independent open-source project, not affiliated with Cloudflare. Prices on this site are Cloudflare's list prices; your bill comes from Cloudflare.</p>
+  <p class="footer-note">Dataflare is an independent open-source project, not affiliated with Cloudflare. Prices on this site are Cloudflare's list prices; your bill comes from Cloudflare.</p>
 </footer>
 </body>
 </html>

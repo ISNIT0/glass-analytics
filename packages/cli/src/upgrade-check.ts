@@ -3,7 +3,7 @@
  * latest published release. Agents and humans both see it on normal commands.
  */
 
-import { GLASS_VERSION, UPGRADE_COMMAND } from '@glassanalytics/core/version';
+import { GLASS_VERSION, UPGRADE_COMMAND } from '@dataflare/core/version';
 import { call } from './client.ts';
 import { skip } from './output.ts';
 
@@ -24,12 +24,12 @@ export async function warnIfOutdated(options: { json?: boolean } = {}): Promise<
     const command = health.upgradeCommand ?? UPGRADE_COMMAND;
     if (health.upgradeAvailable && health.latest) {
       skip(
-        `Glass ${health.latest} is available (this deployment is ${health.version}). Run: ${command}`,
+        `Dataflare ${health.latest} is available (this deployment is ${health.version}). Run: ${command}`,
       );
       return;
     }
     if (health.version !== GLASS_VERSION) {
-      skip(`Worker is Glass ${health.version}; this CLI is ${GLASS_VERSION}. Run: ${command}`);
+      skip(`Worker is Dataflare ${health.version}; this CLI is ${GLASS_VERSION}. Run: ${command}`);
     }
   } catch {
     // Offline / misconfigured projects still need the original command's error.

@@ -10,7 +10,7 @@
  * To add a tool: add an entry to TOOLS. See docs/extending.md.
  */
 
-import { INSIGHTS, sqlSpec } from '@glassanalytics/core/insights';
+import { INSIGHTS, sqlSpec } from '@dataflare/core/insights';
 import { z } from 'zod/v4';
 import type { Scope } from '../auth.ts';
 import { type GlassService, inputs } from '../service.ts';
@@ -87,7 +87,7 @@ export const TOOLS: ToolDefinition[] = [
     name: 'instrument',
     title: 'Get tracking code',
     description:
-      'The exact code to install Glass and capture a named event in a given framework, plus naming warnings. After deploy, describe_event then define_event with how/when and property meanings.',
+      'The exact code to install Dataflare and capture a named event in a given framework, plus naming warnings. After deploy, describe_event then define_event with how/when and property meanings.',
     input: inputs.instrument,
     scope: 'read',
     run: (s, a) => s.instrument(a),
@@ -226,7 +226,7 @@ export const TOOLS: ToolDefinition[] = [
     name: 'usage_and_cost',
     title: 'Usage and cost',
     description:
-      'What this Glass deployment adds to the Cloudflare bill: events, requests, D1 writes and storage, replay storage, projected per month and priced against Workers Paid allowances, with recommendations (replay sampling, the lake store, retention, noisy events) and a prompt for each.',
+      'What this Dataflare deployment adds to the Cloudflare bill: events, requests, D1 writes and storage, replay storage, projected per month and priced against Workers Paid allowances, with recommendations (replay sampling, the lake store, retention, noisy events) and a prompt for each.',
     input: inputs.usage,
     scope: 'read',
     run: (s, a) => s.usage(a),
@@ -347,7 +347,7 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: 'list_projects',
     title: 'List projects',
-    description: 'Projects (sites or apps) in this Glass install.',
+    description: 'Projects (sites or apps) in this Dataflare install.',
     input: z.object({}),
     scope: 'read',
     run: (s) => s.listProjects(),

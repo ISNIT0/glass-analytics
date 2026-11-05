@@ -1,5 +1,5 @@
 /**
- * Local implementations of the Cloudflare bindings Glass uses, so the real
+ * Local implementations of the Cloudflare bindings Dataflare uses, so the real
  * Worker code runs in Node for tests and for `pnpm dev`:
  *
  * - D1 → node:sqlite (the same SQLite engine D1 runs)
@@ -62,7 +62,7 @@ class Statement implements D1PreparedStatement {
   }
 }
 
-/** D1 over node:sqlite, with the Glass migrations applied. */
+/** D1 over node:sqlite, with the Dataflare migrations applied. */
 export class SqliteD1 implements D1Database {
   readonly sqlite: DatabaseSync;
 

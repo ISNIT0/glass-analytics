@@ -127,7 +127,7 @@ function sidebar(route: Route): HTMLElement {
         'a',
         { class: 'brand', href: href('reports') },
         h('span', { class: 'mark', 'aria-hidden': 'true' }),
-        h('span', { class: 'brand-name' }, 'Glass'),
+        h('span', { class: 'brand-name' }, 'Dataflare'),
       ),
       h(
         'button',
@@ -192,7 +192,7 @@ function sidebar(route: Route): HTMLElement {
         icon(theme.icon, 16),
         h('span', { class: 'nav-label' }, theme.label),
       ),
-      version ? h('div', { class: 'sidebar-version nav-label' }, `Glass ${version}`) : null,
+      version ? h('div', { class: 'sidebar-version nav-label' }, `Dataflare ${version}`) : null,
     ),
   );
 }
@@ -247,8 +247,8 @@ function upgradeNotice(): HTMLElement | null {
       h(
         'p',
         {},
-        'A read-only demo with sample data from a made-up writing app. Your own Glass runs in your Cloudflare account: ',
-        h('code', {}, 'npx @glassanalytics/cli init'),
+        'A read-only demo with sample data from a made-up writing app. Your own Dataflare runs in your Cloudflare account: ',
+        h('code', {}, 'npx dataflare init'),
       ),
       h(
         'a',
@@ -271,7 +271,7 @@ function upgradeNotice(): HTMLElement | null {
     h(
       'p',
       {},
-      `Glass ${info.latest} is available (this deployment is ${info.version}). Run `,
+      `Dataflare ${info.latest} is available (this deployment is ${info.version}). Run `,
       h('code', {}, info.command),
       ` in your project to upgrade.`,
     ),
@@ -509,7 +509,7 @@ function render(): void {
     ),
   );
   mount(content, page.render(route));
-  document.title = `${page.label} · Glass`;
+  document.title = `${page.label} · Dataflare`;
 }
 
 async function start(): Promise<void> {
@@ -542,7 +542,7 @@ async function start(): Promise<void> {
         ? {
             version: health.version,
             latest: health.latest,
-            command: health.upgradeCommand ?? 'npx @glassanalytics/cli@latest upgrade',
+            command: health.upgradeCommand ?? 'npx dataflare@latest upgrade',
           }
         : null;
   } catch {

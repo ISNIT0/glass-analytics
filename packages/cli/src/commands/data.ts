@@ -1,13 +1,13 @@
 /**
- * Query commands: `glass query`, `glass sql`, `glass events`, `glass person`,
- * `glass replays`, `glass projects`. Human-readable by default, `--json` for
+ * Query commands: `dataflare query`, `dataflare sql`, `dataflare events`, `dataflare person`,
+ * `dataflare replays`, `dataflare projects`. Human-readable by default, `--json` for
  * agents and scripts.
  */
 
-import type { FunnelResult } from '@glassanalytics/core/insights/funnel';
-import type { RetentionResult } from '@glassanalytics/core/insights/retention';
-import type { TrendsResult } from '@glassanalytics/core/insights/trends';
-import type { WebResult } from '@glassanalytics/core/insights/web';
+import type { FunnelResult } from '@dataflare/core/insights/funnel';
+import type { RetentionResult } from '@dataflare/core/insights/retention';
+import type { TrendsResult } from '@dataflare/core/insights/trends';
+import type { WebResult } from '@dataflare/core/insights/web';
 import { call, withProject } from '../client.ts';
 import { UsageError } from '../config.ts';
 import { color, line, pct, printJson, table } from '../output.ts';
@@ -47,7 +47,7 @@ function specFromFlags(kind: string, flags: Flags): Record<string, unknown> {
     case 'trends': {
       const events = str(flags.event)?.split(',') ?? [];
       if (!events.length)
-        throw new UsageError('`glass query trends` needs --event <name>[,<name>…]');
+        throw new UsageError('`dataflare query trends` needs --event <name>[,<name>…]');
       return {
         ...common,
         filters,
@@ -61,7 +61,7 @@ function specFromFlags(kind: string, flags: Flags): Record<string, unknown> {
     }
     case 'funnel': {
       const steps = str(flags.steps)?.split(',') ?? [];
-      if (steps.length < 2) throw new UsageError('`glass query funnel` needs --steps a,b[,c…]');
+      if (steps.length < 2) throw new UsageError('`dataflare query funnel` needs --steps a,b[,c…]');
       return {
         ...common,
         filters,
@@ -73,7 +73,7 @@ function specFromFlags(kind: string, flags: Flags): Record<string, unknown> {
       const cohort = str(flags.cohort);
       if (!cohort)
         throw new UsageError(
-          '`glass query retention` needs --cohort <event> (and optionally --return <event>)',
+          '`dataflare query retention` needs --cohort <event> (and optionally --return <event>)',
         );
       return {
         from: common.from,
@@ -88,7 +88,7 @@ function specFromFlags(kind: string, flags: Flags): Record<string, unknown> {
     default:
       throw new UsageError(
         `Unknown query "${kind}".`,
-        'Use web, trends, funnel or retention (or `glass sql`).',
+        'Use web, trends, funnel or retention (or `dataflare sql`).',
       );
   }
 }
@@ -97,7 +97,7 @@ export async function query(kind: string | undefined, flags: Flags): Promise<voi
   if (!kind)
     throw new UsageError(
       'Which query?',
-      'glass query web|trends|funnel|retention [options]; see `glass help query`.',
+      'dataflare query web|trends|funnel|retention [options]; see `dataflare help query`.',
     );
   const result = await call<
     Record<string, unknown> & { summary: string; sql: string[]; dashboard: string }
@@ -166,7 +166,7 @@ export async function query(kind: string | undefined, flags: Flags): Promise<voi
 export async function sql(statement: string | undefined, flags: Flags): Promise<void> {
   if (!statement)
     throw new UsageError(
-      'Pass a query: glass sql "SELECT event, COUNT(*) AS n FROM events GROUP BY event"',
+      'Pass a query: dataflare sql "SELECT event, COUNT(*) AS n FROM events GROUP BY event"',
     );
   const r = await call<{ columns: string[]; rows: Record<string, unknown>[]; summary: string }>(
     'POST',
@@ -244,7 +244,7 @@ export async function events(name: string | undefined, flags: Flags): Promise<vo
 }
 
 export async function person(id: string | undefined, flags: Flags): Promise<void> {
-  if (!id) throw new UsageError('Pass a person id: glass person <user-id>');
+  if (!id) throw new UsageError('Pass a person id: dataflare person <user-id>');
   const q = str(flags.project) ? `?project=${encodeURIComponent(str(flags.project)!)}` : '';
   if (flags.delete) {
     const r = await call<{ summary: string }>(
@@ -289,7 +289,7 @@ export async function replays(
   if (sub === 'summary' || sub === 'show') {
     const r = await call<{ transcript: string }>(
       'GET',
-      `/api/replays/${session('glass replays summary <session>')}/summary${q({ detail: flags.full ? 'full' : undefined })}`,
+      `/api/replays/${session('dataflare replays summary <session>')}/summary${q({ detail: flags.full ? 'full' : undefined })}`,
     );
     return flags.json ? printJson(r) : line(r.transcript);
   }
@@ -297,12 +297,12 @@ export async function replays(
     const at = str(flags.at);
     if (!at)
       throw new UsageError(
-        'Pass a time: glass replays snapshot <session> --at 01:24',
+        'Pass a time: dataflare replays snapshot <session> --at 01:24',
         'Times are mm:ss from the start of the transcript.',
       );
     const r = await call<{ summary: string; screen: string }>(
       'GET',
-      `/api/replays/${session('glass replays snapshot <session> --at 01:24')}/snapshot${q({ at })}`,
+      `/api/replays/${session('dataflare replays snapshot <session> --at 01:24')}/snapshot${q({ at })}`,
     );
     if (flags.json) return printJson(r);
     line(color.bold(r.summary));
@@ -314,11 +314,11 @@ export async function replays(
     const text = str(flags.text);
     if (!at || !text)
       throw new UsageError(
-        'Pass a time and text: glass replays note <session> --at 00:14 --text "…"',
+        'Pass a time and text: dataflare replays note <session> --at 00:14 --text "…"',
       );
     const r = await call<{ summary: string }>(
       'POST',
-      `/api/replays/${session('glass replays note <session> --at 00:14 --text "…"')}/notes${q()}`,
+      `/api/replays/${session('dataflare replays note <session> --at 00:14 --text "…"')}/notes${q()}`,
       { at, text, author: str(flags.author) },
     );
     return flags.json ? printJson(r) : line(r.summary);
@@ -349,7 +349,7 @@ export async function replays(
   if (sub)
     throw new UsageError(
       `Unknown replays command "${sub}"`,
-      'Use: glass replays [summary|snapshot|note|analyse].',
+      'Use: dataflare replays [summary|snapshot|note|analyse].',
     );
   const r = await call<{
     summary: string;
@@ -388,7 +388,7 @@ export async function projects(
   flags: Flags,
 ): Promise<void> {
   if (sub === 'add') {
-    if (!arg) throw new UsageError('Pass an id: glass projects add <id>');
+    if (!arg) throw new UsageError('Pass an id: dataflare projects add <id>');
     const r = await call<{ summary: string }>('POST', '/api/projects', {
       id: arg,
       name: str(flags.name),

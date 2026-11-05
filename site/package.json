@@ -1,9 +1,9 @@
 {
-  "name": "@glassanalytics/site",
+  "name": "@dataflare/site",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "The Glass website: static pages built from the docs and the product (see build.ts).",
+  "description": "The Dataflare website: static pages built from the docs and the product (see build.ts).",
   "scripts": {
     "build": "node build.ts",
     "dev": "node build.ts && wrangler dev"

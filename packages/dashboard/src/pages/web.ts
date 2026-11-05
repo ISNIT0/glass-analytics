@@ -6,7 +6,7 @@
  * period draws the dashed line on the main chart.
  */
 
-import type { BreakdownRow, WebBreakdown, WebResult } from '@glassanalytics/core/insights/web';
+import type { BreakdownRow, WebBreakdown, WebResult } from '@dataflare/core/insights/web';
 import { api } from '../api.ts';
 import { barList, lineChart, sparkline } from '../components/charts.ts';
 import { previousRange } from '../components/date-range.ts';
@@ -511,7 +511,7 @@ function segmentPage(route: Route): Node[] {
   const filters = [...apiFilters(), { property: filterProperty, value }];
   const sc = scope();
   const isSource = property.startsWith('utm_') || property === 'referrer_host';
-  const prompt = `Use the Glass MCP tools to analyse traffic where ${property} is "${value}" for ${sc.from}${sc.to ? ` to ${sc.to}` : ''}: query_web and query_sources with the filter {"property":"${filterProperty}","value":"${value}"}, compared with all traffic. Tell me how it performs (visitors, bounce, conversion), which landing pages and campaigns work for it, watch a few of its sessions (list_replays with that filter), and what to change.`;
+  const prompt = `Use the Dataflare MCP tools to analyse traffic where ${property} is "${value}" for ${sc.from}${sc.to ? ` to ${sc.to}` : ''}: query_web and query_sources with the filter {"property":"${filterProperty}","value":"${value}"}, compared with all traffic. Tell me how it performs (visitors, bounce, conversion), which landing pages and campaigns work for it, watch a few of its sessions (list_replays with that filter), and what to change.`;
   return [
     h(
       'div',

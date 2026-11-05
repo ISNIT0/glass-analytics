@@ -1,7 +1,7 @@
 /**
  * SQL dialects.
  *
- * Glass compiles every query (trends, funnels, retention, web stats, experiment
+ * Dataflare compiles every query (trends, funnels, retention, web stats, experiment
  * results) to SQL that runs on two engines:
  *
  * - `sqlite`: Cloudflare D1, the default event store (and the test suite).

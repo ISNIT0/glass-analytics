@@ -29,20 +29,20 @@ export interface HeroLayout {
 
 export const FAQ: [string, string][] = [
   [
-    'Is Glass free?',
+    'Is Dataflare free?',
     'The software is free and MIT licensed. It runs in your Cloudflare account, so you pay Cloudflare\'s list prices and nothing else. A small site fits in the Workers Free plan ($0). Above that, the Workers Paid plan is $5 a month and includes 10 million requests and 50 million D1 rows written; most sites never go past it. The <a href="/pricing/">calculator</a> shows your number.',
   ],
   [
     'Where is my data stored?',
-    'In a D1 database and an R2 bucket in your own Cloudflare account. There is no Glass server: nothing is sent to the Glass project or any third party. Add <code>--eu</code> at install to keep data in the EU jurisdiction.',
+    'In a D1 database and an R2 bucket in your own Cloudflare account. There is no Dataflare server: nothing is sent to the Dataflare project or any third party. Add <code>--eu</code> at install to keep data in the EU jurisdiction.',
   ],
   [
     'Does my site have to be on Cloudflare?',
-    'No. Any website or app can send events to the Glass Worker on its <code>workers.dev</code> address. If your domain is on Cloudflare, you can also serve Glass from a path on it (<code>--route example.com</code> serves it at <code>/_glass</code>), which keeps it first-party and out of reach of most ad blockers.',
+    'No. Any website or app can send events to the Dataflare Worker on its <code>workers.dev</code> address. If your domain is on Cloudflare, you can also serve Dataflare from a path on it (<code>--route example.com</code> serves it at <code>/_glass</code>), which keeps it first-party and out of reach of most ad blockers.',
   ],
   [
     'Do I need a cookie banner?',
-    'In cookieless mode Glass stores nothing on the device and never stores IP addresses. Whether you need consent depends on your jurisdiction and on everything else your site does, so take your own legal advice. <a href="/guides/cookieless-analytics/">How cookieless mode works</a>.',
+    'In cookieless mode Dataflare stores nothing on the device and never stores IP addresses. Whether you need consent depends on your jurisdiction and on everything else your site does, so take your own legal advice. <a href="/guides/cookieless-analytics/">How cookieless mode works</a>.',
   ],
   [
     'What happens when I outgrow D1?',
@@ -50,11 +50,11 @@ export const FAQ: [string, string][] = [
   ],
   [
     'Can my coding agent use it?',
-    '<code>glass init</code> writes <code>AGENTS.md</code>, a Claude Code skill and an MCP server entry into your project. The agent can then query trends, funnels, retention, people and replays, run read-only SQL, and create flags and experiments. Every answer comes with the SQL that produced it and a dashboard link.',
+    '<code>dataflare init</code> writes <code>AGENTS.md</code>, a Claude Code skill and an MCP server entry into your project. The agent can then query trends, funnels, retention, people and replays, run read-only SQL, and create flags and experiments. Every answer comes with the SQL that produced it and a dashboard link.',
   ],
   [
     'How is it different from PostHog?',
-    'PostHog is a hosted platform with many more products. Glass covers the core (web and product analytics, replay, flags and experiments) and runs in your own Cloudflare account, with no vendor bill. <a href="/vs/posthog/">Full comparison</a>.',
+    'PostHog is a hosted platform with many more products. Dataflare covers the core (web and product analytics, replay, flags and experiments) and runs in your own Cloudflare account, with no vendor bill. <a href="/vs/posthog/">Full comparison</a>.',
   ],
   [
     'Can I get my data out?',
@@ -62,7 +62,7 @@ export const FAQ: [string, string][] = [
   ],
   [
     'Is it ready for production?',
-    'Glass is new (0.x) and used in production by its authors. The D1 store, SDK, dashboard, MCP server and CLI are covered by unit, integration and browser end-to-end tests. The lake store is marked beta because it depends on Cloudflare products that are themselves in beta.',
+    'Dataflare is new (0.x) and used in production by its authors. The D1 store, SDK, dashboard, MCP server and CLI are covered by unit, integration and browser end-to-end tests. The lake store is marked beta because it depends on Cloudflare products that are themselves in beta.',
   ],
 ];
 
@@ -90,7 +90,7 @@ const TOUR: {
     ],
     shot: 'web',
     dark: true,
-    alt: 'Glass web analytics report: visitors, page views, sessions and bounce rate with a 30-day chart against the previous period, and tables of pages, countries and devices.',
+    alt: 'Dataflare web analytics report: visitors, page views, sessions and bounce rate with a 30-day chart against the previous period, and tables of pages, countries and devices.',
     demo: '/demo/#/reports?project=demo&from=-30d',
     docs: '/docs/queries/#web',
   },
@@ -106,7 +106,7 @@ const TOUR: {
     ],
     shot: 'funnel',
     dark: true,
-    alt: 'A Glass funnel from visit to signup to payment, with conversion and drop-off at each step.',
+    alt: 'A Dataflare funnel from visit to signup to payment, with conversion and drop-off at each step.',
     demo: '/demo/#/insights?project=demo&from=-30d',
     docs: '/docs/queries/',
   },
@@ -122,7 +122,7 @@ const TOUR: {
     ],
     shot: 'replay',
     dark: true,
-    alt: 'A Glass session replay: the recorded page on the left and a timeline of clicks, a TypeError, a failed request and rage clicks on the right.',
+    alt: 'A Dataflare session replay: the recorded page on the left and a timeline of clicks, a TypeError, a failed request and rage clicks on the right.',
     demo: '/demo/#/replays?project=demo&from=-7d',
     docs: '/docs/sdk/#session-replay',
   },
@@ -138,7 +138,7 @@ const TOUR: {
     ],
     shot: 'experiment',
     dark: true,
-    alt: 'A Glass experiment: the test variant converts at 23.9% against 16.8% for control, with a 98% chance to beat control.',
+    alt: 'A Dataflare experiment: the test variant converts at 23.9% against 16.8% for control, with a 98% chance to beat control.',
     demo: '/demo/#/experiments/pricing-page-v2?project=demo&from=-30d',
     docs: '/docs/experiments/',
   },
@@ -154,7 +154,7 @@ const TOUR: {
     ],
     shot: 'sql',
     dark: true,
-    alt: 'The Glass SQL editor with a query grouping events by name, and the results as a table.',
+    alt: 'The Dataflare SQL editor with a query grouping events by name, and the results as a table.',
     demo: '/demo/#/sql?project=demo&from=-7d',
     docs: '/docs/queries/#sql',
   },
@@ -167,7 +167,7 @@ function heroFigure(sql: string, layout: HeroLayout): string {
   <div class="frame">
     <div class="frame-bar" aria-hidden="true"><span></span><span></span><span></span><em>glass.your-domain.workers.dev/app</em></div>
     <div class="frame-body" style="${vars('sql', layout.sql)};${vars('chart', layout.chart)}">
-      ${shot('web', 'The Glass dashboard: a web analytics report with visitors, page views, sessions and bounce rate, a 30-day chart, and tables of pages, countries and devices.', { dark: true, eager: true })}
+      ${shot('web', 'The Dataflare dashboard: a web analytics report with visitors, page views, sessions and bounce rate, a 30-day chart, and tables of pages, countries and devices.', { dark: true, eager: true })}
       <button type="button" class="sql-hotspot" aria-pressed="false" aria-controls="hero-sql" data-event="hero_sql_toggled"><span class="visually-hidden">Show the SQL behind this chart</span></button>
       <div class="sql-glass" id="hero-sql" hidden>
         <div class="sql-glass-head"><span>The query behind this chart</span><button type="button" class="sql-close" aria-label="Hide the SQL">×</button></div>
@@ -175,13 +175,13 @@ function heroFigure(sql: string, layout: HeroLayout): string {
       </div>
     </div>
   </div>
-  <figcaption><span class="hint-dot" aria-hidden="true"></span>Every number in Glass comes with the SQL that produced it. Flip the <strong>SQL</strong> switch to look through the chart.</figcaption>
+  <figcaption><span class="hint-dot" aria-hidden="true"></span>Every number in Dataflare comes with the SQL that produced it. Flip the <strong>SQL</strong> switch to look through the chart.</figcaption>
 </figure>`;
 }
 
 const DIAGRAM = `<svg class="diagram" viewBox="0 0 760 330" role="img" aria-labelledby="diagram-title diagram-desc">
-  <title id="diagram-title">How Glass is deployed</title>
-  <desc id="diagram-desc">Browsers, coding agents and you talk to a Glass Worker inside your own Cloudflare account. The Worker stores events, people, flags and experiments in D1 and session recordings in R2.</desc>
+  <title id="diagram-title">How Dataflare is deployed</title>
+  <desc id="diagram-desc">Browsers, coding agents and you talk to a Dataflare Worker inside your own Cloudflare account. The Worker stores events, people, flags and experiments in D1 and session recordings in R2.</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker>
   </defs>
@@ -201,7 +201,7 @@ const DIAGRAM = `<svg class="diagram" viewBox="0 0 760 330" role="img" aria-labe
   </g>
   <g font-size="14">
     <rect class="d-worker" x="298" y="118" width="168" height="94" rx="14"/>
-    <text x="382" y="152" text-anchor="middle" font-weight="700" class="d-on">Glass Worker</text>
+    <text x="382" y="152" text-anchor="middle" font-weight="700" class="d-on">Dataflare Worker</text>
     <text x="382" y="174" text-anchor="middle" class="d-on-muted">ingest · flags · API</text>
     <text x="382" y="193" text-anchor="middle" class="d-on-muted">dashboard · MCP</text>
     <rect class="d-store" x="562" y="62" width="172" height="70" rx="12"/>
@@ -225,7 +225,7 @@ export function homePage(f: Facts): string {
 <section class="hero">
   <div class="hero-glow" aria-hidden="true"></div>
   <div class="hero-inner">
-    <a class="pill" href="/changelog/"><span>New</span> Glass ${esc(f.version)}: explorable reports, key events and a cost page</a>
+    <a class="pill" href="/changelog/"><span>New</span> Dataflare ${esc(f.version)}: explorable reports, key events and a cost page</a>
     <h1>Product analytics that lives in <em>your</em> Cloudflare account.</h1>
     <p class="lede">Web analytics, funnels and retention, session replay, feature flags and A/B tests. Open source, deployed with one command, and ready for your coding agent. Your data never leaves your account.</p>
     <div class="hero-actions">
@@ -240,7 +240,7 @@ export function homePage(f: Facts): string {
   </div>
 </section>
 
-<section class="facts" aria-label="Glass at a glance">
+<section class="facts" aria-label="Dataflare at a glance">
   <ul>
     <li><strong>MIT</strong><span>open source</span></li>
     <li><strong>${esc(f.sdkKb)} KB</strong><span>browser SDK, gzipped</span></li>
@@ -254,7 +254,7 @@ export function homePage(f: Facts): string {
   <div class="section-head">
     <p class="eyebrow">One event stream, five tools</p>
     <h2 id="tour-title">Everything a product team checks, in one place</h2>
-    <p>Glass replaces the separate tools for web stats, product analytics, session replay and experiments. They share one event stream, so a funnel step links to the replays of the people who dropped out, and an experiment reads the same events as your reports.</p>
+    <p>Dataflare replaces the separate tools for web stats, product analytics, session replay and experiments. They share one event stream, so a funnel step links to the replays of the people who dropped out, and an experiment reads the same events as your reports.</p>
   </div>
   <div class="tabs" role="tablist" aria-label="Product tour">
     ${TOUR.map((t, i) => `<button type="button" role="tab" id="tab-${t.id}" aria-controls="panel-${t.id}" aria-selected="${i === 0}" tabindex="${i === 0 ? 0 : -1}">${t.label}</button>`).join('\n    ')}
@@ -278,8 +278,8 @@ export function homePage(f: Facts): string {
 <section class="section how" aria-labelledby="how-title">
   <div class="section-head">
     <p class="eyebrow">How it works</p>
-    <h2 id="how-title">No Glass server. No Glass account. No Glass bill.</h2>
-    <p>Glass is a Worker, a D1 database and an R2 bucket in your own Cloudflare account. The Worker that runs is the open-source code in the repository.</p>
+    <h2 id="how-title">No Dataflare server. No Dataflare account. No Dataflare bill.</h2>
+    <p>Dataflare is a Worker, a D1 database and an R2 bucket in your own Cloudflare account. The Worker that runs is the open-source code in the repository.</p>
   </div>
   <div class="how-grid">
     <ol class="steps">
@@ -305,11 +305,11 @@ export function homePage(f: Facts): string {
     <div>
       <p class="eyebrow">Built for coding agents</p>
       <h2 id="agents-title">Your agent can install it, query it and act on it</h2>
-      <p>Analytics usually stops at a dashboard. Glass gives your agent the same access you have, through an MCP server, a CLI with <code>--json</code> everywhere and an HTTP API. Every answer carries the SQL that produced it and a link to the same view, so you can check its work.</p>
+      <p>Analytics usually stops at a dashboard. Dataflare gives your agent the same access you have, through an MCP server, a CLI with <code>--json</code> everywhere and an HTTP API. Every answer carries the SQL that produced it and a link to the same view, so you can check its work.</p>
       <ul class="tool-list" aria-label="Some of the MCP tools">${tools}<li class="more"><a href="/docs/agents/#tools">all ${f.mcpTools} tools</a></li></ul>
       <p><a href="/guides/coding-agents/">Add analytics with your coding agent →</a></p>
     </div>
-    <div class="transcript" role="log" aria-label="An example session in a coding agent with the Glass MCP server">
+    <div class="transcript" role="log" aria-label="An example session in a coding agent with the Dataflare MCP server">
       <p class="turn user">Signups dropped this week. Find out why.</p>
       <p class="turn tool">overview <span>from: "-7d"</span></p>
       <p class="turn result">Visitors steady (+2%). signup_completed down 31% vs the previous period.</p>
@@ -328,7 +328,7 @@ export function homePage(f: Facts): string {
     <div>
       <p class="eyebrow">What it costs</p>
       <h2 id="cost-title">Your Cloudflare bill. That's it.</h2>
-      <p>There is no Glass subscription. You pay Cloudflare's list prices for the Worker, database and storage Glass uses, and most sites fit inside the free plan or the $5 Workers Paid plan.</p>
+      <p>There is no Dataflare subscription. You pay Cloudflare's list prices for the Worker, database and storage Dataflare uses, and most sites fit inside the free plan or the $5 Workers Paid plan.</p>
       <p><a href="/pricing/">Full calculator, line by line →</a></p>
     </div>
     <div class="calc compact" data-calculator="compact">
@@ -341,17 +341,17 @@ export function homePage(f: Facts): string {
   <div class="section-head">
     <p class="eyebrow">How it compares</p>
     <h2 id="compare-title">The core of PostHog or Amplitude, in your own account</h2>
-    <p>Glass isn't the right tool for everyone, and each comparison says where the other product is the better choice.</p>
+    <p>Dataflare isn't the right tool for everyone, and each comparison says where the other product is the better choice.</p>
   </div>
   <div class="table-wrap">
     <table class="compare-table">
-      <thead><tr><th scope="col"><span class="visually-hidden">Feature</span></th><th scope="col" class="glass-col">Glass</th>${compareCols.map((c) => `<th scope="col"><a href="/vs/${c.slug}/">${esc(c.name)}</a></th>`).join('')}</tr></thead>
+      <thead><tr><th scope="col"><span class="visually-hidden">Feature</span></th><th scope="col" class="glass-col">Dataflare</th>${compareCols.map((c) => `<th scope="col"><a href="/vs/${c.slug}/">${esc(c.name)}</a></th>`).join('')}</tr></thead>
       <tbody>
         ${ROWS.map(([key, label]) => `<tr><th scope="row">${esc(label)}</th><td class="glass-col">${esc(GLASS[key])}</td>${compareCols.map((c) => `<td>${esc(c.table[key])}</td>`).join('')}</tr>`).join('\n        ')}
       </tbody>
     </table>
   </div>
-  <p class="compare-more">More: ${COMPETITORS.map((c) => `<a href="/vs/${c.slug}/">Glass vs ${esc(c.name)}</a>`).join(' · ')}</p>
+  <p class="compare-more">More: ${COMPETITORS.map((c) => `<a href="/vs/${c.slug}/">Dataflare vs ${esc(c.name)}</a>`).join(' · ')}</p>
 </section>
 
 <section class="section faq" aria-labelledby="faq-title">
@@ -366,7 +366,7 @@ export function homePage(f: Facts): string {
     <div>
       <p class="eyebrow">Open source</p>
       <h2 id="oss-title">Read it, fork it, add to it</h2>
-      <p>Glass is MIT licensed. Adding a query type, an MCP tool, a storage engine or a framework snippet is one file each, and the roadmap marks good first issues.</p>
+      <p>Dataflare is MIT licensed. Adding a query type, an MCP tool, a storage engine or a framework snippet is one file each, and the roadmap marks good first issues.</p>
     </div>
     <div class="oss-actions">
       <a class="button primary" href="${REPO}">Star on GitHub</a>
@@ -385,7 +385,7 @@ export function homePage(f: Facts): string {
 
   return layout({
     path: '/',
-    title: 'Glass Analytics: open-source product analytics in your own Cloudflare account',
+    title: 'Dataflare Analytics: open-source product analytics in your own Cloudflare account',
     description:
       'Open-source web analytics, product analytics, session replay, feature flags and A/B tests that run in your own Cloudflare account. One command to install, queried by your coding agent, $0 for small sites.',
     body,
@@ -395,8 +395,8 @@ export function homePage(f: Facts): string {
       {
         '@context': 'https://schema.org',
         '@type': 'SoftwareApplication',
-        name: 'Glass Analytics',
-        alternateName: 'Glass',
+        name: 'Dataflare Analytics',
+        alternateName: 'Dataflare',
         url: SITE_URL,
         description:
           'Open-source web analytics, product analytics, session replay, feature flags and A/B tests that run in your own Cloudflare account.',
@@ -420,7 +420,7 @@ export function homePage(f: Facts): string {
       {
         '@context': 'https://schema.org',
         '@type': 'SoftwareSourceCode',
-        name: 'Glass Analytics',
+        name: 'Dataflare Analytics',
         codeRepository: REPO,
         programmingLanguage: 'TypeScript',
         license: 'https://opensource.org/licenses/MIT',

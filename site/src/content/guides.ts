@@ -1,5 +1,5 @@
 /**
- * Guides (/guides/<slug>/): one per framework that `glass init` detects, with
+ * Guides (/guides/<slug>/): one per framework that `dataflare init` detects, with
  * snippets generated from the same FRAMEWORKS table the CLI prints, plus a
  * few topic guides. Everything here must match the docs; link to them for detail.
  */
@@ -25,14 +25,14 @@ const FRAMEWORK_NOTES: Partial<Record<Framework, { slug: string; intro: string; 
     nextjs: {
       slug: 'nextjs',
       intro:
-        'Next.js apps on Vercel, on Cloudflare (via OpenNext) or anywhere else can send analytics to a Glass Worker in your Cloudflare account. The script tag loads after the page is interactive and tracks client-side navigations automatically.',
+        'Next.js apps on Vercel, on Cloudflare (via OpenNext) or anywhere else can send analytics to a Dataflare Worker in your Cloudflare account. The script tag loads after the page is interactive and tracks client-side navigations automatically.',
       extra:
         'Server actions and route handlers can send events too: POST to `<host>/e` (see the [SDK docs](/docs/sdk/#server-side-events)), with the same `distinct_id` the browser uses if you want them joined to the visit.',
     },
     astro: {
       slug: 'astro',
       intro:
-        'Astro sites, static or server-rendered, add Glass with one inline script tag in the base layout. View transitions count as page views.',
+        'Astro sites, static or server-rendered, add Dataflare with one inline script tag in the base layout. View transitions count as page views.',
     },
     sveltekit: {
       slug: 'sveltekit',
@@ -62,7 +62,7 @@ const FRAMEWORK_NOTES: Partial<Record<Framework, { slug: string; intro: string; 
     worker: {
       slug: 'cloudflare-workers',
       intro:
-        'Workers, Hono apps and other server code send events with a plain `fetch` to your Glass Worker. Use this for events that only the server knows about, such as a payment succeeding.',
+        'Workers, Hono apps and other server code send events with a plain `fetch` to your Dataflare Worker. Use this for events that only the server knows about, such as a payment succeeding.',
     },
   };
 
@@ -76,17 +76,17 @@ function frameworkGuide(id: Framework): Guide | null {
   const browser = id !== 'worker';
   const body = `${note.intro}
 
-Glass is open-source analytics that runs in your own Cloudflare account: web analytics, product analytics (trends, funnels, retention), session replay, feature flags and A/B tests. There is no Glass service to sign up for. Your events go to a Worker and a D1 database in your account.
+Dataflare is open-source analytics that runs in your own Cloudflare account: web analytics, product analytics (trends, funnels, retention), session replay, feature flags and A/B tests. There is no Dataflare service to sign up for. Your events go to a Worker and a D1 database in your account.
 
-## 1. Deploy Glass
+## 1. Deploy Dataflare
 
 From your project's root, with a [Cloudflare API token](/docs/getting-started/#1-create-an-api-token):
 
 \`\`\`sh
-CLOUDFLARE_API_TOKEN=… npx @glassanalytics/cli init
+CLOUDFLARE_API_TOKEN=… npx dataflare init
 \`\`\`
 
-\`glass init\` detects ${name} from your \`package.json\`, creates the database, the replay bucket and the Worker, and prints the snippet below with your real host and project filled in. It also writes \`AGENTS.md\`, a Claude Code skill and \`.mcp.json\`, so your coding agent can do the next steps for you.
+\`dataflare init\` detects ${name} from your \`package.json\`, creates the database, the replay bucket and the Worker, and prints the snippet below with your real host and project filled in. It also writes \`AGENTS.md\`, a Claude Code skill and \`.mcp.json\`, so your coding agent can do the next steps for you.
 
 ## 2. Add the snippet
 
@@ -119,18 +119,18 @@ Name events \`object_action\` in the past tense (\`signup_completed\`, \`invite_
 ## 4. Check it works
 
 \`\`\`sh
-npx @glassanalytics/cli status
-npx @glassanalytics/cli events signup_completed
+npx dataflare status
+npx dataflare events signup_completed
 \`\`\`
 
-Then open \`${HOST}/app\` (sign in with \`npx @glassanalytics/cli key\`), or ask your agent: *"Which traffic source converts best to signup?"*
+Then open \`${HOST}/app\` (sign in with \`npx dataflare key\`), or ask your agent: *"Which traffic source converts best to signup?"*
 
 ## Serve it from your own domain
 
-Ad blockers often block third-party analytics domains. Serve Glass from a path on your own site instead, if your domain is on Cloudflare:
+Ad blockers often block third-party analytics domains. Serve Dataflare from a path on your own site instead, if your domain is on Cloudflare:
 
 \`\`\`sh
-npx @glassanalytics/cli init --route example.com
+npx dataflare init --route example.com
 \`\`\`
 
 Then use \`https://example.com/_glass\` as the host in the snippet.
@@ -143,9 +143,9 @@ Then use \`https://example.com/_glass\` as the host in the snippet.
 `;
   return {
     slug: note.slug,
-    title: `${name} analytics with Glass: setup in two minutes`,
+    title: `${name} analytics with Dataflare: setup in two minutes`,
     label: name,
-    description: `Add analytics to a ${name} app with Glass: open-source web and product analytics, session replay and A/B tests that run in your own Cloudflare account. Step-by-step setup.`,
+    description: `Add analytics to a ${name} app with Dataflare: open-source web and product analytics, session replay and A/B tests that run in your own Cloudflare account. Step-by-step setup.`,
     body,
     kind: 'framework',
   };
@@ -157,19 +157,19 @@ const TOPICS: Guide[] = [
     label: 'With your coding agent',
     title: 'Add analytics with your coding agent (Claude Code, Cursor, Codex)',
     description:
-      'Let your coding agent install analytics, track events and answer questions about your users. Glass writes agent instructions and an MCP server config at install.',
+      'Let your coding agent install analytics, track events and answer questions about your users. Dataflare writes agent instructions and an MCP server config at install.',
     kind: 'topic',
-    body: `Glass was built to be installed and queried by coding agents. Paste this into Claude Code, Cursor, Codex or any agent that can run commands:
+    body: `Dataflare was built to be installed and queried by coding agents. Paste this into Claude Code, Cursor, Codex or any agent that can run commands:
 
-> Add Glass analytics to this project: run \`npx @glassanalytics/cli init\`, track signups and purchases, then show me today's visitors.
+> Add Dataflare analytics to this project: run \`npx dataflare init\`, track signups and purchases, then show me today's visitors.
 
 ## What the agent gets
 
-\`glass init\` deploys Glass into your Cloudflare account, then writes three files into your project:
+\`dataflare init\` deploys Dataflare into your Cloudflare account, then writes three files into your project:
 
 - **\`AGENTS.md\`** (and \`CLAUDE.md\` if you have one): how to name events, how to document them, and how to verify they arrive.
 - **\`.claude/skills/glass/SKILL.md\`**: a skill with the query recipes below.
-- **\`.mcp.json\`**: an MCP server entry (\`npx @glassanalytics/cli mcp\`) that forwards to your Worker with the key from \`.glass/credentials.json\`, so no secret goes into the config file.
+- **\`.mcp.json\`**: an MCP server entry (\`npx dataflare mcp\`) that forwards to your Worker with the key from \`.glass/credentials.json\`, so no secret goes into the config file.
 
 From then on the agent has the [MCP tools](/docs/agents/#tools): overview, trends, funnels, retention, sources, site health, people, cohorts, replays, flags, experiments and read-only SQL. Every result includes a one-sentence summary, the SQL that ran and a link to the same view in the dashboard, so you can check its work.
 
@@ -183,7 +183,7 @@ From then on the agent has the [MCP tools](/docs/agents/#tools): overview, trend
 ## Keep agents read-only if you prefer
 
 \`\`\`sh
-npx @glassanalytics/cli key --read
+npx dataflare key --read
 \`\`\`
 
 Use the read key for agents that shouldn't change flags or experiments; write tools then return a clear error.
@@ -198,9 +198,9 @@ The same operations are available as a CLI with \`--json\` on every command, and
     label: 'Cookieless analytics',
     title: 'Cookieless analytics on Cloudflare, without storing anything on the device',
     description:
-      'How Glass counts visitors without cookies or local storage: a daily-rotating salted hash in your own Cloudflare Worker. What works, what needs consent, and how to switch.',
+      'How Dataflare counts visitors without cookies or local storage: a daily-rotating salted hash in your own Cloudflare Worker. What works, what needs consent, and how to switch.',
     kind: 'topic',
-    body: `Glass can count visitors without storing anything on their device: no cookies, no local storage.
+    body: `Dataflare can count visitors without storing anything on their device: no cookies, no local storage.
 
 \`\`\`html
 <script defer src="https://glass.<you>.workers.dev/s.js" data-project="my-app" data-persistence="cookieless"></script>
@@ -210,7 +210,7 @@ The same operations are available as a CLI with \`--json\` on every command, and
 
 The Worker derives a visitor id from a secret salt that changes every day, your project, the IP address and the user agent. It hashes them with SHA-256 and keeps only the hash. Because the salt changes daily, ids can't be linked across days or turned back into an IP address. IP addresses are never stored. Sessions are 30-minute windows of that id.
 
-Because Glass runs in your Cloudflare account, the hash is computed in your Worker, and nothing goes to a third party.
+Because Dataflare runs in your Cloudflare account, the hash is computed in your Worker, and nothing goes to a third party.
 
 ## What you get, and what you don't
 
@@ -225,12 +225,12 @@ glass.consent(false); // delete stored ids and go back to cookieless
 
 ## Do you still need a cookie banner?
 
-That depends on your jurisdiction and on everything else your site loads, so it's a question for your own legal advice. What Glass can tell you is exactly what it stores: see [Privacy](/docs/privacy/).
+That depends on your jurisdiction and on everything else your site loads, so it's a question for your own legal advice. What Dataflare can tell you is exactly what it stores: see [Privacy](/docs/privacy/).
 
 ## Related
 
 - [Delete everything about a person](/docs/privacy/#deleting-a-person) with one command
-- Keep data in the EU with \`glass init --eu\`
+- Keep data in the EU with \`dataflare init --eu\`
 `,
   },
   {
@@ -238,9 +238,9 @@ That depends on your jurisdiction and on everything else your site loads, so it'
     label: 'Replays agents can read',
     title: 'Session replay your coding agent can read',
     description:
-      'Glass session replay comes with a text transcript of every session: pages, clicks with CSS selectors, rage and dead clicks, errors with stack frames and failed requests. Agents read it through MCP.',
+      'Dataflare session replay comes with a text transcript of every session: pages, clicks with CSS selectors, rage and dead clicks, errors with stack frames and failed requests. Agents read it through MCP.',
     kind: 'topic',
-    body: `Session replays are video for people. Glass also turns every session into text, so a coding agent can read what happened, find the selector in your code and fix it.
+    body: `Session replays are video for people. Dataflare also turns every session into text, so a coding agent can read what happened, find the selector in your code and fix it.
 
 ## Turn it on
 
@@ -280,9 +280,9 @@ In an R2 bucket in your Cloudflare account, gzipped, deleted after 30 days by de
     label: 'A/B tests on Cloudflare',
     title: 'Feature flags and A/B tests on Cloudflare Workers',
     description:
-      'Run feature flags and A/B tests from your own Cloudflare Worker with Glass: server-side evaluation, targeting rules, Bayesian results and sample-ratio checks.',
+      'Run feature flags and A/B tests from your own Cloudflare Worker with Dataflare: server-side evaluation, targeting rules, Bayesian results and sample-ratio checks.',
     kind: 'topic',
-    body: `Glass evaluates feature flags in your Worker and reports experiments on the same events as your analytics, so there's no second tool to wire up.
+    body: `Dataflare evaluates feature flags in your Worker and reports experiments on the same events as your analytics, so there's no second tool to wire up.
 
 ## A flag
 
@@ -305,7 +305,7 @@ Flags have a rollout percentage and targeting rules on any event or person prope
 
 ## How results are computed
 
-Each person enters the experiment at their first exposure, and counts as converted if they do the goal event afterwards. People exposed to more than one variant are left out and counted separately. Glass checks for sample-ratio mismatch, which usually means the exposure is logged in the wrong place. The details are in [Flags and experiments](/docs/experiments/).
+Each person enters the experiment at their first exposure, and counts as converted if they do the goal event afterwards. People exposed to more than one variant are left out and counted separately. Dataflare checks for sample-ratio mismatch, which usually means the exposure is logged in the wrong place. The details are in [Flags and experiments](/docs/experiments/).
 `,
   },
   {
@@ -313,30 +313,30 @@ Each person enters the experiment at their first exposure, and counts as convert
     label: 'Self-hosted without servers',
     title: 'Self-hosted product analytics without running a server',
     description:
-      'Self-host analytics with no servers, Docker or database to manage: Glass is a Cloudflare Worker, a D1 database and an R2 bucket in your own account, deployed with one command and upgraded from CI.',
+      'Self-host analytics with no servers, Docker or database to manage: Dataflare is a Cloudflare Worker, a D1 database and an R2 bucket in your own account, deployed with one command and upgraded from CI.',
     kind: 'topic',
-    body: `Self-hosting analytics usually means a server, Docker, a database and a backup plan. Glass is three Cloudflare resources in your own account instead:
+    body: `Self-hosting analytics usually means a server, Docker, a database and a backup plan. Dataflare is three Cloudflare resources in your own account instead:
 
 - a **Worker** that serves the SDK, ingests events, evaluates flags and runs the dashboard and API,
 - a **D1 database** for events, people, flags and experiments,
 - an **R2 bucket** for session recordings.
 
 \`\`\`sh
-CLOUDFLARE_API_TOKEN=… npx @glassanalytics/cli init
+CLOUDFLARE_API_TOKEN=… npx dataflare init
 \`\`\`
 
 ## Upgrades from CI, not from your laptop
 
-\`glass init\` writes \`.github/workflows/glass.yml\`. To upgrade, run \`npx @glassanalytics/cli@latest upgrade\`, which stages the new version in \`.glass/\`, then commit and push; CI deploys it. Glass refuses to replace a newer Worker with an older one.
+\`dataflare init\` writes \`.github/workflows/glass.yml\`. To upgrade, run \`npx dataflare@latest upgrade\`, which stages the new version in \`.glass/\`, then commit and push; CI deploys it. Dataflare refuses to replace a newer Worker with an older one.
 
 ## Limits to know about
 
 - D1 databases hold up to 10 GB on Workers Paid (500 MB on Free). The [cost calculator](/pricing/) shows when you'd reach that at your volume. Set \`GLASS_RETENTION_DAYS\` to keep a rolling window, or use the lake store (\`--lake\`, beta), which streams events to Apache Iceberg tables in R2.
-- Glass is new (0.x). The D1 store, SDK, dashboard, MCP server and CLI are covered by unit, integration and browser tests; the lake store depends on Cloudflare products in beta.
+- Dataflare is new (0.x). The D1 store, SDK, dashboard, MCP server and CLI are covered by unit, integration and browser tests; the lake store depends on Cloudflare products in beta.
 
 ## Read and change everything
 
-The Worker in your account is the code in the [repository](https://github.com/ISNIT0/glass-analytics), MIT licensed. Adding a query type, an MCP tool or a storage engine is a single file each: see [Extending Glass](/docs/extending/).
+The Worker in your account is the code in the [repository](https://github.com/ISNIT0/glass-analytics), MIT licensed. Adding a query type, an MCP tool or a storage engine is a single file each: see [Extending Dataflare](/docs/extending/).
 `,
   },
 ];

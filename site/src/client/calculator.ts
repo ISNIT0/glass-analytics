@@ -1,7 +1,7 @@
 /**
  * The pricing calculator. It turns slider values into the same inputs the
  * dashboard's Usage & cost page measures, and prices them with the same
- * model (`@glassanalytics/core/usage`), so the site and the product agree.
+ * model (`@dataflare/core/usage`), so the site and the product agree.
  *
  * Mount points: <div data-calculator="compact"> (homepage) and
  * <div data-calculator="full"> (pricing page).
@@ -208,7 +208,7 @@ function mount(root: HTMLElement): void {
       'Sessions recorded',
       sample,
       sampleOut,
-      full ? 'Replay sampling. Glass also records sessions where an error happens.' : undefined,
+      full ? 'Replay sampling. Dataflare also records sessions where an error happens.' : undefined,
     ),
   );
   if (full) {

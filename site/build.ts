@@ -215,11 +215,11 @@ ${GUIDES.map((g) => `- [${g.label}](${SITE_URL}/guides/${g.slug}.md): ${g.descri
 
 ## Compare
 
-${COMPETITORS.map((c) => `- [Glass vs ${c.name}](${SITE_URL}/vs/${c.slug}/): ${c.verdict}`).join('\n')}
+${COMPETITORS.map((c) => `- [Dataflare vs ${c.name}](${SITE_URL}/vs/${c.slug}/): ${c.verdict}`).join('\n')}
 
 ## Cost
 
-Glass has no subscription. It runs in the user's Cloudflare account and costs Cloudflare's list prices: small sites fit Workers Free ($0); Workers Paid is $${PRICES.plan.monthly}/month and includes ${PRICES.workers.includedRequests / 1e6}M requests and ${PRICES.d1.includedRowsWritten / 1e6}M D1 rows written. Glass uses about 3 Worker requests per page view and 5 D1 row writes per event. Calculator: ${SITE_URL}/pricing/
+Dataflare has no subscription. It runs in the user's Cloudflare account and costs Cloudflare's list prices: small sites fit Workers Free ($0); Workers Paid is $${PRICES.plan.monthly}/month and includes ${PRICES.workers.includedRequests / 1e6}M requests and ${PRICES.d1.includedRowsWritten / 1e6}M D1 rows written. Dataflare uses about 3 Worker requests per page view and 5 D1 row writes per event. Calculator: ${SITE_URL}/pricing/
 
 ## Source
 
@@ -231,7 +231,7 @@ writeFileSync(join(dist, 'llms.txt'), llms);
 
 writeFileSync(
   join(dist, 'llms-full.txt'),
-  `# Glass documentation\n\n> ${
+  `# Dataflare documentation\n\n> ${
     llms
       .split('\n')
       .find((l) => l.startsWith('>'))
@@ -241,7 +241,7 @@ writeFileSync(
 
 writeFileSync(
   join(dist, 'index.md'),
-  `# Glass Analytics: open-source product analytics in your own Cloudflare account
+  `# Dataflare Analytics: open-source product analytics in your own Cloudflare account
 
 Web analytics, funnels and retention, session replay, feature flags and A/B tests. Open source (MIT), deployed with one command, and ready for your coding agent. Your data never leaves your Cloudflare account.
 
@@ -261,7 +261,7 @@ Or paste this into your coding agent:
 ## At a glance
 
 - MIT licensed; browser SDK ${facts.sdkKb} KB gzipped; ${facts.mcpTools} MCP tools; version ${facts.version}.
-- Runs as a Worker, a D1 database and an R2 bucket in your Cloudflare account. No Glass server or account.
+- Runs as a Worker, a D1 database and an R2 bucket in your Cloudflare account. No Dataflare server or account.
 - Costs Cloudflare's list prices: $0 on Workers Free for small sites, $${PRICES.plan.monthly}/month on Workers Paid for most others.
 
 ## Questions

@@ -7,7 +7,7 @@
  *
  * - rrweb events (clicks, inputs, navigation) from the replay,
  * - console messages and network requests the recorder adds as custom events,
- * - Glass events for the same session (pageviews, custom events, errors), and
+ * - Dataflare events for the same session (pageviews, custom events, errors), and
  * - notes people and agents left on the session,
  *
  * resolving click targets to human labels and selectors with a DOM model
@@ -373,7 +373,7 @@ export interface SummariseOptions {
  * Summarise a session.
  *
  * @param pages  the rrweb recording, one event list per page load (see `loadReplayPages` in the Worker)
- * @param events Glass events from the same session
+ * @param events Dataflare events from the same session
  */
 export function summariseReplay(
   pages: readonly (readonly RrwebEvent[])[],

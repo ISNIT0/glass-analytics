@@ -17,12 +17,12 @@
  * `<script>window.glass=window.glass||{q:[],capture(){this.q.push(['capture',...arguments])},identify(){this.q.push(['identify',...arguments])}}</script>`
  */
 
-import { Glass } from './client.ts';
+import { Dataflare } from './client.ts';
 
 type Queued = [method: string, ...args: unknown[]];
-const w = window as unknown as { glass?: Glass | { q?: Queued[] } };
+const w = window as unknown as { glass?: Dataflare | { q?: Queued[] } };
 const queued = (w.glass as { q?: Queued[] } | undefined)?.q ?? [];
-const glass = new Glass();
+const glass = new Dataflare();
 w.glass = glass;
 
 const script = document.currentScript as HTMLScriptElement | null;

@@ -5,9 +5,9 @@
  * person properties) are never shipped to browsers.
  */
 
-import type { EvaluationContext } from '@glassanalytics/core/filters';
-import { evaluateFlags, type FlagDefinition, validateFlag } from '@glassanalytics/core/flags';
-import { parseUserAgent } from '@glassanalytics/core/ua';
+import type { EvaluationContext } from '@dataflare/core/filters';
+import { evaluateFlags, type FlagDefinition, validateFlag } from '@dataflare/core/flags';
+import { parseUserAgent } from '@dataflare/core/ua';
 import type { D1Database, Env } from './env.ts';
 import { HttpError, readJson } from './http.ts';
 import { requestInfo } from './ingest.ts';

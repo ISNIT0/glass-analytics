@@ -3,7 +3,7 @@
  *
  * Each entry pairs a zod schema with a runner. The Worker exposes every entry as
  * `POST /api/query` (with `"kind"`), the MCP server exposes each one as a
- * `query_<kind>` tool, and the CLI as `glass query <kind>`. Adding an insight
+ * `query_<kind>` tool, and the CLI as `dataflare query <kind>`. Adding an insight
  * type is therefore: write a runner, add it here. See docs/extending.md.
  */
 

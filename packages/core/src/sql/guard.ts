@@ -1,5 +1,5 @@
 /**
- * A guard for user-supplied SQL (the `sql` tool and `glass sql`).
+ * A guard for user-supplied SQL (the `sql` tool and `dataflare sql`).
  *
  * In lake mode Basin SQL is read-only by construction. D1 is not: the events
  * table shares a database with flags and experiments, so raw SQL must be

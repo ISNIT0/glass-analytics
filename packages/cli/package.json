@@ -1,11 +1,11 @@
 {
-  "name": "@glassanalytics/cli",
+  "name": "dataflare",
   "version": "0.5.0",
-  "description": "Agent-first analytics in your own Cloudflare account. `npx @glassanalytics/cli init` deploys it.",
+  "description": "Agent-first analytics in your own Cloudflare account. `npx dataflare init` deploys it.",
   "license": "MIT",
   "type": "module",
   "bin": {
-    "glass": "dist/glass.js"
+    "dataflare": "dist/glass.js"
   },
   "files": [
     "dist",
@@ -32,8 +32,8 @@
     "wrangler": "^4.0.0"
   },
   "devDependencies": {
-    "@glassanalytics/core": "workspace:*",
-    "@glassanalytics/worker": "workspace:*"
+    "@dataflare/core": "workspace:*",
+    "@dataflare/worker": "workspace:*"
   },
   "publishConfig": {
     "access": "public"

@@ -1,7 +1,7 @@
 /**
  * HTTP helpers and a tiny router.
  *
- * Glass deliberately has no web framework dependency: the routing it needs is
+ * Dataflare deliberately has no web framework dependency: the routing it needs is
  * a few dozen lines, and fewer dependencies make the Worker easier to audit.
  */
 

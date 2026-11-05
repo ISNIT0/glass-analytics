@@ -84,5 +84,5 @@
     }
   ],
   "summary": "6 flags: ai-suggestions (0%), annual-billing-nudge (off), new-editor (25%), offline-mode (off), onboarding-checklist (100%), pricing-page-v2 (100%).",
-  "dashboard": "http://127.0.0.1:55244/app#/flags?project=demo"
+  "dashboard": "http://127.0.0.1:58904/app#/flags?project=demo"
 }

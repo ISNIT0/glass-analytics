@@ -1,5 +1,5 @@
-// Configuration for running the Glass Worker locally with `pnpm dev:wrangler`
-// (from the repo root, after `pnpm build`). Deployments made by `glass init`
+// Configuration for running the Dataflare Worker locally with `pnpm dev:wrangler`
+// (from the repo root, after `pnpm build`). Deployments made by `dataflare init`
 // generate their own config in the user's `.glass/` folder; see
 // packages/cli/src/cloudflare/config.ts.
 {

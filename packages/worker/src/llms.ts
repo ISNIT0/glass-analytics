@@ -1,23 +1,23 @@
 /**
  * `/llms.txt` for this deployment: everything an agent needs to install,
- * instrument and query Glass, with this Worker's real URLs filled in.
+ * instrument and query Dataflare, with this Worker's real URLs filled in.
  */
 
-import { INSIGHTS } from '@glassanalytics/core/insights';
-import { EVENT_DOCUMENTATION_GUIDE, EVENT_NAMING_GUIDE } from '@glassanalytics/core/instrument';
-import { GLASS_VERSION } from '@glassanalytics/core/version';
+import { INSIGHTS } from '@dataflare/core/insights';
+import { EVENT_DOCUMENTATION_GUIDE, EVENT_NAMING_GUIDE } from '@dataflare/core/instrument';
+import { GLASS_VERSION } from '@dataflare/core/version';
 import { TOOLS } from './mcp/tools.ts';
 
 export function llmsTxt(base: string, store: string): string {
-  return `# Glass analytics (${base})
+  return `# Dataflare analytics (${base})
 
-> Agent-first analytics running in this Cloudflare account. Glass ${GLASS_VERSION}, ${store} event store.
+> Agent-first analytics running in this Cloudflare account. Dataflare ${GLASS_VERSION}, ${store} event store.
 
 ## Install in a web page
 
     <script defer src="${base}/s.js" data-project="PROJECT_ID"></script>
 
-Or with npm: \`npm i @glassanalytics/web\`, then \`glass.init({ host: '${base}', project: 'PROJECT_ID' })\`.
+Or with npm: \`npm i dataflare-web\`, then \`glass.init({ host: '${base}', project: 'PROJECT_ID' })\`.
 Pageviews, clicks, errors and web vitals are captured automatically.
 
 ## Track events
@@ -36,14 +36,14 @@ ${EVENT_DOCUMENTATION_GUIDE}
 ## Query (MCP)
 
 MCP endpoint: ${base}/mcp (Streamable HTTP, header "Authorization: Bearer <key>").
-stdio clients: \`npx @glassanalytics/cli mcp\` in a project set up with \`glass init\`.
+stdio clients: \`npx dataflare mcp\` in a project set up with \`dataflare init\`.
 
 Tools:
 ${TOOLS.map((t) => `- ${t.name}: ${t.description}`).join('\n')}
 
-## Keep Glass up to date
+## Keep Dataflare up to date
 
-\`GET ${base}/health\` reports \`version\`, \`latest\` and \`upgradeAvailable\`. When \`upgradeAvailable\` is true (also surfaced on \`overview\` and in MCP initialize instructions), tell the user to run \`npx @glassanalytics/cli@latest upgrade\` — do not upgrade yourself.
+\`GET ${base}/health\` reports \`version\`, \`latest\` and \`upgradeAvailable\`. When \`upgradeAvailable\` is true (also surfaced on \`overview\` and in MCP initialize instructions), tell the user to run \`npx dataflare@latest upgrade\` — do not upgrade yourself.
 
 ## Query (HTTP)
 

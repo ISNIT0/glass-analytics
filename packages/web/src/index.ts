@@ -1,8 +1,8 @@
 /**
- * @glassanalytics/web — the Glass browser SDK.
+ * dataflare-web — the Dataflare browser SDK.
  *
  * ```ts
- * import { glass } from '@glassanalytics/web';
+ * import { glass } from 'dataflare-web';
  *
  * glass.init({ host: 'https://glass.acme.workers.dev', project: 'acme' });
  * glass.capture('signup_completed', { plan: 'pro' });
@@ -14,7 +14,7 @@
  * `<script defer src="https://glass.acme.workers.dev/s.js" data-project="acme"></script>`
  */
 
-import { Glass } from './client.ts';
+import { Dataflare } from './client.ts';
 
 export type {
   AutocaptureOptions,
@@ -24,7 +24,8 @@ export type {
   ReplayOptions,
   WireEvent,
 } from './types.ts';
-export { Glass };
+/** `Glass` is the class's earlier name, kept so existing imports keep working. */
+export { Dataflare, Dataflare as Glass };
 
 /** The default client. Call `glass.init()` once, as early as possible. */
-export const glass = new Glass();
+export const glass = new Dataflare();

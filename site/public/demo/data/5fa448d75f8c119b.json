@@ -5,9 +5,9 @@
   "cohorts": [
     {
       "start": 1791158400000,
-      "size": 7,
+      "size": 10,
       "counts": [
-        7,
+        10,
         0,
         0,
         0,
@@ -30,7 +30,7 @@
       ]
     },
     {
-      "start": 1791168999432.6934,
+      "start": 1791226802823.9482,
       "size": 1,
       "counts": [
         1,
@@ -57,9 +57,9 @@
     },
     {
       "start": 1791763200000,
-      "size": 11,
+      "size": 12,
       "counts": [
-        11,
+        12,
         0,
         0,
         0,
@@ -82,7 +82,7 @@
       ]
     },
     {
-      "start": 1791776761420.9404,
+      "start": 1791776112829.0754,
       "size": 1,
       "counts": [
         1,
@@ -108,7 +108,7 @@
       ]
     },
     {
-      "start": 1791783889511.1523,
+      "start": 1791837430297.8057,
       "size": 1,
       "counts": [
         1,
@@ -134,7 +134,33 @@
       ]
     },
     {
-      "start": 1791815602266.6292,
+      "start": 1791844902001.8252,
+      "size": 1,
+      "counts": [
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "rates": [
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "start": 1791845675812.7498,
       "size": 1,
       "counts": [
         1,
@@ -161,9 +187,9 @@
     },
     {
       "start": 1792368000000,
-      "size": 10,
+      "size": 7,
       "counts": [
-        10,
+        7,
         0,
         0,
         0,
@@ -186,7 +212,7 @@
       ]
     },
     {
-      "start": 1792394724427.86,
+      "start": 1792382860571.111,
       "size": 1,
       "counts": [
         1,
@@ -212,7 +238,7 @@
       ]
     },
     {
-      "start": 1792398585178.12,
+      "start": 1792413415432.65,
       "size": 1,
       "counts": [
         1,
@@ -238,33 +264,7 @@
       ]
     },
     {
-      "start": 1792422724553.0938,
-      "size": 1,
-      "counts": [
-        1,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0
-      ],
-      "rates": [
-        1,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "start": 1792429286258.8896,
+      "start": 1792428808262.4111,
       "size": 1,
       "counts": [
         1,
@@ -291,9 +291,9 @@
     },
     {
       "start": 1792972800000,
-      "size": 9,
+      "size": 14,
       "counts": [
-        9,
+        14,
         0,
         0,
         0,
@@ -316,7 +316,33 @@
       ]
     },
     {
-      "start": 1793023356754.2617,
+      "start": 1792998282969.0469,
+      "size": 1,
+      "counts": [
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "rates": [
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "start": 1793056620293.2334,
       "size": 1,
       "counts": [
         1,
@@ -343,9 +369,9 @@
     },
     {
       "start": 1793577600000,
-      "size": 10,
+      "size": 7,
       "counts": [
-        10,
+        7,
         0,
         0,
         0,
@@ -380,13 +406,13 @@
     0
   ],
   "sql": [
-    "WITH ev AS (\n  SELECT e.*,\n    CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid\n  FROM events e\n  LEFT JOIN (\n    SELECT distinct_id, MIN(person_id) AS person_id\n    FROM identities\n    WHERE project = 'demo'\n    GROUP BY distinct_id\n  ) i ON i.distinct_id = e.distinct_id\n  WHERE e.project = 'demo'\n    AND e.ts_ms >= 1791234501510\n    AND e.ts_ms < 1793912901510\n    AND e.event IN ('$exception')\n),\nfirst_seen AS (\n  SELECT pid, MIN(ts_ms) AS t0\n  FROM ev\n  WHERE event = '$exception' AND ts_ms < 1793826501510 AND 1 = 1\n  GROUP BY pid\n),\nc AS (SELECT pid, (((t0 / 86400000) - (((t0 / 86400000) + 3) % 7)) * 86400000) AS cbucket FROM first_seen),\na AS (\n  SELECT DISTINCT pid, (((ts_ms / 86400000) - (((ts_ms / 86400000) + 3) % 7)) * 86400000) AS abucket\n  FROM ev\n  WHERE event = '$exception' AND 1 = 1\n)\nSELECT c.cbucket AS cohort, (a.abucket - c.cbucket) / 604800000 AS k, COUNT(DISTINCT c.pid) AS n\nFROM c JOIN a ON a.pid = c.pid\nWHERE a.abucket > c.cbucket AND (a.abucket - c.cbucket) / 604800000 <= 8\nGROUP BY c.cbucket, (a.abucket - c.cbucket) / 604800000\nUNION ALL\nSELECT cbucket AS cohort, 0 AS k, COUNT(*) AS n FROM c GROUP BY cbucket"
+    "WITH ev AS (\n  SELECT e.*,\n    CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid\n  FROM events e\n  LEFT JOIN (\n    SELECT distinct_id, MIN(person_id) AS person_id\n    FROM identities\n    WHERE project = 'demo'\n    GROUP BY distinct_id\n  ) i ON i.distinct_id = e.distinct_id\n  WHERE e.project = 'demo'\n    AND e.ts_ms >= 1791282573286\n    AND e.ts_ms < 1793960973286\n    AND e.event IN ('$exception')\n),\nfirst_seen AS (\n  SELECT pid, MIN(ts_ms) AS t0\n  FROM ev\n  WHERE event = '$exception' AND ts_ms < 1793874573286 AND 1 = 1\n  GROUP BY pid\n),\nc AS (SELECT pid, (((t0 / 86400000) - (((t0 / 86400000) + 3) % 7)) * 86400000) AS cbucket FROM first_seen),\na AS (\n  SELECT DISTINCT pid, (((ts_ms / 86400000) - (((ts_ms / 86400000) + 3) % 7)) * 86400000) AS abucket\n  FROM ev\n  WHERE event = '$exception' AND 1 = 1\n)\nSELECT c.cbucket AS cohort, (a.abucket - c.cbucket) / 604800000 AS k, COUNT(DISTINCT c.pid) AS n\nFROM c JOIN a ON a.pid = c.pid\nWHERE a.abucket > c.cbucket AND (a.abucket - c.cbucket) / 604800000 <= 8\nGROUP BY c.cbucket, (a.abucket - c.cbucket) / 604800000\nUNION ALL\nSELECT cbucket AS cohort, 0 AS k, COUNT(*) AS n FROM c GROUP BY cbucket"
   ],
   "range": {
-    "from": "2026-10-05T21:08:21.510Z",
-    "to": "2026-11-04T21:08:21.510Z"
+    "from": "2026-10-06T10:29:33.286Z",
+    "to": "2026-11-05T10:29:33.286Z"
   },
-  "summary": "56 people in 14 weekly cohorts. Average retention: week 1 0.0%, week 4 0.0%.",
+  "summary": "60 people in 15 weekly cohorts. Average retention: week 1 0.0%, week 4 0.0%.",
   "project": "demo",
-  "dashboard": "http://127.0.0.1:55244/app#/insights/retention?project=demo&spec=%7B%22from%22%3A%22-30d%22%2C%22cohortEvent%22%3A%7B%22event%22%3A%22%24exception%22%7D%2C%22returnEvent%22%3A%7B%22event%22%3A%22%24exception%22%7D%2C%22period%22%3A%22week%22%2C%22periods%22%3A8%7D"
+  "dashboard": "http://127.0.0.1:58904/app#/insights/retention?project=demo&spec=%7B%22from%22%3A%22-30d%22%2C%22cohortEvent%22%3A%7B%22event%22%3A%22%24exception%22%7D%2C%22returnEvent%22%3A%7B%22event%22%3A%22%24exception%22%7D%2C%22period%22%3A%22week%22%2C%22periods%22%3A8%7D"
 }

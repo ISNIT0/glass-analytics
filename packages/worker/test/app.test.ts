@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { beforeEach, describe, it } from 'node:test';
-import { GLASS_VERSION, UPGRADE_COMMAND } from '@glassanalytics/core/version';
+import { GLASS_VERSION, UPGRADE_COMMAND } from '@dataflare/core/version';
 import { configureLatestCheck } from '../src/latest.ts';
 import { ArrayStream, READ, type TestApp, testApp, wire } from './harness.ts';
 
@@ -99,7 +99,7 @@ describe('ingest', () => {
   it('rejects unknown projects with a hint', async () => {
     const res = await t.ingest([wire('$pageview')], { project: 'nope' });
     assert.equal(res.status, 404);
-    assert.match(((await res.json()) as { hint: string }).hint, /glass projects add/);
+    assert.match(((await res.json()) as { hint: string }).hint, /dataflare projects add/);
   });
 
   it('enriches events with URL, UTM, referrer, geo and user agent', async () => {
@@ -1051,7 +1051,7 @@ describe('session replay', () => {
     await t.json('POST', '/api/projects', { body: { id: 'acme' } });
     const res = await t.call('POST', '/r?project=acme&session=s&seq=0', { key: null, body: '[]' });
     assert.equal(res.status, 501);
-    assert.match(((await res.json()) as { hint: string }).hint, /glass upgrade/);
+    assert.match(((await res.json()) as { hint: string }).hint, /dataflare upgrade/);
   });
 });
 

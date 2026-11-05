@@ -1,14 +1,14 @@
 /**
  * API keys.
  *
- * Two keys, both Worker secrets created by `glass init`:
+ * Two keys, both Worker secrets created by `dataflare init`:
  * - GLASS_ADMIN_KEY: everything (queries and changes to flags, experiments, projects).
  * - GLASS_READ_KEY: queries only — safe to give to a read-only agent or teammate.
  *
  * Ingest endpoints (/e, /r, /f) are public by design: browsers call them.
  */
 
-import { timingSafeEqual } from '@glassanalytics/core/hash';
+import { timingSafeEqual } from '@dataflare/core/hash';
 import type { Env } from './env.ts';
 import { HttpError } from './http.ts';
 
@@ -28,7 +28,7 @@ export function requireScope(request: Request, env: Env, needed: Scope): Scope {
     throw new HttpError(
       503,
       'GLASS_ADMIN_KEY is not set on this Worker',
-      'Run `glass upgrade` or set it with `wrangler secret put GLASS_ADMIN_KEY`.',
+      'Run `dataflare upgrade` or set it with `wrangler secret put GLASS_ADMIN_KEY`.',
     );
   }
   const scope = authenticate(request, env);
@@ -36,7 +36,7 @@ export function requireScope(request: Request, env: Env, needed: Scope): Scope {
     throw new HttpError(
       401,
       'Missing or invalid API key',
-      'Send "Authorization: Bearer <key>". Keys are in .glass/credentials.json; run `glass key`.',
+      'Send "Authorization: Bearer <key>". Keys are in .glass/credentials.json; run `dataflare key`.',
     );
   }
   if (needed === 'admin' && scope !== 'admin')

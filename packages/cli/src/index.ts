@@ -1,15 +1,15 @@
 /**
  * The `glass` CLI.
  *
- *   npx @glassanalytics/cli init              deploy into your Cloudflare account
- *   npx @glassanalytics/cli query web         ask questions from the terminal
- *   npx @glassanalytics/cli mcp               stdio MCP server for coding agents
+ *   npx dataflare init              deploy into your Cloudflare account
+ *   npx dataflare query web         ask questions from the terminal
+ *   npx dataflare mcp               stdio MCP server for coding agents
  *
  * Every command accepts --json for machine-readable output.
  */
 
 import { parseArgs } from 'node:util';
-import { GLASS_VERSION } from '@glassanalytics/core/version';
+import { GLASS_VERSION } from '@dataflare/core/version';
 import { events, person, projects, query, replays, sql } from './commands/data.ts';
 import { experiments, flags as flagCommands } from './commands/flags.ts';
 import { init } from './commands/init.ts';
@@ -19,10 +19,10 @@ import { UsageError } from './config.ts';
 import { color, fail, line } from './output.ts';
 import { warnIfOutdated } from './upgrade-check.ts';
 
-const HELP = `${color.bold('glass')} ${GLASS_VERSION}: agent-first analytics in your own Cloudflare account
+const HELP = `${color.bold('dataflare')} ${GLASS_VERSION}: agent-first analytics in your own Cloudflare account
 
 ${color.bold('Set up')}
-  glass init                     Deploy Glass and wire it into this project
+  dataflare init                 Deploy Dataflare and wire it into this project
     --token <token>                Cloudflare API token (or CLOUDFLARE_API_TOKEN)
     --account <id>                 Cloudflare account id (or CLOUDFLARE_ACCOUNT_ID)
     --project <id>                 Project id (default: package.json name)
@@ -36,48 +36,48 @@ ${color.bold('Set up')}
     --no-agent-files               Don't write AGENTS.md, SKILL.md or .mcp.json
     --no-ci                        Don't write .github/workflows/glass.yml
     --dry-run                      Show what would be created
-  glass upgrade                  Move to this CLI's version of Glass and migrate
+  dataflare upgrade              Move to this CLI's version of Dataflare and migrate
                                    With .github/workflows/glass.yml: stage into .glass/ only;
                                    commit and push, and CI deploys it
     --ci                           Deploy as CI (no prompts; default when CI=true)
     --local                        Deploy from here even though a CI workflow exists
     --allow-downgrade              Replace a newer deployed Worker with this older one
     --retention-days <n>           Delete events older than n days (0 keeps them)
-  glass ci [--branch main]       Write the workflow that deploys Glass from CI
+  dataflare ci [--branch main]   Write the workflow that deploys Dataflare from CI
     --secret <name>                Repo secret with the Cloudflare token (default CLOUDFLARE_API_TOKEN)
-  glass status                   Check the deployment end to end
-  glass key [--read]             Print the dashboard URL and API key
+  dataflare status               Check the deployment end to end
+  dataflare key [--read]         Print the dashboard URL and API key
 
 ${color.bold('Ask questions')}
-  glass query web [--from -7d]
-  glass query trends --event signup_completed [--math unique_persons] [--interval week] [--breakdown browser]
-  glass query funnel --steps '$pageview,signup_started,signup_completed' [--window 1d] [--breakdown utm_source]
-  glass query retention --cohort signup_completed [--return '$pageview'] [--period week]
-  glass query <kind> --spec '<json>'   Any spec; see GET /api/schema
+  dataflare query web [--from -7d]
+  dataflare query trends --event signup_completed [--math unique_persons] [--interval week] [--breakdown browser]
+  dataflare query funnel --steps '$pageview,signup_started,signup_completed' [--window 1d] [--breakdown utm_source]
+  dataflare query retention --cohort signup_completed [--return '$pageview'] [--period week]
+  dataflare query <kind> --spec '<json>'   Any spec; see GET /api/schema
     common: --from, --to, --where prop=value[,…], --project, --sql (print SQL)
-  glass sql "SELECT …"           Read-only SQL against your events
-  glass events [name]            Tracked events, or one event's properties
+  dataflare sql "SELECT …"       Read-only SQL against your events
+  dataflare events [name]        Tracked events, or one event's properties
     --describe "<text>"            How/when the event fires (document custom events)
-  glass person <id> [--delete]   One person's properties and events (or erase them)
-  glass replays [--errors] [--rage] [--url /checkout] [--not purchase] [--search text] [--sort most_frustrated]
+  dataflare person <id> [--delete]   One person's properties and events (or erase them)
+  dataflare replays [--errors] [--rage] [--url /checkout] [--not purchase] [--search text] [--sort most_frustrated]
                                  Find recorded sessions
-  glass replays summary <id> [--full]   A session as a text transcript
-  glass replays snapshot <id> --at 01:24   What was on screen at a moment
-  glass replays note <id> --at 00:14 --text "…"   Pin a finding to a moment
-  glass replays analyse [--from -7d]   Patterns: rage/dead clicks, errors, failing requests
+  dataflare replays summary <id> [--full]   A session as a text transcript
+  dataflare replays snapshot <id> --at 01:24   What was on screen at a moment
+  dataflare replays note <id> --at 00:14 --text "…"   Pin a finding to a moment
+  dataflare replays analyse [--from -7d]   Patterns: rage/dead clicks, errors, failing requests
 
 ${color.bold('Flags and experiments')}
-  glass flags [list]
-  glass flags set <key> [--rollout 25] [--variants control:50,test:50] [--enable|--disable] [--rules '<json>']
-  glass flags delete <key>
-  glass experiments [list]
-  glass experiments create <key> --goal <event> [--flag <key>] [--hypothesis "…"]
-  glass experiments start|stop <key>
-  glass experiments ship <key> <variant>
-  glass experiments results <key>
+  dataflare flags [list]
+  dataflare flags set <key> [--rollout 25] [--variants control:50,test:50] [--enable|--disable] [--rules '<json>']
+  dataflare flags delete <key>
+  dataflare experiments [list]
+  dataflare experiments create <key> --goal <event> [--flag <key>] [--hypothesis "…"]
+  dataflare experiments start|stop <key>
+  dataflare experiments ship <key> <variant>
+  dataflare experiments results <key>
 
 ${color.bold('Agents')}
-  glass mcp                      MCP server over stdio (what .mcp.json runs)
+  dataflare mcp                  MCP server over stdio (what .mcp.json runs)
 
 Environment: GLASS_HOST, GLASS_API_KEY and GLASS_PROJECT override .glass/ settings.
 Docs: https://github.com/ISNIT0/glass-analytics`;
@@ -236,7 +236,7 @@ export async function main(argv: string[]): Promise<void> {
     default:
       throw new UsageError(
         `Unknown command "${command}".`,
-        'Run `glass help` for the list of commands.',
+        'Run `dataflare help` for the list of commands.',
       );
   }
 }

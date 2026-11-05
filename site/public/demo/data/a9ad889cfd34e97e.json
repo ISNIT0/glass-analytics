@@ -5,7 +5,7 @@
     {
       "label": "Visited",
       "event": "$pageview",
-      "count": 3154,
+      "count": 3078,
       "conversionFromStart": 1,
       "conversionFromPrevious": 1,
       "avgSecondsFromPrevious": null
@@ -13,36 +13,36 @@
     {
       "label": "Started signup",
       "event": "signup_started",
-      "count": 605,
-      "conversionFromStart": 0.19181991122384273,
-      "conversionFromPrevious": 0.19181991122384273,
-      "avgSecondsFromPrevious": 141.10931570247934
+      "count": 623,
+      "conversionFromStart": 0.2024041585445094,
+      "conversionFromPrevious": 0.2024041585445094,
+      "avgSecondsFromPrevious": 144.48931460674157
     },
     {
       "label": "Signed up",
       "event": "signup_completed",
-      "count": 368,
-      "conversionFromStart": 0.11667723525681674,
-      "conversionFromPrevious": 0.6082644628099173,
-      "avgSecondsFromPrevious": 55.30014402173913
+      "count": 414,
+      "conversionFromStart": 0.13450292397660818,
+      "conversionFromPrevious": 0.6645264847512039,
+      "avgSecondsFromPrevious": 54.42159661835748
     },
     {
       "label": "Paid",
       "event": "subscription_started",
-      "count": 70,
-      "conversionFromStart": 0.02219403931515536,
-      "conversionFromPrevious": 0.19021739130434784,
+      "count": 79,
+      "conversionFromStart": 0.025666016894087068,
+      "conversionFromPrevious": 0.19082125603864733,
       "avgSecondsFromPrevious": 89.8
     }
   ],
   "sql": [
-    "WITH ev AS (\n  SELECT e.*,\n    CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid\n  FROM events e\n  LEFT JOIN (\n    SELECT distinct_id, MIN(person_id) AS person_id\n    FROM identities\n    WHERE project = 'demo'\n    GROUP BY distinct_id\n  ) i ON i.distinct_id = e.distinct_id\n  WHERE e.project = 'demo'\n    AND e.ts_ms >= 1791234442152\n    AND e.ts_ms < 1794431242152\n    AND e.event IN ('$pageview', 'signup_started', 'signup_completed', 'subscription_started')\n),\ns1 AS (\n  SELECT pid, MIN(ts_ms) AS t1\n  FROM ev\n  WHERE event = '$pageview' AND ts_ms < 1793826442152 AND 1 = 1\n  GROUP BY pid\n),\ns2 AS (\n  SELECT s1.pid, s1.t1, MIN(ev.ts_ms) AS t2\n  FROM s1 JOIN ev ON ev.pid = s1.pid\n  WHERE ev.event = 'signup_started'\n    AND ev.ts_ms > s1.t1\n    AND ev.ts_ms <= s1.t1 + 604800000\n    AND 1 = 1\n  GROUP BY s1.pid, s1.t1\n),\ns3 AS (\n  SELECT s2.pid, s2.t1, s2.t2, MIN(ev.ts_ms) AS t3\n  FROM s2 JOIN ev ON ev.pid = s2.pid\n  WHERE ev.event = 'signup_completed'\n    AND ev.ts_ms > s2.t2\n    AND ev.ts_ms <= s2.t1 + 604800000\n    AND 1 = 1\n  GROUP BY s2.pid, s2.t1, s2.t2\n),\ns4 AS (\n  SELECT s3.pid, s3.t1, s3.t2, s3.t3, MIN(ev.ts_ms) AS t4\n  FROM s3 JOIN ev ON ev.pid = s3.pid\n  WHERE ev.event = 'subscription_started'\n    AND ev.ts_ms > s3.t3\n    AND ev.ts_ms <= s3.t1 + 604800000\n    AND 1 = 1\n  GROUP BY s3.pid, s3.t1, s3.t2, s3.t3\n)\nSELECT 1 AS step, '' AS bd, COUNT(*) AS n, 0 AS dt_ms FROM s1\nUNION ALL\nSELECT 2 AS step, '' AS bd, COUNT(*) AS n, SUM(s2.t2 - s2.t1) AS dt_ms FROM s2\nUNION ALL\nSELECT 3 AS step, '' AS bd, COUNT(*) AS n, SUM(s3.t3 - s3.t2) AS dt_ms FROM s3\nUNION ALL\nSELECT 4 AS step, '' AS bd, COUNT(*) AS n, SUM(s4.t4 - s4.t3) AS dt_ms FROM s4"
+    "WITH ev AS (\n  SELECT e.*,\n    CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid\n  FROM events e\n  LEFT JOIN (\n    SELECT distinct_id, MIN(person_id) AS person_id\n    FROM identities\n    WHERE project = 'demo'\n    GROUP BY distinct_id\n  ) i ON i.distinct_id = e.distinct_id\n  WHERE e.project = 'demo'\n    AND e.ts_ms >= 1791282513552\n    AND e.ts_ms < 1794479313552\n    AND e.event IN ('$pageview', 'signup_started', 'signup_completed', 'subscription_started')\n),\ns1 AS (\n  SELECT pid, MIN(ts_ms) AS t1\n  FROM ev\n  WHERE event = '$pageview' AND ts_ms < 1793874513552 AND 1 = 1\n  GROUP BY pid\n),\ns2 AS (\n  SELECT s1.pid, s1.t1, MIN(ev.ts_ms) AS t2\n  FROM s1 JOIN ev ON ev.pid = s1.pid\n  WHERE ev.event = 'signup_started'\n    AND ev.ts_ms > s1.t1\n    AND ev.ts_ms <= s1.t1 + 604800000\n    AND 1 = 1\n  GROUP BY s1.pid, s1.t1\n),\ns3 AS (\n  SELECT s2.pid, s2.t1, s2.t2, MIN(ev.ts_ms) AS t3\n  FROM s2 JOIN ev ON ev.pid = s2.pid\n  WHERE ev.event = 'signup_completed'\n    AND ev.ts_ms > s2.t2\n    AND ev.ts_ms <= s2.t1 + 604800000\n    AND 1 = 1\n  GROUP BY s2.pid, s2.t1, s2.t2\n),\ns4 AS (\n  SELECT s3.pid, s3.t1, s3.t2, s3.t3, MIN(ev.ts_ms) AS t4\n  FROM s3 JOIN ev ON ev.pid = s3.pid\n  WHERE ev.event = 'subscription_started'\n    AND ev.ts_ms > s3.t3\n    AND ev.ts_ms <= s3.t1 + 604800000\n    AND 1 = 1\n  GROUP BY s3.pid, s3.t1, s3.t2, s3.t3\n)\nSELECT 1 AS step, '' AS bd, COUNT(*) AS n, 0 AS dt_ms FROM s1\nUNION ALL\nSELECT 2 AS step, '' AS bd, COUNT(*) AS n, SUM(s2.t2 - s2.t1) AS dt_ms FROM s2\nUNION ALL\nSELECT 3 AS step, '' AS bd, COUNT(*) AS n, SUM(s3.t3 - s3.t2) AS dt_ms FROM s3\nUNION ALL\nSELECT 4 AS step, '' AS bd, COUNT(*) AS n, SUM(s4.t4 - s4.t3) AS dt_ms FROM s4"
   ],
   "range": {
-    "from": "2026-10-05T21:07:22.152Z",
-    "to": "2026-11-04T21:07:22.152Z"
+    "from": "2026-10-06T10:28:33.552Z",
+    "to": "2026-11-05T10:28:33.552Z"
   },
-  "summary": "3,154 people started; 70 completed (2.2%). Biggest drop-off: into \"Paid\" (19.0% of the previous step).",
+  "summary": "3,078 people started; 79 completed (2.6%). Biggest drop-off: into \"Paid\" (19.1% of the previous step).",
   "project": "demo",
-  "dashboard": "http://127.0.0.1:55244/app#/insights/funnel?project=demo&spec=%7B%22from%22%3A%22-30d%22%2C%22steps%22%3A%5B%7B%22event%22%3A%22%24pageview%22%2C%22label%22%3A%22Visited%22%7D%2C%7B%22event%22%3A%22signup_started%22%2C%22label%22%3A%22Started+signup%22%7D%2C%7B%22event%22%3A%22signup_completed%22%2C%22label%22%3A%22Signed+up%22%7D%2C%7B%22event%22%3A%22subscription_started%22%2C%22label%22%3A%22Paid%22%7D%5D%2C%22window%22%3A%227d%22%7D"
+  "dashboard": "http://127.0.0.1:58904/app#/insights/funnel?project=demo&spec=%7B%22from%22%3A%22-30d%22%2C%22steps%22%3A%5B%7B%22event%22%3A%22%24pageview%22%2C%22label%22%3A%22Visited%22%7D%2C%7B%22event%22%3A%22signup_started%22%2C%22label%22%3A%22Started+signup%22%7D%2C%7B%22event%22%3A%22signup_completed%22%2C%22label%22%3A%22Signed+up%22%7D%2C%7B%22event%22%3A%22subscription_started%22%2C%22label%22%3A%22Paid%22%7D%5D%2C%22window%22%3A%227d%22%7D"
 }

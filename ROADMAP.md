@@ -1,10 +1,10 @@
 # Roadmap
 
-What Glass does today, and what's next. Items marked _good first issue_ are self-contained and a good way to start contributing.
+What Dataflare does today, and what's next. Items marked _good first issue_ are self-contained and a good way to start contributing.
 
 ## Shipped in 0.1
 
-- `glass init` / `upgrade` / `status`, with agent files (AGENTS.md, skill, `.mcp.json`)
+- `dataflare init` / `upgrade` / `status`, with agent files (AGENTS.md, skill, `.mcp.json`)
 - Browser SDK: autocapture (pageviews incl. SPA navigation, clicks, errors, web vitals), custom events, identify, person properties, cookieless mode, consent
 - Web analytics, trends, funnels, retention, raw SQL; filters and breakdowns on any event or person property
 - Session replay with sampling, error-triggered buffering, console and network capture, frustration signals (rage, dead and error clicks), search, cross-session patterns, notes and text transcripts with what-was-on-screen snapshots

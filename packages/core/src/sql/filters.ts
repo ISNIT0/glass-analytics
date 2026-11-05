@@ -142,7 +142,7 @@ function cohortFilterSql(filter: Filter, d: Dialect, alias?: string): string {
     const c = filter.cohorts?.[key];
     if (!c)
       throw new TypeError(
-        `Cohort "${key}" was not resolved. Run the query through the Glass API, which loads saved cohorts.`,
+        `Cohort "${key}" was not resolved. Run the query through the Dataflare API, which loads saved cohorts.`,
       );
     return `${col('pid', alias)} IN (${cohortMembersSql(d, c)})`;
   });

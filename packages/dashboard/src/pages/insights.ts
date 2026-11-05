@@ -9,9 +9,9 @@
  *   #/insights/:key             — open a saved analysis
  */
 
-import type { FunnelResult } from '@glassanalytics/core/insights/funnel';
-import type { RetentionResult } from '@glassanalytics/core/insights/retention';
-import type { TrendsResult } from '@glassanalytics/core/insights/trends';
+import type { FunnelResult } from '@dataflare/core/insights/funnel';
+import type { RetentionResult } from '@dataflare/core/insights/retention';
+import type { TrendsResult } from '@dataflare/core/insights/trends';
 import { api } from '../api.ts';
 import {
   type ChartType,
@@ -866,7 +866,7 @@ function editorView(options: {
     return rest;
   };
   const agentPrompt = () =>
-    `Using the Glass MCP tool query_${kind}, run ${JSON.stringify(shareable())} and explain what it shows.`;
+    `Using the Dataflare MCP tool query_${kind}, run ${JSON.stringify(shareable())} and explain what it shows.`;
 
   const ready = () => {
     if (kind === 'funnel') return (spec.steps as StepSpec[]).every((s) => s.event);

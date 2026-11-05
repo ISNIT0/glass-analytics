@@ -62,7 +62,7 @@ jobs:
       - name: Publish
         run: |
           version=$(node -p "require('./packages/cli/package.json').version")
-          if [ -z "${{ steps.version.outputs.version }}" ] && git ls-remote --exit-code --tags origin "refs/tags/@glassanalytics/cli@$version" >/dev/null; then
+          if [ -z "${{ steps.version.outputs.version }}" ] && git ls-remote --exit-code --tags origin "refs/tags/dataflare@$version" >/dev/null; then
             echo "$version is already tagged: published by an earlier run."
             exit 0
           fi
@@ -80,4 +80,4 @@ jobs:
         run: |
           git push origin --tags
           awk -v v="## $VERSION" '$0==v{on=1;next} /^## /{if(on)exit} on' packages/cli/CHANGELOG.md > notes.md
-          gh release create "@glassanalytics/cli@$VERSION" --title "Glass $VERSION" --notes-file notes.md --verify-tag || echo "GitHub release not created (tag missing?)"
+          gh release create "dataflare@$VERSION" --title "Dataflare $VERSION" --notes-file notes.md --verify-tag || echo "GitHub release not created (tag missing?)"

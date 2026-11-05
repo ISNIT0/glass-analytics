@@ -1,6 +1,6 @@
-# Extending Glass
+# Extending Dataflare
 
-Glass is built from small registries so the common extensions are one file each. Every example here has a test pattern next to it in the repository.
+Dataflare is built from small registries so the common extensions are one file each. Every example here has a test pattern next to it in the repository.
 
 ## Add a query type
 
@@ -34,7 +34,7 @@ Glass is built from small registries so the common extensions are one file each.
    paths: define({ description: 'Where people go next after a page.', schema: pathsSpec, run: runPaths }),
    ```
 
-You now have `POST /api/query {"kind":"paths"}`, an MCP tool `query_paths` and `glass query paths --spec '…'`. Write tests in `packages/core/test/` that insert events with `insert()` and execute your SQL on SQLite (see `insights.test.ts`).
+You now have `POST /api/query {"kind":"paths"}`, an MCP tool `query_paths` and `dataflare query paths --spec '…'`. Write tests in `packages/core/test/` that insert events with `insert()` and execute your SQL on SQLite (see `insights.test.ts`).
 
 Rules for portable SQL: start from `eventsCte()` (it scopes to the project and range, and resolves people as `pid`); use `ts_ms` integer arithmetic or `bucketExpr()` for time; filters via `filtersSql()`; anything engine-specific goes in `Dialect`.
 
@@ -62,11 +62,11 @@ Implement two interfaces:
 - `Dialect` (`packages/core/src/sql/dialect.ts`): literals, JSON access, month arithmetic and table names for your engine.
 - `EventStore` (`packages/worker/src/stores/types.ts`): `write(events)`, `writeIdentity(link)`, `query(sql)`, `deletePersonEvents(project, ids)`.
 
-Then select it in `createStore()` (`packages/worker/src/app.ts`) from an environment variable, and add a provisioning step to `glass init` if it needs resources. Run the core insight tests against your dialect if your engine can run locally (DuckDB and ClickHouse both can).
+Then select it in `createStore()` (`packages/worker/src/app.ts`) from an environment variable, and add a provisioning step to `dataflare init` if it needs resources. Run the core insight tests against your dialect if your engine can run locally (DuckDB and ClickHouse both can).
 
 ## Add a framework snippet
 
-Add an entry to `FRAMEWORKS` and a detection rule in `detectFramework()` (`packages/core/src/instrument.ts`). `glass init` and the `instrument` tool pick it up automatically.
+Add an entry to `FRAMEWORKS` and a detection rule in `detectFramework()` (`packages/core/src/instrument.ts`). `dataflare init` and the `instrument` tool pick it up automatically.
 
 ## Enrich events at ingest
 

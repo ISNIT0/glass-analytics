@@ -1,5 +1,5 @@
 /**
- * Client for the Glass JSON API. The dashboard uses exactly the endpoints an
+ * Client for the Dataflare JSON API. The dashboard uses exactly the endpoints an
  * agent would, so anything you can see here, an agent can query too.
  */
 
@@ -26,7 +26,7 @@ async function demoRequest<T>(method: string, url: URL, body?: unknown): Promise
     throw new ApiError(
       403,
       'The demo is read-only.',
-      'Install Glass with `npx @glassanalytics/cli init` to save insights, flags and experiments.',
+      'Install Dataflare with `npx dataflare init` to save insights, flags and experiments.',
     );
   const path = url.pathname.slice(config.base.length) + url.search;
   const name = fixtureName(method, path, body === undefined ? null : JSON.stringify(body));
@@ -35,7 +35,7 @@ async function demoRequest<T>(method: string, url: URL, body?: unknown): Promise
     throw new ApiError(
       404,
       "This view isn't part of the demo.",
-      'The demo has a fixed set of views. Install Glass to explore your own data any way you like.',
+      'The demo has a fixed set of views. Install Dataflare to explore your own data any way you like.',
     );
   return (await res.json()) as T;
 }

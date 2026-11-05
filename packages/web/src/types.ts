@@ -1,5 +1,5 @@
 /**
- * One event as sent to the Worker. Mirrors `WireEvent` in @glassanalytics/core (kept as
+ * One event as sent to the Worker. Mirrors `WireEvent` in @dataflare/core (kept as
  * a copy so the published type declarations are self-contained; a test fails
  * if the two drift apart).
  */
@@ -67,7 +67,7 @@ export interface ReplayOptions {
 export type ConsoleLevel = 'log' | 'info' | 'warn' | 'error' | 'debug';
 
 export interface GlassOptions {
-  /** Base URL of your Glass Worker, e.g. "https://glass.acme.workers.dev" or "/_glass". */
+  /** Base URL of your Dataflare Worker, e.g. "https://glass.acme.workers.dev" or "/_glass". */
   host: string;
   /** Project id, e.g. "acme-web". */
   project: string;

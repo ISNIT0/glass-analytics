@@ -9,7 +9,7 @@
  *   /llms.txt         agent instructions for this deployment
  *   /health           status
  *
- * All paths also work under a `/_glass` prefix, so Glass can be mounted on
+ * All paths also work under a `/_glass` prefix, so Dataflare can be mounted on
  * your own domain (first-party requests are not blocked by ad blockers).
  */
 
@@ -47,7 +47,7 @@ function withCors(response: Response): Response {
   return res;
 }
 
-/** The Glass mark, a pane with a green fill line. Keep in sync with site/public/favicon.svg. */
+/** The Dataflare mark, a pane with a green fill line. Keep in sync with site/public/favicon.svg. */
 const FAVICON = `data:image/svg+xml,${encodeURIComponent(
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset=".58" stop-color="#fff"/><stop offset=".58" stop-color="#cfe7df"/><stop offset=".78" stop-color="#cfe7df"/><stop offset=".78" stop-color="#2e7d6b"/></linearGradient></defs><rect x="2" y="2" width="28" height="28" rx="7" fill="url(#g)" stroke="#2e7d6b" stroke-width="2.5"/></svg>',
 )}`;
@@ -59,7 +59,7 @@ function dashboardHtml(base: string): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="glass-base" content="${base}">
-<title>Glass</title>
+<title>Dataflare</title>
 <link rel="icon" href="${FAVICON}">
 <link rel="stylesheet" href="${base}/app/app.css">
 </head>

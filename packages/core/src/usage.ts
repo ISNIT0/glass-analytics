@@ -1,12 +1,12 @@
 /**
- * What this Glass deployment adds to the Cloudflare bill: usage over the last
- * 7 days (from Glass's own data), projected to a month, priced against the
+ * What this Dataflare deployment adds to the Cloudflare bill: usage over the last
+ * 7 days (from Dataflare's own data), projected to a month, priced against the
  * Workers Paid plan, plus recommendations for cutting it.
  *
- * These are estimates. Glass doesn't see Cloudflare's billing; it counts what
+ * These are estimates. Dataflare doesn't see Cloudflare's billing; it counts what
  * it stored and infers the requests and writes that took. Allowances on the
  * Workers Paid plan are shared by every Worker in the account, so "overage"
- * here means "if Glass were the only thing using them".
+ * here means "if Dataflare were the only thing using them".
  *
  * Prices: developers.cloudflare.com/{workers,d1,r2}/platform/pricing, checked
  * November 2026.
@@ -97,7 +97,7 @@ export interface Recommendation {
   detail: string;
   /** Rough monthly saving or headroom, in words. */
   impact: string;
-  /** A prompt for a coding agent working in the project that runs Glass. */
+  /** A prompt for a coding agent working in the project that runs Dataflare. */
   prompt: string;
 }
 
@@ -113,7 +113,7 @@ export interface UsageReport {
     replayGb: number;
   };
   lines: Line[];
-  /** Glass's own projected cost beyond the plan's allowances. */
+  /** Dataflare's own projected cost beyond the plan's allowances. */
   overageUsd: number;
   /** Rows one Reports load reads, and how many loads the allowance covers. */
   reads: { perReportLoad: number; loadsIncluded: number };
@@ -310,7 +310,7 @@ function recommend(
       detail: `About ${Math.round(replayShare * 100)}% of sessions are recorded, about ${round(m.replayGb, 1)} GB kept. Recording 10% of sessions plus every session that hits an error usually keeps what you need to debug.`,
       impact: `About ${Math.round((1 - 0.1 / Math.max(replayShare, 0.1)) * 100)}% less replay storage and uploads`,
       prompt:
-        'In the Glass snippet for this site, set the replay sample rate to 0.1 and the on-error sample rate to 1 (data-replay-sample-rate="0.1" data-replay-on-error-sample-rate="1", or replay: { sampleRate: 0.1, onErrorSampleRate: 1 } in glass.init). Deploy, then check the replays list still shows sessions with errors.',
+        'In the Dataflare snippet for this site, set the replay sample rate to 0.1 and the on-error sample rate to 1 (data-replay-sample-rate="0.1" data-replay-on-error-sample-rate="1", or replay: { sampleRate: 0.1, onErrorSampleRate: 1 } in glass.init). Deploy, then check the replays list still shows sessions with errors.',
     });
   }
   if (
@@ -323,7 +323,7 @@ function recommend(
       detail: `D1 is projected at ${round(m.d1Gb, 1)} GB and ${millions(m.rowsWritten)} rows written a month. The lake store keeps events as Iceberg tables on R2 (about $0.015/GB-month) and takes event writes out of D1.`,
       impact: 'D1 writes and storage drop to the replay index and settings',
       prompt:
-        'Switch this Glass deployment to the lake store: run `npx @glassanalytics/cli@latest init --lake` in the project with .glass/, commit .glass/ and push so the Glass workflow deploys it. Then confirm events arrive with `npx @glassanalytics/cli status` and that the dashboard Reports load.',
+        'Switch this Dataflare deployment to the lake store: run `npx dataflare@latest init --lake` in the project with .glass/, commit .glass/ and push so the Dataflare workflow deploys it. Then confirm events arrive with `npx dataflare status` and that the dashboard Reports load.',
     });
   }
   if (input.store === 'd1' && input.retentionDays === null && (m.d1Gb > 1 || m.events > 5e6)) {
@@ -334,7 +334,7 @@ function recommend(
         'Events are kept forever. Keeping 13 months covers year-on-year comparisons and stops D1 growing without bound.',
       impact: 'D1 storage stops growing after 13 months',
       prompt:
-        'Set event retention for this Glass deployment to 400 days: run `npx @glassanalytics/cli@latest upgrade --retention-days 400`, commit .glass/ and push so the Glass workflow deploys it.',
+        'Set event retention for this Dataflare deployment to 400 days: run `npx dataflare@latest upgrade --retention-days 400`, commit .glass/ and push so the Dataflare workflow deploys it.',
     });
   }
   const total = input.topEvents.reduce((n, e) => n + e.count, 0) || 1;
@@ -355,8 +355,8 @@ function recommend(
       impact: `Up to ${Math.round(share * 100)}% fewer event writes`,
       prompt:
         e.event === '$click'
-          ? 'Glass autocaptures every click. Check whether we use $click in any analysis (list_events, describe_event). If not, turn click autocapture off in the Glass snippet (autocapture: { clicks: false }) and track the few clicks that matter as named events instead.'
-          : `The Glass event "${e.event}" is ${Math.round(share * 100)}% of all events. Find where it is captured, explain why it fires so often, and make it fire once per meaningful action (debounce, dedupe or sample it). Keep what our saved analyses need (check list_insights).`,
+          ? 'Dataflare autocaptures every click. Check whether we use $click in any analysis (list_events, describe_event). If not, turn click autocapture off in the Dataflare snippet (autocapture: { clicks: false }) and track the few clicks that matter as named events instead.'
+          : `The Dataflare event "${e.event}" is ${Math.round(share * 100)}% of all events. Find where it is captured, explain why it fires so often, and make it fire once per meaningful action (debounce, dedupe or sample it). Keep what our saved analyses need (check list_insights).`,
     });
   }
   if (m.requests / 30 > p.workers.freeRequestsPerDay * 0.6) {
@@ -366,7 +366,7 @@ function recommend(
       detail: `About ${millions(m.requests / 30)} requests a day. The free plan stops at ${millions(p.workers.freeRequestsPerDay)} a day, so this needs Workers Paid ($5/month), which includes 10M a month.`,
       impact: 'Avoids dropped events on busy days',
       prompt:
-        'Check whether the Cloudflare account running Glass is on Workers Paid. If it is on the free plan, tell me before traffic grows past 100,000 requests a day.',
+        'Check whether the Cloudflare account running Dataflare is on Workers Paid. If it is on the free plan, tell me before traffic grows past 100,000 requests a day.',
     });
   }
   return out;

@@ -1,31 +1,31 @@
-# Glass
+# Dataflare
 
 > Open-source, agent-first analytics that runs in your own Cloudflare account: web analytics, product analytics (trends, funnels, retention), session replay with text transcripts, feature flags and A/B tests. Installed with one command and queried through MCP, a CLI or HTTP.
 
 ## Install (for coding agents)
 
-1. In the user's project, run `npx @glassanalytics/cli init`. It needs a Cloudflare API token, from the `CLOUDFLARE_API_TOKEN` environment variable or the `--token` flag. In non-interactive shells, also pass `--account <id>` when the token can see several accounts.
+1. In the user's project, run `npx dataflare init`. It needs a Cloudflare API token, from the `CLOUDFLARE_API_TOKEN` environment variable or the `--token` flag. In non-interactive shells, also pass `--account <id>` when the token can see several accounts.
    - Optional flags: `--project <id>`, `--eu` (EU data jurisdiction), `--lake` (Iceberg storage for high volume), `--route example.com` (first-party serving at /_glass), `--dry-run`.
    - Token permissions: Account › Workers Scripts › Edit; Account › D1 › Edit; Account › Workers R2 Storage › Edit; Account › Account Settings › Read.
-2. `glass init` prints the install snippet for the detected framework. Add it to the site's <head>, for example:
+2. `dataflare init` prints the install snippet for the detected framework. Add it to the site's <head>, for example:
    `<script defer src="https://glass.<subdomain>.workers.dev/s.js" data-project="<project>"></script>`
-   For npm apps: `npm i @glassanalytics/web`, then `import { glass } from '@glassanalytics/web'` and `glass.init({ host, project })`.
+   For npm apps: `npm i dataflare-web`, then `import { glass } from 'dataflare-web'` and `glass.init({ host, project })`.
 3. Track key events: `glass.capture('signup_completed', { plan: 'pro' })`; after login `glass.identify(user.id, { plan })`.
    Name events object_action in snake_case past tense. Put details in properties, never personal data.
-4. Verify: `npx @glassanalytics/cli status`, then `npx @glassanalytics/cli events signup_completed` after triggering the event.
-5. Document every custom event before building funnels or trends on it. Call MCP `define_event` (or `npx @glassanalytics/cli events <name> --describe "…"`) with:
+4. Verify: `npx dataflare status`, then `npx dataflare events signup_completed` after triggering the event.
+5. Document every custom event before building funnels or trends on it. Call MCP `define_event` (or `npx dataflare events <name> --describe "…"`) with:
    - a description of how and when the event is fired (which user action or code path), and
    - a meaning for each property (what it is, and which values to expect).
    On an existing project, start with `list_events` and clear the `undocumented` list first.
 
-`glass init` also writes AGENTS.md instructions, a Claude Code skill (.claude/skills/glass/SKILL.md) and an MCP server entry in .mcp.json (`npx @glassanalytics/cli mcp`).
+`dataflare init` also writes AGENTS.md instructions, a Claude Code skill (.claude/skills/glass/SKILL.md) and an MCP server entry in .mcp.json (`npx dataflare mcp`).
 
 ## Query
 
 - MCP tools: overview, query_web, query_trends, query_funnel, query_retention, sql, list_events, describe_event, define_event, mark_event, query_sources, site_health, usage_and_cost, property_values, list_person_properties, instrument, search_persons, get_person, list_cohorts, save_cohort, count_cohort, delete_cohort, list_replays, summarise_replay, replay_snapshot, analyse_replays, annotate_replay, delete_replay_note, list_flags, save_flag, delete_flag, list_experiments, create_experiment, experiment_results, update_experiment, list_projects, create_project.
-- CLI: `npx @glassanalytics/cli query web --from -7d`, `npx @glassanalytics/cli query funnel --steps '$pageview,signup_completed'`, `npx @glassanalytics/cli sql "SELECT …"`, `npx @glassanalytics/cli --help`.
+- CLI: `npx dataflare query web --from -7d`, `npx dataflare query funnel --steps '$pageview,signup_completed'`, `npx dataflare sql "SELECT …"`, `npx dataflare --help`.
 - HTTP: `GET <worker>/api` lists every endpoint; `GET <worker>/llms.txt` on a deployment has its real URLs.
-- Upgrades: `GET <worker>/health` (and `overview`) report `upgradeAvailable` when a newer release exists. Tell the user to run `npx @glassanalytics/cli@latest upgrade`; do not upgrade yourself.
+- Upgrades: `GET <worker>/health` (and `overview`) report `upgradeAvailable` when a newer release exists. Tell the user to run `npx dataflare@latest upgrade`; do not upgrade yourself.
 
 ## Docs
 

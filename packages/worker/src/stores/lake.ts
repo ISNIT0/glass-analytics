@@ -2,16 +2,16 @@
  * The lake store: Cloudflare Pipelines → Iceberg tables in R2 → Basin SQL.
  *
  * Writes go through Pipelines stream bindings (no credentials needed). Reads go
- * to the Basin SQL HTTP API with an API token. `glass init --lake` provisions
+ * to the Basin SQL HTTP API with an API token. `dataflare init --lake` provisions
  * the streams, sinks and catalog; see packages/cli/src/cloudflare/provision.ts.
  *
  * Status: beta. Basin SQL (formerly R2 SQL) is in open beta and its API may
  * change; the endpoint paths and response parsing are isolated here for that reason.
  */
 
-import type { StoredEvent } from '@glassanalytics/core/events';
-import type { Row } from '@glassanalytics/core/insights/types';
-import { basin } from '@glassanalytics/core/sql/dialect';
+import type { StoredEvent } from '@dataflare/core/events';
+import type { Row } from '@dataflare/core/insights/types';
+import { basin } from '@dataflare/core/sql/dialect';
 import type { Env } from '../env.ts';
 import { HttpError } from '../http.ts';
 import type { EventStore, IdentityLink } from './types.ts';
@@ -39,7 +39,7 @@ export class LakeStore implements EventStore {
       throw new HttpError(
         503,
         'EVENTS_STREAM binding is missing',
-        'Run `glass init --lake` again.',
+        'Run `dataflare init --lake` again.',
       );
     // Iceberg gets a real timestamp column for humans and partitioning; queries use ts_ms.
     await this.env.EVENTS_STREAM.send(
@@ -57,7 +57,7 @@ export class LakeStore implements EventStore {
       throw new HttpError(
         503,
         'Lake mode needs CF_ACCOUNT_ID, LAKE_BUCKET and CF_API_TOKEN',
-        'Run `glass upgrade` to set them.',
+        'Run `dataflare upgrade` to set them.',
       );
     }
     let last: Response | null = null;

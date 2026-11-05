@@ -1,6 +1,6 @@
 /**
  * Interactive prompts that fail fast (with the flag to use instead) when stdin
- * is not a terminal — agents run `glass init` non-interactively.
+ * is not a terminal — agents run `dataflare init` non-interactively.
  */
 
 import { createInterface } from 'node:readline/promises';

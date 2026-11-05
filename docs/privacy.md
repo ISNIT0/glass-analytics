@@ -1,6 +1,6 @@
 # Privacy
 
-Glass runs entirely in your Cloudflare account. There is no Glass service: events, people, recordings and keys live in your D1 database, your R2 buckets and your Worker's secrets. Nothing is sent to the Glass project or to any third party, and the dashboard and SDK load no third-party resources. (The Glass website, which is separate from your deployment, uses the Meta Pixel to measure its own ads.)
+Dataflare runs entirely in your Cloudflare account. There is no Dataflare service: events, people, recordings and keys live in your D1 database, your R2 buckets and your Worker's secrets. Nothing is sent to the Dataflare project or to any third party, and the dashboard and SDK load no third-party resources. (The Dataflare website, which is separate from your deployment, uses the Meta Pixel to measure its own ads.)
 
 ## What is stored
 
@@ -33,11 +33,11 @@ This is enough for web analytics. It is not enough for funnels across days, rete
 ## Deleting a person
 
 ```sh
-npx @glassanalytics/cli person <user-id> --delete
+npx dataflare person <user-id> --delete
 ```
 
-This deletes the person, their device links, their replays and (in D1 mode) every event from their user id and devices. In lake mode, Iceberg tables are append-only to Glass, so events must be removed with a separate delete job against the table; this is on the [roadmap](../ROADMAP.md).
+This deletes the person, their device links, their replays and (in D1 mode) every event from their user id and devices. In lake mode, Iceberg tables are append-only to Dataflare, so events must be removed with a separate delete job against the table; this is on the [roadmap](../ROADMAP.md).
 
 ## EU data
 
-`glass init --eu` creates the D1 database and R2 buckets in Cloudflare's EU jurisdiction. The Worker itself runs on Cloudflare's global network.
+`dataflare init --eu` creates the D1 database and R2 buckets in Cloudflare's EU jurisdiction. The Worker itself runs on Cloudflare's global network.

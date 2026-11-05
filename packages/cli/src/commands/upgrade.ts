@@ -1,15 +1,15 @@
 /**
- * `glass upgrade` — redeploy the Worker bundled with this CLI version and
+ * `dataflare upgrade` — redeploy the Worker bundled with this CLI version and
  * apply new migrations. When `.github/workflows/glass.yml` exists (see
- * `glass ci`), a run outside CI only stages the files and CI deploys them.
- * `glass ci` — write that workflow. `glass status` — check a deployment end to end.
- * `glass key` — print connection details for the dashboard or an agent.
+ * `dataflare ci`), a run outside CI only stages the files and CI deploys them.
+ * `dataflare ci` — write that workflow. `dataflare status` — check a deployment end to end.
+ * `dataflare key` — print connection details for the dashboard or an agent.
  */
 
 import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { GLASS_VERSION, isNewerThan, UPGRADE_COMMAND } from '@glassanalytics/core/version';
+import { GLASS_VERSION, isNewerThan, UPGRADE_COMMAND } from '@dataflare/core/version';
 import {
   CI_WORKFLOW_PATH,
   ciNextSteps,
@@ -52,7 +52,7 @@ export function workerBundleDir(): string {
   }
   throw new UsageError(
     'The Worker bundle is missing.',
-    'If you are working on Glass itself, run `pnpm build` first.',
+    'If you are working on Dataflare itself, run `pnpm build` first.',
   );
 }
 
@@ -61,7 +61,7 @@ export interface UpgradeOptions {
   json?: boolean;
   /** Deploy as a CI runner: no prompts, Worker secrets left as they are. Defaults to true when CI=true. */
   ci?: boolean;
-  /** Deploy from this machine even though a Glass CI workflow exists. */
+  /** Deploy from this machine even though a Dataflare CI workflow exists. */
   local?: boolean;
   /** Allow replacing a newer deployed Worker with this CLI's older one. */
   allowDowngrade?: boolean;
@@ -96,8 +96,8 @@ export async function upgrade(options: UpgradeOptions, deps: UpgradeDeps = {}): 
   const config = loadConfig(root);
   if (!config)
     throw new UsageError(
-      'No Glass deployment in this project.',
-      'Run `npx @glassanalytics/cli init` first.',
+      'No Dataflare deployment in this project.',
+      'Run `npx dataflare init` first.',
     );
   if (options.retentionDays !== undefined) {
     if (!Number.isInteger(options.retentionDays) || options.retentionDays < 0)
@@ -112,7 +112,7 @@ export async function upgrade(options: UpgradeOptions, deps: UpgradeDeps = {}): 
   if (!credentials && !ci)
     throw new UsageError(
       'No .glass/credentials.json in this project.',
-      'Run `npx @glassanalytics/cli init` again to restore keys, or deploy from CI (`glass upgrade --ci`), which leaves Worker secrets as they are.',
+      'Run `npx dataflare init` again to restore keys, or deploy from CI (`dataflare upgrade --ci`), which leaves Worker secrets as they are.',
     );
   const dir = glassDir(root);
   const bundle = deps.bundleDir ?? workerBundleDir();
@@ -125,8 +125,8 @@ export async function upgrade(options: UpgradeOptions, deps: UpgradeDeps = {}): 
     .sort((a, b) => (isNewerThan(a, b) ? -1 : 1))[0];
   if (deployed && isNewerThan(deployed, GLASS_VERSION) && !options.allowDowngrade) {
     throw new UsageError(
-      `This deployment runs Glass ${deployed}, which is newer than this CLI (${GLASS_VERSION}). Nothing was changed.`,
-      `Run \`${UPGRADE_COMMAND}\` (or npx @glassanalytics/cli@${deployed} or later). --allow-downgrade forces the older Worker.`,
+      `This deployment runs Dataflare ${deployed}, which is newer than this CLI (${GLASS_VERSION}). Nothing was changed.`,
+      `Run \`${UPGRADE_COMMAND}\` (or npx dataflare@${deployed} or later). --allow-downgrade forces the older Worker.`,
     );
   }
   const from = config.version;
@@ -137,6 +137,9 @@ export async function upgrade(options: UpgradeOptions, deps: UpgradeDeps = {}): 
     config.version = GLASS_VERSION;
     writeFileSync(join(dir, 'wrangler.jsonc'), renderWranglerConfig(config));
     saveConfig(config, root);
+    // Refresh a generated workflow: one written before the rename runs `@glassanalytics/cli@<version>`,
+    // which has no new versions, so it must switch to `dataflare` along with this upgrade.
+    writeCiWorkflow(root);
     const branch = defaultBranch(root);
     if (options.json) {
       printJson({
@@ -149,10 +152,10 @@ export async function upgrade(options: UpgradeOptions, deps: UpgradeDeps = {}): 
       return;
     }
     ok(
-      `Staged Glass ${from === GLASS_VERSION ? GLASS_VERSION : `${from} → ${GLASS_VERSION}`} in .glass/ (nothing deployed)`,
+      `Staged Dataflare ${from === GLASS_VERSION ? GLASS_VERSION : `${from} → ${GLASS_VERSION}`} in .glass/ (nothing deployed)`,
     );
     line(`  Commit .glass/ and push to ${branch}; ${CI_WORKFLOW_PATH} migrates and deploys it.`);
-    line(color.dim('  Deploying from this machine instead: glass upgrade --local'));
+    line(color.dim('  Deploying from this machine instead: dataflare upgrade --local'));
     return;
   }
 
@@ -220,18 +223,18 @@ export async function upgrade(options: UpgradeOptions, deps: UpgradeDeps = {}): 
     });
   else
     ok(
-      `Glass ${from === GLASS_VERSION ? GLASS_VERSION : `${from} upgraded to ${GLASS_VERSION}`} is live at ${config.host}`,
+      `Dataflare ${from === GLASS_VERSION ? GLASS_VERSION : `${from} upgraded to ${GLASS_VERSION}`} is live at ${config.host}`,
     );
   if (!ci && !hasCiWorkflow(root) && !options.json) {
     line(
       color.dim(
-        `  Tip: \`glass ci\` writes ${CI_WORKFLOW_PATH} so future upgrades deploy from CI instead of this machine.`,
+        `  Tip: \`dataflare ci\` writes ${CI_WORKFLOW_PATH} so future upgrades deploy from CI instead of this machine.`,
       ),
     );
   }
 }
 
-/** `glass ci`: write (or refresh) the GitHub Actions workflow that deploys Glass. */
+/** `dataflare ci`: write (or refresh) the GitHub Actions workflow that deploys Dataflare. */
 export function ci(
   options: { branch?: string; secret?: string; json?: boolean },
   deps: { root?: string } = {},
@@ -239,8 +242,8 @@ export function ci(
   const root = deps.root ?? projectRoot();
   if (!loadConfig(root))
     throw new UsageError(
-      'No Glass deployment in this project.',
-      'Run `npx @glassanalytics/cli init` first.',
+      'No Dataflare deployment in this project.',
+      'Run `npx dataflare init` first.',
     );
   const result = writeCiWorkflow(root, { branch: options.branch, secret: options.secret });
   const next = ciNextSteps(result);
@@ -298,7 +301,7 @@ export async function status(options: { json?: boolean }): Promise<void> {
     account: config?.accountId,
   };
   if (options.json) return printJson(result);
-  ok(`Worker reachable at ${conn.host} (Glass ${health.version}, ${health.store} store)`);
+  ok(`Worker reachable at ${conn.host} (Dataflare ${health.version}, ${health.store} store)`);
   (total ? ok : skip)(
     total
       ? `${total.toLocaleString('en-US')} events in the last 24 hours, latest ${last}`
@@ -307,23 +310,23 @@ export async function status(options: { json?: boolean }): Promise<void> {
   (health.replay ? ok : skip)(
     health.replay
       ? 'Session replay enabled'
-      : 'Session replay disabled (no R2 bucket); `glass upgrade` retries',
+      : 'Session replay disabled (no R2 bucket); `dataflare upgrade` retries',
   );
   (mcp ? ok : skip)(
     mcp
       ? 'MCP server configured in .mcp.json'
-      : 'No .mcp.json; run `glass init` again to write agent files',
+      : 'No .mcp.json; run `dataflare init` again to write agent files',
   );
   if (health.latest && isNewerThan(health.latest, health.version)) {
     skip(
-      `Glass ${health.latest} is available (this deployment is ${health.version}). Run: ${upgradeCommand}`,
+      `Dataflare ${health.latest} is available (this deployment is ${health.version}). Run: ${upgradeCommand}`,
     );
   } else if (cliMismatch) {
     skip(
-      `This CLI is Glass ${GLASS_VERSION}; the Worker runs ${health.version}. Run: ${upgradeCommand}`,
+      `This CLI is Dataflare ${GLASS_VERSION}; the Worker runs ${health.version}. Run: ${upgradeCommand}`,
     );
   } else {
-    ok(`Up to date (Glass ${health.version})`);
+    ok(`Up to date (Dataflare ${health.version})`);
   }
 }
 
@@ -346,7 +349,7 @@ export function key(options: { read?: boolean; json?: boolean }): void {
     color.dim(
       options.read
         ? 'Safe to share for viewing.'
-        : 'Full access. Use `glass key --read` for a key that can only view.',
+        : 'Full access. Use `dataflare key --read` for a key that can only view.',
     ),
   );
 }

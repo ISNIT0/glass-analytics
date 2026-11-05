@@ -5,7 +5,7 @@
     {
       "label": "$pageview",
       "event": "$pageview",
-      "count": 3154,
+      "count": 3078,
       "conversionFromStart": 1,
       "conversionFromPrevious": 1,
       "avgSecondsFromPrevious": null
@@ -13,20 +13,20 @@
     {
       "label": "signup_completed",
       "event": "signup_completed",
-      "count": 370,
-      "conversionFromStart": 0.11731135066582118,
-      "conversionFromPrevious": 0.11731135066582118,
-      "avgSecondsFromPrevious": 190.32505405405405
+      "count": 416,
+      "conversionFromStart": 0.13515269655620532,
+      "conversionFromPrevious": 0.13515269655620532,
+      "avgSecondsFromPrevious": 195.7104495192308
     }
   ],
   "sql": [
-    "WITH ev AS (\n  SELECT e.*,\n    CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid\n  FROM events e\n  LEFT JOIN (\n    SELECT distinct_id, MIN(person_id) AS person_id\n    FROM identities\n    WHERE project = 'demo'\n    GROUP BY distinct_id\n  ) i ON i.distinct_id = e.distinct_id\n  WHERE e.project = 'demo'\n    AND e.ts_ms >= 1791234414234\n    AND e.ts_ms < 1793912814234\n    AND e.event IN ('$pageview', 'signup_completed')\n),\ns1 AS (\n  SELECT pid, MIN(ts_ms) AS t1\n  FROM ev\n  WHERE event = '$pageview' AND ts_ms < 1793826414234 AND 1 = 1\n  GROUP BY pid\n),\nb AS (\n  SELECT s1.pid, MIN(COALESCE(NULLIF(ev.utm_source, ''), '(none)')) AS bd\n  FROM s1 JOIN ev ON ev.pid = s1.pid AND ev.ts_ms = s1.t1\n  WHERE ev.event = '$pageview' AND 1 = 1\n  GROUP BY s1.pid\n),\ns2 AS (\n  SELECT s1.pid, s1.t1, MIN(ev.ts_ms) AS t2\n  FROM s1 JOIN ev ON ev.pid = s1.pid\n  WHERE ev.event = 'signup_completed'\n    AND ev.ts_ms > s1.t1\n    AND ev.ts_ms <= s1.t1 + 86400000\n    AND 1 = 1\n  GROUP BY s1.pid, s1.t1\n)\nSELECT 1 AS step, COALESCE(b.bd, '(none)') AS bd, COUNT(*) AS n, 0 AS dt_ms FROM s1 LEFT JOIN b ON b.pid = s1.pid GROUP BY COALESCE(b.bd, '(none)')\nUNION ALL\nSELECT 2 AS step, COALESCE(b.bd, '(none)') AS bd, COUNT(*) AS n, SUM(s2.t2 - s2.t1) AS dt_ms FROM s2 LEFT JOIN b ON b.pid = s2.pid GROUP BY COALESCE(b.bd, '(none)')"
+    "WITH ev AS (\n  SELECT e.*,\n    CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid\n  FROM events e\n  LEFT JOIN (\n    SELECT distinct_id, MIN(person_id) AS person_id\n    FROM identities\n    WHERE project = 'demo'\n    GROUP BY distinct_id\n  ) i ON i.distinct_id = e.distinct_id\n  WHERE e.project = 'demo'\n    AND e.ts_ms >= 1791282484776\n    AND e.ts_ms < 1793960884776\n    AND e.event IN ('$pageview', 'signup_completed')\n),\ns1 AS (\n  SELECT pid, MIN(ts_ms) AS t1\n  FROM ev\n  WHERE event = '$pageview' AND ts_ms < 1793874484776 AND 1 = 1\n  GROUP BY pid\n),\nb AS (\n  SELECT s1.pid, MIN(COALESCE(NULLIF(ev.utm_source, ''), '(none)')) AS bd\n  FROM s1 JOIN ev ON ev.pid = s1.pid AND ev.ts_ms = s1.t1\n  WHERE ev.event = '$pageview' AND 1 = 1\n  GROUP BY s1.pid\n),\ns2 AS (\n  SELECT s1.pid, s1.t1, MIN(ev.ts_ms) AS t2\n  FROM s1 JOIN ev ON ev.pid = s1.pid\n  WHERE ev.event = 'signup_completed'\n    AND ev.ts_ms > s1.t1\n    AND ev.ts_ms <= s1.t1 + 86400000\n    AND 1 = 1\n  GROUP BY s1.pid, s1.t1\n)\nSELECT 1 AS step, COALESCE(b.bd, '(none)') AS bd, COUNT(*) AS n, 0 AS dt_ms FROM s1 LEFT JOIN b ON b.pid = s1.pid GROUP BY COALESCE(b.bd, '(none)')\nUNION ALL\nSELECT 2 AS step, COALESCE(b.bd, '(none)') AS bd, COUNT(*) AS n, SUM(s2.t2 - s2.t1) AS dt_ms FROM s2 LEFT JOIN b ON b.pid = s2.pid GROUP BY COALESCE(b.bd, '(none)')"
   ],
   "range": {
-    "from": "2026-10-05T21:06:54.234Z",
-    "to": "2026-11-04T21:06:54.234Z"
+    "from": "2026-10-06T10:28:04.776Z",
+    "to": "2026-11-05T10:28:04.776Z"
   },
-  "summary": "3,154 people started; 370 completed (11.7%). Biggest drop-off: into \"signup_completed\" (11.7% of the previous step).",
+  "summary": "3,078 people started; 416 completed (13.5%). Biggest drop-off: into \"signup_completed\" (13.5% of the previous step).",
   "breakdowns": [
     {
       "value": "(none)",
@@ -34,7 +34,7 @@
         {
           "label": "$pageview",
           "event": "$pageview",
-          "count": 2351,
+          "count": 2253,
           "conversionFromStart": 1,
           "conversionFromPrevious": 1,
           "avgSecondsFromPrevious": null
@@ -42,10 +42,10 @@
         {
           "label": "signup_completed",
           "event": "signup_completed",
-          "count": 256,
-          "conversionFromStart": 0.10888983411314335,
-          "conversionFromPrevious": 0.10888983411314335,
-          "avgSecondsFromPrevious": 190.8790078125
+          "count": 281,
+          "conversionFromStart": 0.12472259209942299,
+          "conversionFromPrevious": 0.12472259209942299,
+          "avgSecondsFromPrevious": 192.18082562277579
         }
       ]
     },
@@ -55,7 +55,7 @@
         {
           "label": "$pageview",
           "event": "$pageview",
-          "count": 313,
+          "count": 305,
           "conversionFromStart": 1,
           "conversionFromPrevious": 1,
           "avgSecondsFromPrevious": null
@@ -63,10 +63,10 @@
         {
           "label": "signup_completed",
           "event": "signup_completed",
-          "count": 48,
-          "conversionFromStart": 0.15335463258785942,
-          "conversionFromPrevious": 0.15335463258785942,
-          "avgSecondsFromPrevious": 200.57197916666667
+          "count": 49,
+          "conversionFromStart": 0.16065573770491803,
+          "conversionFromPrevious": 0.16065573770491803,
+          "avgSecondsFromPrevious": 189.580693877551
         }
       ]
     },
@@ -76,7 +76,7 @@
         {
           "label": "$pageview",
           "event": "$pageview",
-          "count": 174,
+          "count": 200,
           "conversionFromStart": 1,
           "conversionFromPrevious": 1,
           "avgSecondsFromPrevious": null
@@ -84,31 +84,10 @@
         {
           "label": "signup_completed",
           "event": "signup_completed",
-          "count": 36,
-          "conversionFromStart": 0.20689655172413793,
-          "conversionFromPrevious": 0.20689655172413793,
-          "avgSecondsFromPrevious": 164.33802777777777
-        }
-      ]
-    },
-    {
-      "value": "twitter",
-      "steps": [
-        {
-          "label": "$pageview",
-          "event": "$pageview",
-          "count": 167,
-          "conversionFromStart": 1,
-          "conversionFromPrevious": 1,
-          "avgSecondsFromPrevious": null
-        },
-        {
-          "label": "signup_completed",
-          "event": "signup_completed",
-          "count": 16,
-          "conversionFromStart": 0.09580838323353294,
-          "conversionFromPrevious": 0.09580838323353294,
-          "avgSecondsFromPrevious": 210.798375
+          "count": 43,
+          "conversionFromStart": 0.215,
+          "conversionFromPrevious": 0.215,
+          "avgSecondsFromPrevious": 212.13409302325582
         }
       ]
     },
@@ -118,7 +97,7 @@
         {
           "label": "$pageview",
           "event": "$pageview",
-          "count": 149,
+          "count": 161,
           "conversionFromStart": 1,
           "conversionFromPrevious": 1,
           "avgSecondsFromPrevious": null
@@ -126,14 +105,35 @@
         {
           "label": "signup_completed",
           "event": "signup_completed",
-          "count": 14,
-          "conversionFromStart": 0.09395973154362416,
-          "conversionFromPrevious": 0.09395973154362416,
-          "avgSecondsFromPrevious": 188.489
+          "count": 23,
+          "conversionFromStart": 0.14285714285714285,
+          "conversionFromPrevious": 0.14285714285714285,
+          "avgSecondsFromPrevious": 202.0734347826087
+        }
+      ]
+    },
+    {
+      "value": "twitter",
+      "steps": [
+        {
+          "label": "$pageview",
+          "event": "$pageview",
+          "count": 159,
+          "conversionFromStart": 1,
+          "conversionFromPrevious": 1,
+          "avgSecondsFromPrevious": null
+        },
+        {
+          "label": "signup_completed",
+          "event": "signup_completed",
+          "count": 20,
+          "conversionFromStart": 0.12578616352201258,
+          "conversionFromPrevious": 0.12578616352201258,
+          "avgSecondsFromPrevious": 217.69129999999998
         }
       ]
     }
   ],
   "project": "demo",
-  "dashboard": "http://127.0.0.1:55244/app#/insights/funnel?project=demo&spec=%7B%22from%22%3A%22-30d%22%2C%22steps%22%3A%5B%7B%22event%22%3A%22%24pageview%22%7D%2C%7B%22event%22%3A%22signup_completed%22%7D%5D%2C%22window%22%3A%221d%22%2C%22breakdown%22%3A%22utm_source%22%7D"
+  "dashboard": "http://127.0.0.1:58904/app#/insights/funnel?project=demo&spec=%7B%22from%22%3A%22-30d%22%2C%22steps%22%3A%5B%7B%22event%22%3A%22%24pageview%22%7D%2C%7B%22event%22%3A%22signup_completed%22%7D%5D%2C%22window%22%3A%221d%22%2C%22breakdown%22%3A%22utm_source%22%7D"
 }

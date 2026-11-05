@@ -1,0 +1,96 @@
+{
+  "project": "demo",
+  "id": "user_1701",
+  "identified": true,
+  "properties": {
+    "signup_source": "pricing",
+    "plan": "free",
+    "email": "user_1701@example.com",
+    "company_size": "2-10"
+  },
+  "firstSeen": "2026-11-05T06:41:52.845Z",
+  "lastSeen": "2026-11-05T06:48:47.904Z",
+  "devices": [
+    "fdc81539-1631-413c-ae8b-986e0629cfed"
+  ],
+  "recentEvents": [
+    {
+      "event": "document_created",
+      "time": "2026-11-05T06:48:42.905Z",
+      "path": "/app",
+      "session": "cs_d5437447cc53cffea4e6_996589",
+      "properties": {
+        "template": "blank",
+        "words": 228
+      }
+    },
+    {
+      "event": "$exposure",
+      "time": "2026-11-05T06:41:53.845Z",
+      "path": "/app",
+      "session": "cs_d5437447cc53cffea4e6_996589",
+      "properties": {
+        "flag": "onboarding-checklist",
+        "variant": "control"
+      }
+    },
+    {
+      "event": "signup_completed",
+      "time": "2026-11-05T06:41:53.045Z",
+      "path": "/welcome",
+      "session": "ada07291-7d3a-4f4c-a0cd-8d38da873b34",
+      "properties": {
+        "plan": "free",
+        "method": "github"
+      }
+    },
+    {
+      "event": "$identify",
+      "time": "2026-11-05T06:41:52.845Z",
+      "path": "",
+      "session": "ada07291-7d3a-4f4c-a0cd-8d38da873b34",
+      "properties": {
+        "$set": {
+          "plan": "free",
+          "email": "user_1701@example.com",
+          "company_size": "2-10"
+        },
+        "$set_once": {
+          "signup_source": "pricing"
+        }
+      }
+    },
+    {
+      "event": "signup_started",
+      "time": "2026-11-05T06:41:19.068Z",
+      "path": "/signup",
+      "session": "ada07291-7d3a-4f4c-a0cd-8d38da873b34",
+      "properties": {
+        "source": "pricing"
+      }
+    },
+    {
+      "event": "$exposure",
+      "time": "2026-11-05T06:41:15.068Z",
+      "path": "/pricing",
+      "session": "ada07291-7d3a-4f4c-a0cd-8d38da873b34",
+      "properties": {
+        "flag": "pricing-page-v2",
+        "variant": "control"
+      }
+    },
+    {
+      "event": "$pageview",
+      "time": "2026-11-05T06:39:38.201Z",
+      "path": "/pricing",
+      "session": "ada07291-7d3a-4f4c-a0cd-8d38da873b34",
+      "properties": {}
+    }
+  ],
+  "replays": [],
+  "summary": "Identified person \"user_1701\": 7 events in 90 days.",
+  "sql": [
+    "WITH ev AS (\n  SELECT e.*,\n    CASE WHEN e.user_id IS NOT NULL AND e.user_id <> '' THEN e.user_id ELSE COALESCE(i.person_id, e.person_id) END AS pid\n  FROM events e\n  LEFT JOIN (\n    SELECT distinct_id, MIN(person_id) AS person_id\n    FROM identities\n    WHERE project = 'demo'\n    GROUP BY distinct_id\n  ) i ON i.distinct_id = e.distinct_id\n  WHERE e.project = 'demo'\n    AND e.ts_ms >= 1786098530018\n    AND e.ts_ms < 1793874590018\n)\nSELECT event, ts_ms, path, session_id, props FROM ev WHERE pid = 'user_1701' OR distinct_id = 'user_1701'\nORDER BY ts_ms DESC LIMIT 100"
+  ],
+  "dashboard": "http://127.0.0.1:58904/app#/users/user_1701?project=demo"
+}

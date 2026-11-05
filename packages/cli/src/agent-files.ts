@@ -1,6 +1,6 @@
 /**
- * Files written for coding agents by `glass init`, so the next agent session
- * already knows how to track events and query Glass:
+ * Files written for coding agents by `dataflare init`, so the next agent session
+ * already knows how to track events and query Dataflare:
  *
  * - AGENTS.md (and CLAUDE.md if present): a marked section, replaced on re-run
  * - .claude/skills/glass/SKILL.md: recipes, loaded when relevant
@@ -9,7 +9,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { EVENT_DOCUMENTATION_GUIDE, EVENT_NAMING_GUIDE } from '@glassanalytics/core/instrument';
+import { EVENT_DOCUMENTATION_GUIDE, EVENT_NAMING_GUIDE } from '@dataflare/core/instrument';
 
 const START = '<!-- glass:start -->';
 const END = '<!-- glass:end -->';
@@ -24,31 +24,31 @@ export interface AgentFileOptions {
 
 export function agentsSection(o: AgentFileOptions): string {
   return `${START}
-## Analytics (Glass)
+## Analytics (Dataflare)
 
-This project uses Glass for analytics, session replay, feature flags and A/B tests. It runs in our own Cloudflare account; deployment config is in \`.glass/\`.
+This project uses Dataflare for analytics, session replay, feature flags and A/B tests. It runs in our own Cloudflare account; deployment config is in \`.glass/\`.
 
-- Dashboard: ${o.host}/app (print the key with \`npx @glassanalytics/cli key\`)
+- Dashboard: ${o.host}/app (print the key with \`npx dataflare key\`)
 - MCP server \`glass\` is configured in \`.mcp.json\`. Start with the \`overview\` tool, then \`list_events\` for exact event names.
-- Terminal: \`npx @glassanalytics/cli query web --from -7d\`, \`npx @glassanalytics/cli sql "SELECT …"\`, \`npx @glassanalytics/cli --help\`
+- Terminal: \`npx dataflare query web --from -7d\`, \`npx dataflare sql "SELECT …"\`, \`npx dataflare --help\`
 
 Tracking (project \`${o.project}\`):
 - Install (${o.snippet.file}): \`${o.snippet.code.split('\n').pop()}\`
 - Custom events: \`glass.capture('signup_completed', { plan: 'pro' })\`. After login: \`glass.identify(user.id, { plan })\`.
-- Consent: if the site has a cookie banner, load Glass with \`data-persistence="cookieless"\` and call \`glass.consent(true)\` when the visitor accepts (\`false\` on reject). Cookieless stores nothing on the device; session replay starts after consent unless you add \`data-replay-cookieless="true"\` (records without storing anything; call \`glass.consent(false)\` on load for visitors who rejected). Mention Glass on the privacy page.
+- Consent: if the site has a cookie banner, load Dataflare with \`data-persistence="cookieless"\` and call \`glass.consent(true)\` when the visitor accepts (\`false\` on reject). Cookieless stores nothing on the device; session replay starts after consent unless you add \`data-replay-cookieless="true"\` (records without storing anything; call \`glass.consent(false)\` on load for visitors who rejected). Mention Dataflare on the privacy page.
 - If the code already has an analytics helper (a \`track()\` that calls gtag, fbq or PostHog), add \`glass.capture\` inside it rather than at every call site.
 - Events that mean success (signup, purchase, pledge): \`mark_event\` with role "conversion" so Reports show conversion rates per source.
 - ${EVENT_NAMING_GUIDE}
-- After adding an event and deploying, confirm it arrives: \`npx @glassanalytics/cli events <name>\` (or MCP \`describe_event\`).
+- After adding an event and deploying, confirm it arrives: \`npx dataflare events <name>\` (or MCP \`describe_event\`).
 - ${EVENT_DOCUMENTATION_GUIDE}
 - Prefer MCP \`define_event\` so you can set both the event description and each property's meaning in one call.
-- Feature flags: \`glass.flag('key')\` returns "on", a variant key, or null. Create with \`npx @glassanalytics/cli flags set <key> --rollout 10\`.
+- Feature flags: \`glass.flag('key')\` returns "on", a variant key, or null. Create with \`npx dataflare flags set <key> --rollout 10\`.
 
 Upgrades (the Worker version is pinned in \`.glass/config.json\`):
-- \`.github/workflows/glass.yml\` deploys whatever \`.glass/\` holds when it changes on the default branch. If that file is missing, run \`npx @glassanalytics/cli ci\` and add the \`CLOUDFLARE_API_TOKEN\` repository secret.
-- To upgrade: \`npx @glassanalytics/cli@latest upgrade\` stages the new Worker and migrations into \`.glass/\` without deploying. Commit and push (or open a PR); CI deploys. Ask before pushing if pushes also deploy the site.
-- Do not deploy Glass from a laptop (\`glass upgrade --local\`, wrangler) once the workflow exists, and never commit \`.glass/credentials.json\`.
-- \`glass upgrade\` refuses to replace a newer Worker with an older CLI. If it does, use \`@latest\`; do not pass \`--allow-downgrade\`.
+- \`.github/workflows/glass.yml\` deploys whatever \`.glass/\` holds when it changes on the default branch. If that file is missing, run \`npx dataflare ci\` and add the \`CLOUDFLARE_API_TOKEN\` repository secret.
+- To upgrade: \`npx dataflare@latest upgrade\` stages the new Worker and migrations into \`.glass/\` without deploying. Commit and push (or open a PR); CI deploys. Ask before pushing if pushes also deploy the site.
+- Do not deploy Dataflare from a laptop (\`dataflare upgrade --local\`, wrangler) once the workflow exists, and never commit \`.glass/credentials.json\`.
+- \`dataflare upgrade\` refuses to replace a newer Worker with an older CLI. If it does, use \`@latest\`; do not pass \`--allow-downgrade\`.
 ${END}`;
 }
 
@@ -59,7 +59,7 @@ export function importsAgentsMd(path: string): boolean {
   return /^@AGENTS\.md\s*$/m.test(text) && !text.includes(START);
 }
 
-/** Insert or replace the Glass section in a markdown file. */
+/** Insert or replace the Dataflare section in a markdown file. */
 export function upsertSection(path: string, section: string, createIfMissing: boolean): boolean {
   const exists = existsSync(path);
   if (!exists && !createIfMissing) return false;
@@ -78,13 +78,13 @@ name: glass
 description: Use when adding analytics events, answering questions about traffic, signups, conversion, retention or errors, debugging what a user did in a session, or creating feature flags and A/B tests in this project.
 ---
 
-# Glass analytics
+# Dataflare analytics
 
-Glass is deployed at ${o.host} (project \`${o.project}\`). Prefer the \`glass\` MCP tools; the CLI (\`npx @glassanalytics/cli …\`) does the same things.
+Dataflare is deployed at ${o.host} (project \`${o.project}\`). Prefer the \`glass\` MCP tools; the CLI (\`npx dataflare …\`) does the same things.
 
 ## Answer a question about usage
 
-1. \`overview\` for the period (visitors, top pages, errors, events that moved). If it (or MCP init) says an upgrade is available, tell the user; with their go-ahead, follow "Upgrade Glass" below.
+1. \`overview\` for the period (visitors, top pages, errors, events that moved). If it (or MCP init) says an upgrade is available, tell the user; with their go-ahead, follow "Upgrade Dataflare" below.
 2. \`list_events\` to get exact event names — never guess them.
 3. The right query: \`query_trends\` (counts over time), \`query_funnel\` (conversion through steps), \`query_retention\` (who comes back), \`sql\` when nothing else fits.
 4. Report numbers with the dashboard link and SQL from the result.
@@ -93,7 +93,7 @@ Glass is deployed at ${o.host} (project \`${o.project}\`). Prefer the \`glass\` 
 
 1. \`instrument\` with the event name returns the exact code for this framework.
 2. ${EVENT_NAMING_GUIDE}
-3. After deploying, \`describe_event\` (or \`npx @glassanalytics/cli events <name>\`) confirms events arrive with the expected properties.
+3. After deploying, \`describe_event\` (or \`npx dataflare events <name>\`) confirms events arrive with the expected properties.
 4. Always \`define_event\` next. ${EVENT_DOCUMENTATION_GUIDE}
 5. If the event means a visitor succeeded (signup, purchase, pledge, lead), \`mark_event\` with role "conversion"; for engagement worth watching (share, search, download), role "important". Reports show conversion rates overall and per traffic source.
 
@@ -113,12 +113,12 @@ Glass is deployed at ${o.host} (project \`${o.project}\`). Prefer the \`glass\` 
 
 For "what's frustrating users?", start with \`analyse_replays\` for the period.
 
-## Upgrade Glass
+## Upgrade Dataflare
 
-1. \`npx @glassanalytics/cli@latest upgrade\`. With \`.github/workflows/glass.yml\` present this only stages \`.glass/\` (Worker, migrations, pinned version); nothing deploys.
-2. No workflow yet? \`npx @glassanalytics/cli ci\` writes it; the repo needs secret \`CLOUDFLARE_API_TOKEN\` (\`gh secret set CLOUDFLARE_API_TOKEN\`).
-3. Commit \`.glass/\` and push to the default branch (or open a PR). The Glass workflow migrates D1 and deploys.
-4. \`npx @glassanalytics/cli status\` confirms the new version is live.
+1. \`npx dataflare@latest upgrade\`. With \`.github/workflows/glass.yml\` present this only stages \`.glass/\` (Worker, migrations, pinned version); nothing deploys.
+2. No workflow yet? \`npx dataflare ci\` writes it; the repo needs secret \`CLOUDFLARE_API_TOKEN\` (\`gh secret set CLOUDFLARE_API_TOKEN\`).
+3. Commit \`.glass/\` and push to the default branch (or open a PR). The Dataflare workflow migrates D1 and deploys.
+4. \`npx dataflare status\` confirms the new version is live.
 
 ## Run an experiment
 
@@ -139,7 +139,7 @@ export function upsertMcpConfig(path: string): boolean {
   }
   config.mcpServers = {
     ...config.mcpServers,
-    glass: { command: 'npx', args: ['-y', '@glassanalytics/cli', 'mcp'] },
+    glass: { command: 'npx', args: ['-y', 'dataflare', 'mcp'] },
   };
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(config, null, 2)}\n`);

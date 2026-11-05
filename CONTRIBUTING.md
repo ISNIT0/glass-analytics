@@ -1,17 +1,17 @@
-# Contributing to Glass
+# Contributing to Dataflare
 
 Thanks for helping. This guide gets you from clone to pull request, and shows where each kind of change lives.
 
 ## Set up
 
-You need Node 22.18+ and pnpm 10. You do **not** need a Cloudflare account to work on Glass.
+You need Node 22.18+ and pnpm 10. You do **not** need a Cloudflare account to work on Dataflare.
 
 ```sh
 git clone https://github.com/ISNIT0/glass-analytics && cd glass-analytics
 pnpm install
 pnpm build          # SDK, dashboard, Worker and CLI, about two seconds
 pnpm test           # unit and integration tests
-pnpm dev            # Glass on http://localhost:8787, a demo site on http://localhost:8788
+pnpm dev            # Dataflare on http://localhost:8787, a demo site on http://localhost:8788
 ```
 
 `pnpm dev` runs the real Worker code on Node: D1 is a SQLite file and R2 is a folder, both in `.glass-dev/`. Open the demo site, click around, then open `http://localhost:8787/app` and sign in with `dev-admin-key`. To run on Cloudflare's actual runtime instead, use `pnpm dev:wrangler`.
@@ -33,7 +33,7 @@ packages/
   core/        Pure logic shared by everything: the event model, SQL dialects and
                compilers (trends, funnels, retention, web, experiments), stats,
                flag evaluation, replay summaries, framework snippets. No I/O.
-  web/         The browser SDK (@glassanalytics/web) and the replay recorder (replay.js).
+  web/         The browser SDK (dataflare-web) and the replay recorder (replay.js).
   worker/      The Cloudflare Worker: ingest, API, MCP server, flags, replay storage,
                the dashboard's host. migrations/ holds the D1 schema.
   dashboard/   The dashboard: dependency-free TypeScript, bundled into the Worker.
@@ -49,7 +49,7 @@ Dependencies point one way: `core` ← `web`, `worker`, `dashboard`, `cli`. `cor
 
 ## Where to make common changes
 
-**A new query type** (e.g. paths, stickiness, lifecycle). Write `packages/core/src/insights/<kind>.ts` exporting a zod schema and a `run(spec, ctx)` that compiles SQL with `eventsCte()` and shapes the rows. Register it in `packages/core/src/insights/index.ts`. That's all it takes to get `POST /api/query`, a `query_<kind>` MCP tool and `glass query <kind> --spec …`. Add tests in `packages/core/test/` that execute the SQL on SQLite, and a dashboard view if it needs one.
+**A new query type** (e.g. paths, stickiness, lifecycle). Write `packages/core/src/insights/<kind>.ts` exporting a zod schema and a `run(spec, ctx)` that compiles SQL with `eventsCte()` and shapes the rows. Register it in `packages/core/src/insights/index.ts`. That's all it takes to get `POST /api/query`, a `query_<kind>` MCP tool and `dataflare query <kind> --spec …`. Add tests in `packages/core/test/` that execute the SQL on SQLite, and a dashboard view if it needs one.
 
 **A new MCP tool.** Add a service method in `packages/worker/src/service.ts` (validated with zod), an entry in `packages/worker/src/mcp/tools.ts`, and usually an HTTP route in `api.ts`. Tool descriptions are what agents read: say what the tool is for and when to use it.
 
@@ -79,14 +79,14 @@ Biome formats and lints (`pnpm format`). TypeScript is strict, with `noUnchecked
 1. Open an issue first for anything large, so we can agree on the approach.
 2. Keep PRs focused; include tests for behaviour changes.
 3. Run `pnpm check` (and `pnpm test:e2e` if you touched the SDK, ingest or dashboard).
-4. Add a changeset if your change affects a published package (`glass` or `@glassanalytics/web`): `pnpm changeset`.
+4. Add a changeset if your change affects a published package (`glass` or `dataflare-web`): `pnpm changeset`.
 5. Fill in the PR template, including how you tested it.
 
 We squash-merge, with the PR title as the commit message.
 
 ## Releasing (maintainers)
 
-Changesets collects changes. Releases are automatic: when a push to `main` carries a changeset, the release workflow versions the packages (`pnpm version-packages`), commits that to `main`, runs the checks, publishes `@glassanalytics/cli` and `@glassanalytics/web` to npm, tags the release and creates a GitHub release from the changelog. Pushes without a changeset release nothing. `GLASS_VERSION` in `packages/core/src/version.ts` must match the CLI version (`pnpm build` fails if they drift); the dashboard and `glass status` compare the deployed Worker to the latest CLI on npm.
+Changesets collects changes. Releases are automatic: when a push to `main` carries a changeset, the release workflow versions the packages (`pnpm version-packages`), commits that to `main`, runs the checks, publishes `dataflare` and `dataflare-web` to npm, tags the release and creates a GitHub release from the changelog. Pushes without a changeset release nothing. `GLASS_VERSION` in `packages/core/src/version.ts` must match the CLI version (`pnpm build` fails if they drift); the dashboard and `dataflare status` compare the deployed Worker to the latest CLI on npm.
 
 ## Getting help
 

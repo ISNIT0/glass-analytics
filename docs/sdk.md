@@ -3,7 +3,7 @@
 Two ways to load it, with the same API:
 
 - **Script tag** (served by your Worker, no build step): `<script defer src="https://<host>/s.js" data-project="my-app"></script>`, then use `window.glass`.
-- **npm**: `npm i @glassanalytics/web`, then `import { glass } from '@glassanalytics/web'` and call `glass.init({ host, project })`.
+- **npm**: `npm i dataflare-web`, then `import { glass } from 'dataflare-web'` and call `glass.init({ host, project })`.
 
 The SDK is about 4 KB gzipped and has no dependencies. Session replay loads a separate recorder from your Worker only for recorded sessions.
 

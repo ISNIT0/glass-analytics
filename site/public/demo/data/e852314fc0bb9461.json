@@ -13,7 +13,7 @@
       "startedAt": null,
       "endedAt": null,
       "shippedVariant": null,
-      "createdAt": 1793826279567
+      "createdAt": 1793874347020
     },
     {
       "key": "onboarding-checklist",
@@ -24,10 +24,10 @@
       },
       "secondary": [],
       "hypothesis": "A three-step checklist gets new writers to their first document.",
-      "startedAt": 1792789479531,
+      "startedAt": 1792837546978,
       "endedAt": null,
       "shippedVariant": null,
-      "createdAt": 1793826279564
+      "createdAt": 1793874347017
     },
     {
       "key": "pricing-page-v2",
@@ -38,12 +38,12 @@
       },
       "secondary": [],
       "hypothesis": "A shorter pricing page with one highlighted plan lifts signups.",
-      "startedAt": 1792184679531,
+      "startedAt": 1792232746978,
       "endedAt": null,
       "shippedVariant": null,
-      "createdAt": 1793826279561
+      "createdAt": 1793874347012
     }
   ],
   "summary": "3 experiments: annual-billing-nudge (draft), onboarding-checklist (running), pricing-page-v2 (running).",
-  "dashboard": "http://127.0.0.1:55244/app#/experiments?project=demo"
+  "dashboard": "http://127.0.0.1:58904/app#/experiments?project=demo"
 }

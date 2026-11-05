@@ -8,7 +8,7 @@
  * `$exposure` events (see packages/core/src/insights/experiment.ts).
  */
 
-import type { FlagDefinition } from '@glassanalytics/core/flags';
+import type { FlagDefinition } from '@dataflare/core/flags';
 import type { D1Database } from './env.ts';
 import { getFlag, saveFlag } from './flags.ts';
 import { HttpError } from './http.ts';

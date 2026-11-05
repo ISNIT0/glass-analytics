@@ -36,10 +36,10 @@ importers:
         specifier: ^4.0.0
         version: 4.157.0(@types/node@22.20.5)
     devDependencies:
-      '@glassanalytics/core':
+      '@dataflare/core':
         specifier: workspace:*
         version: link:../core
-      '@glassanalytics/worker':
+      '@dataflare/worker':
         specifier: workspace:*
         version: link:../worker
 
@@ -51,7 +51,7 @@ importers:
 
   packages/dashboard:
     dependencies:
-      '@glassanalytics/core':
+      '@dataflare/core':
         specifier: workspace:*
         version: link:../core
       rrweb:
@@ -60,7 +60,7 @@ importers:
 
   packages/web:
     devDependencies:
-      '@glassanalytics/core':
+      '@dataflare/core':
         specifier: workspace:*
         version: link:../core
       rrweb:
@@ -69,17 +69,17 @@ importers:
 
   packages/worker:
     dependencies:
-      '@glassanalytics/core':
+      '@dataflare/core':
         specifier: workspace:*
         version: link:../core
       zod:
         specifier: ^3.25.0 || ^4.0.0
         version: 4.6.7
     devDependencies:
-      '@glassanalytics/dashboard':
+      '@dataflare/dashboard':
         specifier: workspace:*
         version: link:../dashboard
-      '@glassanalytics/web':
+      dataflare-web:
         specifier: workspace:*
         version: link:../web
       rrweb:

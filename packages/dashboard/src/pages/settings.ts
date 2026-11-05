@@ -27,7 +27,7 @@ export function settingsPage(): Node[] {
   const project = scope().project ?? 'your-project';
   const host = workerUrl();
   return [
-    pageHeader('Settings', 'Install Glass on a site, connect an agent, manage projects.'),
+    pageHeader('Settings', 'Install Dataflare on a site, connect an agent, manage projects.'),
     h(
       'div',
       { class: 'grid-2' },
@@ -53,7 +53,7 @@ export function settingsPage(): Node[] {
           h(
             'p',
             {},
-            'In a project set up with glass init, agents already have the MCP server. Elsewhere, add it by URL with your key:',
+            'In a project set up with dataflare init, agents already have the MCP server. Elsewhere, add it by URL with your key:',
           ),
           codeBlock(
             `claude mcp add --transport http glass ${host}/mcp \\\n  --header "Authorization: Bearer $GLASS_API_KEY"`,
@@ -128,8 +128,8 @@ export function settingsPage(): Node[] {
               ? h(
                   'p',
                   { class: 'notice' },
-                  `Glass ${health.latest} is available. Run `,
-                  h('code', {}, health.upgradeCommand ?? 'npx @glassanalytics/cli@latest upgrade'),
+                  `Dataflare ${health.latest} is available. Run `,
+                  h('code', {}, health.upgradeCommand ?? 'npx dataflare@latest upgrade'),
                   ` in your project.`,
                 )
               : null,
@@ -186,7 +186,7 @@ export function keyScreen(onDone: () => void): HTMLElement {
     type: 'password',
     required: true,
     autocomplete: 'off',
-    placeholder: 'Paste your Glass API key',
+    placeholder: 'Paste your Dataflare API key',
     'aria-label': 'API key',
   });
   const error = h('div', {});
@@ -218,17 +218,17 @@ export function keyScreen(onDone: () => void): HTMLElement {
         'div',
         { class: 'key-brand' },
         h('span', { class: 'mark large', 'aria-hidden': 'true' }),
-        h('span', {}, 'Glass'),
+        h('span', {}, 'Dataflare'),
       ),
       h('h1', {}, 'Open your dashboard'),
       h(
         'p',
         { class: 'muted' },
         'Paste the API key that ',
-        h('code', {}, 'glass init'),
+        h('code', {}, 'dataflare init'),
         ' created. Print it again any time:',
       ),
-      codeBlock('npx @glassanalytics/cli key'),
+      codeBlock('npx dataflare key'),
       form,
       h(
         'p',

@@ -1,5 +1,5 @@
 name: Bug report
-description: Something in Glass doesn't work as documented.
+description: Something in Dataflare doesn't work as documented.
 labels: [bug]
 body:
   - type: textarea
@@ -19,7 +19,7 @@ body:
   - type: textarea
     id: status
     attributes:
-      label: Output of `npx @glassanalytics/cli status --json`
+      label: Output of `npx dataflare status --json`
       description: Remove anything private. Never paste API keys.
       render: json
   - type: dropdown
@@ -27,7 +27,7 @@ body:
     attributes:
       label: Area
       options:
-        - glass init / upgrade (CLI)
+        - dataflare init / upgrade (CLI)
         - Browser SDK
         - Dashboard
         - MCP server / agents
@@ -42,5 +42,5 @@ body:
   - type: input
     id: version
     attributes:
-      label: Glass version
+      label: Dataflare version
       placeholder: "0.1.0"

@@ -1,7 +1,7 @@
 /**
- * The Glass event model.
+ * The Dataflare event model.
  *
- * Everything Glass records — pageviews, clicks, custom events, flag exposures,
+ * Everything Dataflare records — pageviews, clicks, custom events, flag exposures,
  * errors — is one row in a single wide `events` table. Two shapes matter:
  *
  * - {@link WireEvent}: what the browser SDK (or any HTTP client) sends.
@@ -11,7 +11,7 @@
  * what lets one set of SQL compilers serve both.
  */
 
-/** Event names Glass emits itself. Custom events must not start with `$`. */
+/** Event names Dataflare emits itself. Custom events must not start with `$`. */
 export const SYSTEM_EVENTS = {
   pageview: '$pageview',
   pageleave: '$pageleave',

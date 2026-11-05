@@ -17,6 +17,6 @@
     "breakdown": "utm_source",
     "from": "-30d"
   },
-  "updatedAt": "2026-11-04T21:04:44.042Z",
-  "dashboard": "http://127.0.0.1:55244/app#/insights/signup-by-source?project=demo"
+  "updatedAt": "2026-11-05T10:25:51.478Z",
+  "dashboard": "http://127.0.0.1:58904/app#/insights/signup-by-source?project=demo"
 }

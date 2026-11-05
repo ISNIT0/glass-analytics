@@ -1,38 +1,38 @@
-<h1 align="center">Glass</h1>
+<h1 align="center">Dataflare</h1>
 
 <p align="center"><strong>Open-source product analytics that lives in your Cloudflare account.</strong><br>
 Web analytics, funnels and retention, session replay, feature flags and A/B tests. Deployed with one command, queried by your coding agent. Your data never leaves your account.</p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/@glassanalytics/cli"><img alt="npm" src="https://img.shields.io/npm/v/@glassanalytics/cli?color=2a7a67&label=npm"></a>
+  <a href="https://www.npmjs.com/package/dataflare"><img alt="npm" src="https://img.shields.io/npm/v/dataflare?color=2a7a67&label=npm"></a>
   <a href="https://github.com/ISNIT0/glass-analytics/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/ISNIT0/glass-analytics/actions/workflows/ci.yml/badge.svg"></a>
   <a href="LICENSE"><img alt="MIT licence" src="https://img.shields.io/badge/licence-MIT-2a7a67"></a>
 </p>
 
 <p align="center">
-  <a href="https://glass-site.isnit.workers.dev/demo/"><strong>Live demo</strong></a> ·
-  <a href="https://glass-site.isnit.workers.dev/docs/">Docs</a> ·
-  <a href="https://glass-site.isnit.workers.dev/pricing/">Cost calculator</a> ·
-  <a href="https://glass-site.isnit.workers.dev/vs/">Comparisons</a>
+  <a href="https://dataflare.dev/demo/"><strong>Live demo</strong></a> ·
+  <a href="https://dataflare.dev/docs/">Docs</a> ·
+  <a href="https://dataflare.dev/pricing/">Cost calculator</a> ·
+  <a href="https://dataflare.dev/vs/">Comparisons</a>
 </p>
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="site/public/img/web-dark.webp">
-  <img alt="The Glass dashboard: visitors, page views, sessions and bounce rate against the previous period, a 30-day chart, and tables of pages, countries and devices." src="site/public/img/web-light.webp">
+  <img alt="The Dataflare dashboard: visitors, page views, sessions and bounce rate against the previous period, a 30-day chart, and tables of pages, countries and devices." src="site/public/img/web-light.webp">
 </picture>
 
 ```sh
-npx @glassanalytics/cli init
+npx dataflare init
 ```
 
 Or paste this into your coding agent:
 
-> Add Glass analytics to this project: run `npx @glassanalytics/cli init`, track signups and purchases, then show me today's visitors.
+> Add Dataflare analytics to this project: run `npx dataflare init`, track signups and purchases, then show me today's visitors.
 
-## Why Glass
+## Why Dataflare
 
-- **No vendor.** Glass is a Worker, a D1 database and an R2 bucket in _your_ Cloudflare account. There is no Glass server, account or bill: you pay Cloudflare's list prices, which is $0 on Workers Free for small sites and the $5/month Workers Paid plan for most others ([calculator](https://glass-site.isnit.workers.dev/pricing/)).
-- **Built for agents.** `glass init` writes instructions, a skill and an MCP server config for your agent. Every query result carries its SQL and a dashboard link, and session replays come with a text transcript an agent can read.
+- **No vendor.** Dataflare is a Worker, a D1 database and an R2 bucket in _your_ Cloudflare account. There is no Dataflare server, account or bill: you pay Cloudflare's list prices, which is $0 on Workers Free for small sites and the $5/month Workers Paid plan for most others ([calculator](https://dataflare.dev/pricing/)).
+- **Built for agents.** `dataflare init` writes instructions, a skill and an MCP server config for your agent. Every query result carries its SQL and a dashboard link, and session replays come with a text transcript an agent can read.
 - **Four tools, one event stream.** Web stats, funnels/retention/trends on any property, session replay, and flags with Bayesian A/B testing. A funnel step links to the replays of the people who dropped out.
 - **Small and readable.** The browser SDK is about 4 KB gzipped. The Worker has one runtime dependency (zod). Every number in the dashboard can show the SQL behind it.
 
@@ -49,7 +49,7 @@ Or paste this into your coding agent:
 
 ## How it compares
 
-|                       | Glass                       | PostHog                           | Google Analytics | Plausible                             |
+|                       | Dataflare                   | PostHog                           | Google Analytics | Plausible                             |
 | --------------------- | --------------------------- | --------------------------------- | ---------------- | ------------------------------------- |
 | Where your data lives | Your Cloudflare account     | PostHog Cloud, or your servers    | Google           | Plausible Cloud (EU), or your servers |
 | Source                | MIT                         | MIT (some paid features separate) | Proprietary      | AGPL-3.0                              |
@@ -57,7 +57,7 @@ Or paste this into your coding agent:
 | Flags and A/B tests   | Yes                         | Yes                               | No               | No                                    |
 | Raw SQL               | Yes                         | Yes                               | BigQuery export  | No                                    |
 
-Each comparison on the site says where the other product is the better choice: [PostHog](https://glass-site.isnit.workers.dev/vs/posthog/), [Google Analytics](https://glass-site.isnit.workers.dev/vs/google-analytics/), [Plausible](https://glass-site.isnit.workers.dev/vs/plausible/), [Amplitude](https://glass-site.isnit.workers.dev/vs/amplitude/), [Mixpanel](https://glass-site.isnit.workers.dev/vs/mixpanel/), [Umami](https://glass-site.isnit.workers.dev/vs/umami/), [Cloudflare Web Analytics](https://glass-site.isnit.workers.dev/vs/cloudflare-web-analytics/).
+Each comparison on the site says where the other product is the better choice: [PostHog](https://dataflare.dev/vs/posthog/), [Google Analytics](https://dataflare.dev/vs/google-analytics/), [Plausible](https://dataflare.dev/vs/plausible/), [Amplitude](https://dataflare.dev/vs/amplitude/), [Mixpanel](https://dataflare.dev/vs/mixpanel/), [Umami](https://dataflare.dev/vs/umami/), [Cloudflare Web Analytics](https://dataflare.dev/vs/cloudflare-web-analytics/).
 
 ## Quick start
 
@@ -65,7 +65,7 @@ Each comparison on the site says where the other product is the better choice: [
 2. **Deploy** from your project directory:
 
    ```sh
-   CLOUDFLARE_API_TOKEN=… npx @glassanalytics/cli init
+   CLOUDFLARE_API_TOKEN=… npx dataflare init
    ```
 
    This creates the database, the replay bucket and the Worker, then prints the snippet for your framework.
@@ -80,9 +80,9 @@ Each comparison on the site says where the other product is the better choice: [
    glass.capture('signup_completed', { plan: 'pro' });
    glass.identify(user.id, { plan: user.plan }); // after login
    ```
-5. **Ask.** Open `https://glass.<you>.workers.dev/app` (sign in with `npx @glassanalytics/cli key`), or ask your agent: _"Which traffic source converts best to signup?"_
+5. **Ask.** Open `https://glass.<you>.workers.dev/app` (sign in with `npx dataflare key`), or ask your agent: _"Which traffic source converts best to signup?"_
 
-Run `npx @glassanalytics/cli status` any time to check everything end to end. See [docs/getting-started.md](docs/getting-started.md) for frameworks, custom domains and EU data residency.
+Run `npx dataflare status` any time to check everything end to end. See [docs/getting-started.md](docs/getting-started.md) for frameworks, custom domains and EU data residency.
 
 ## What you get
 
@@ -98,12 +98,12 @@ Run `npx @glassanalytics/cli status` any time to check everything end to end. Se
 ## How it works
 
 ```
-browser ──/s.js, /e, /r, /f──▶  Glass Worker  ──▶  D1 (events, people, flags, experiments, replay index)
+browser ──/s.js, /e, /r, /f──▶  Dataflare Worker  ──▶  D1 (events, people, flags, experiments, replay index)
 agents  ──/mcp, /api───────▶  (your account) ──▶  R2 (replay chunks)
 you     ──/app─────────────▶                  ──▶  optional: Pipelines → Iceberg on R2 → Basin SQL
 ```
 
-Every query (web, trends, funnels, retention, experiments) compiles to SQL that runs on both D1 (SQLite) and Basin SQL, so you can start on the free plan and move high-volume event storage to the lake with `glass init --lake`. More in [docs/architecture.md](docs/architecture.md).
+Every query (web, trends, funnels, retention, experiments) compiles to SQL that runs on both D1 (SQLite) and Basin SQL, so you can start on the free plan and move high-volume event storage to the lake with `dataflare init --lake`. More in [docs/architecture.md](docs/architecture.md).
 
 ## Documentation
 
@@ -114,11 +114,11 @@ Every query (web, trends, funnels, retention, experiments) compiles to SQL that 
 - [Experiments](docs/experiments.md): flags, assignment and the statistics
 - [Privacy](docs/privacy.md): what's stored, cookieless mode, deletion
 - [Architecture](docs/architecture.md) and [the lake store](docs/lake.md)
-- [Extending Glass](docs/extending.md): add a query type, MCP tool, storage engine or framework
+- [Extending Dataflare](docs/extending.md): add a query type, MCP tool, storage engine or framework
 
 ## Status
 
-Glass is new. The D1 store, SDK, dashboard, MCP server and CLI are covered by unit, integration and browser end-to-end tests. Two parts depend on Cloudflare products in beta and are marked **beta**: the lake store (Pipelines + Basin SQL) and anything that relies on their response formats. See [ROADMAP.md](ROADMAP.md).
+Dataflare is new. The D1 store, SDK, dashboard, MCP server and CLI are covered by unit, integration and browser end-to-end tests. Two parts depend on Cloudflare products in beta and are marked **beta**: the lake store (Pipelines + Basin SQL) and anything that relies on their response formats. See [ROADMAP.md](ROADMAP.md).
 
 ## Contributing
 

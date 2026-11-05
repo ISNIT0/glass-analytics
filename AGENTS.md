@@ -1,6 +1,6 @@
-# Instructions for coding agents working on Glass
+# Instructions for coding agents working on Dataflare
 
-Glass is open-source, agent-first analytics that runs in the user's own Cloudflare account. This file is for agents changing Glass itself. (Agents _using_ Glass in another project get instructions from `glass init`.)
+Dataflare is open-source, agent-first analytics that runs in the user's own Cloudflare account. This file is for agents changing Dataflare itself. (Agents _using_ Dataflare in another project get instructions from `dataflare init`.)
 
 ## Commands
 
@@ -26,7 +26,7 @@ Run `pnpm typecheck && pnpm test` before you finish. If you changed the SDK, ing
 2. **SQL must work on SQLite and Basin SQL.** Use `eventsCte()`, `bucketExpr()`, `filtersSql()` and the `Dialect` methods. Timestamps are integer milliseconds (`ts_ms`). No window functions unless they are unavoidable (they're budget-gated in Basin SQL). Inline values only through `d.str()`/`d.num()`.
 3. **Test SQL by executing it.** Core tests run compiled queries on real SQLite (`packages/core/test/helpers.ts`). Don't assert on SQL strings except for lake-dialect specifics.
 4. **No new runtime dependencies** in the Worker or SDK without the maintainers agreeing in an issue.
-5. **Keep the SDK small.** The SDK must not import from `@glassanalytics/core`'s barrel (`@glassanalytics/core`); import specific modules (`@glassanalytics/core/ids`) so zod never reaches the browser bundle.
+5. **Keep the SDK small.** The SDK must not import from `@dataflare/core`'s barrel (`@dataflare/core`); import specific modules (`@dataflare/core/ids`) so zod never reaches the browser bundle.
 6. **Errors explain the fix.** Use `HttpError(status, message, hint)` in the Worker and `UsageError(message, hint)` in the CLI.
 7. **Migrations are append-only.** Add `packages/worker/migrations/000N_*.sql`; never edit shipped ones.
 8. **Write for agents and humans.** Tool descriptions, `summary` strings and error messages are read by models; make them specific and short.

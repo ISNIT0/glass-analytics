@@ -1,17 +1,17 @@
 /**
- * `glass init` — deploy Glass into your Cloudflare account and wire it into
+ * `dataflare init` — deploy Dataflare into your Cloudflare account and wire it into
  * the current project. Safe to re-run: every step finds existing resources.
  *
  * Init is the only deploy meant to run from a laptop (it has to create the
  * resources and keys). It also writes .github/workflows/glass.yml, so every
- * later upgrade is a commit: `glass upgrade` stages, CI deploys (see ci.ts).
+ * later upgrade is a commit: `dataflare upgrade` stages, CI deploys (see ci.ts).
  */
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { randomToken } from '@glassanalytics/core/ids';
-import { detectFramework, FRAMEWORKS } from '@glassanalytics/core/instrument';
-import { GLASS_VERSION } from '@glassanalytics/core/version';
+import { randomToken } from '@dataflare/core/ids';
+import { detectFramework, FRAMEWORKS } from '@dataflare/core/instrument';
+import { GLASS_VERSION } from '@dataflare/core/version';
 import { writeAgentFiles } from '../agent-files.ts';
 import { CI_WORKFLOW_PATH, ciNextSteps, writeCiWorkflow } from '../ci.ts';
 import { call } from '../client.ts';
@@ -132,7 +132,7 @@ async function waitForWorker(
   }
   throw new UsageError(
     `The Worker at ${host} did not come up.`,
-    'Run `glass status` in a minute; if it persists, `glass upgrade` redeploys.',
+    'Run `dataflare status` in a minute; if it persists, `dataflare upgrade` redeploys.',
   );
 }
 
@@ -168,7 +168,7 @@ export async function init(options: InitOptions, deps: InitDeps = {}): Promise<v
   };
 
   if (!quiet) {
-    line(color.bold('Glass: analytics in your own Cloudflare account'));
+    line(color.bold('Dataflare: analytics in your own Cloudflare account'));
     line();
   }
 
@@ -202,7 +202,7 @@ export async function init(options: InitOptions, deps: InitDeps = {}): Promise<v
   report('ok', `Cloudflare token works (account ${account.name})`);
 
   const project = options.project ?? existing?.project ?? defaultProjectId(root);
-  // Named after the project, so several sites can each have their own Glass in one account.
+  // Named after the project, so several sites can each have their own Dataflare in one account.
   // (A shared default would make the second site redeploy, and re-route, the first site's Worker.)
   const name = options.name ?? existing?.name ?? `glass-${project}`;
   const lake = options.lake ?? existing?.store === 'lake';
@@ -262,7 +262,7 @@ export async function init(options: InitOptions, deps: InitDeps = {}): Promise<v
         report(
           'skipped',
           'Session replay',
-          'R2 is not enabled on this account; enable it in the Cloudflare dashboard, then run `glass upgrade`',
+          'R2 is not enabled on this account; enable it in the Cloudflare dashboard, then run `dataflare upgrade`',
         );
     } else {
       report('skipped', 'Session replay', 'disabled with --no-replay');
@@ -306,7 +306,7 @@ export async function init(options: InitOptions, deps: InitDeps = {}): Promise<v
     if (!config.host)
       throw new UsageError(
         'Deployed, but could not read the Worker URL.',
-        'Enable a workers.dev subdomain in the Cloudflare dashboard (Workers & Pages), then run `glass upgrade`.',
+        'Enable a workers.dev subdomain in the Cloudflare dashboard (Workers & Pages), then run `dataflare upgrade`.',
       );
     await putSecrets(
       wrangler,
@@ -364,7 +364,7 @@ export async function init(options: InitOptions, deps: InitDeps = {}): Promise<v
       );
       if (seen.events.some((e) => e.event === '$install_check'))
         report('ok', 'Test event received');
-      else report('skipped', 'Test event not visible yet', 'run `glass status` in a minute');
+      else report('skipped', 'Test event not visible yet', 'run `dataflare status` in a minute');
     }
 
     const framework = detectFramework(readPackageJson(root));
@@ -399,7 +399,7 @@ export async function init(options: InitOptions, deps: InitDeps = {}): Promise<v
       return;
     }
     line();
-    line(color.bold(`Next: add Glass to your site (${FRAMEWORKS[framework].name})`));
+    line(color.bold(`Next: add Dataflare to your site (${FRAMEWORKS[framework].name})`));
     line();
     line(color.dim(`  ${snippet.file}`));
     for (const l of snippet.code.split('\n')) line(`  ${l}`);
@@ -410,10 +410,10 @@ export async function init(options: InitOptions, deps: InitDeps = {}): Promise<v
     line();
     line(color.bold('Before you ship it'));
     line(
-      `  Cookie banner? Load Glass with ${color.cyan('data-persistence="cookieless"')} (it stores nothing on the device) and call ${color.cyan('glass.consent(true)')} on Accept. Session replay starts after consent, or add ${color.cyan('data-replay-cookieless="true"')} to record without storing anything.`,
+      `  Cookie banner? Load Dataflare with ${color.cyan('data-persistence="cookieless"')} (it stores nothing on the device) and call ${color.cyan('glass.consent(true)')} on Accept. Session replay starts after consent, or add ${color.cyan('data-replay-cookieless="true"')} to record without storing anything.`,
     );
     line(
-      '  Add Glass to your privacy page: your own analytics, in your Cloudflare account, cookieless until consent.',
+      '  Add Dataflare to your privacy page: your own analytics, in your Cloudflare account, cookieless until consent.',
     );
     line(
       `  Already sending events to GA, Meta or PostHog? Add ${color.cyan('glass.capture')} to that same helper, then mark the events that mean success with the ${color.cyan('mark_event')} tool.`,
@@ -442,7 +442,7 @@ export async function init(options: InitOptions, deps: InitDeps = {}): Promise<v
     }
     line();
     line(
-      `Dashboard: ${color.cyan(`${config.host}/app`)} ${color.dim('(sign in with the key from `npx @glassanalytics/cli key`)')}`,
+      `Dashboard: ${color.cyan(`${config.host}/app`)} ${color.dim('(sign in with the key from `npx dataflare key`)')}`,
     );
   } catch (err) {
     if (

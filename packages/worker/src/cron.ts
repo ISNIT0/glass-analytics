@@ -4,7 +4,7 @@
  * analysis; see `GlassService.summariseSettled`).
  */
 
-import { DAY_MS } from '@glassanalytics/core/time';
+import { DAY_MS } from '@dataflare/core/time';
 import type { Env } from './env.ts';
 import { listProjects } from './projects.ts';
 import { deleteReplays, sessionsToSummarise } from './replays.ts';

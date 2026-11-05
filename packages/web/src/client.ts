@@ -1,9 +1,9 @@
 /**
- * The Glass browser client.
+ * The Dataflare browser client.
  */
 
-import { uuidv7 } from '@glassanalytics/core/ids';
-import { GLASS_VERSION } from '@glassanalytics/core/version';
+import { uuidv7 } from '@dataflare/core/ids';
+import { GLASS_VERSION } from '@dataflare/core/version';
 import { trackClicks, trackErrors, trackPageviews } from './autocapture.ts';
 import { Store } from './storage.ts';
 import { Transport } from './transport.ts';
@@ -26,7 +26,7 @@ declare global {
   }
 }
 
-export class Glass {
+export class Dataflare {
   readonly version = GLASS_VERSION;
   private options: GlassOptions | null = null;
   private host = '';
@@ -44,7 +44,7 @@ export class Glass {
   private teardown: (() => void)[] = [];
   private pageStart = Date.now();
 
-  /** Start Glass. Safe to call once; later calls are ignored. */
+  /** Start Dataflare. Safe to call once; later calls are ignored. */
   init(options: GlassOptions): this {
     if (this.options) return this;
     if (!options?.host || !options?.project) {
@@ -119,7 +119,7 @@ export class Glass {
     return this;
   }
 
-  /** Record an event. Names starting with `$` are reserved for Glass. */
+  /** Record an event. Names starting with `$` are reserved for Dataflare. */
   capture(event: string, props: Record<string, unknown> = {}): void {
     const store = this.store;
     if (!store || !this.transport) return;
@@ -346,7 +346,7 @@ export class Glass {
 let replayModule: Promise<ReplayModule | null> | null = null;
 
 /**
- * Load replay.js from the Glass Worker with a script tag. A script tag (rather
+ * Load replay.js from the Dataflare Worker with a script tag. A script tag (rather
  * than `import()`) works the same under every bundler and keeps rrweb out of
  * your app bundle; the recorder always matches your Worker's version.
  */

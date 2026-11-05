@@ -3,14 +3,14 @@
  * canonical links, the sitemap, Open Graph tags and llms.txt all follow it.
  */
 
-export const SITE_URL = 'https://glass-site.isnit.workers.dev';
+export const SITE_URL = 'https://dataflare.dev';
 export const REPO = 'https://github.com/ISNIT0/glass-analytics';
-export const INSTALL = 'npx @glassanalytics/cli init';
+export const INSTALL = 'npx dataflare init';
 export const AGENT_PROMPT =
-  "Add Glass analytics to this project: run `npx @glassanalytics/cli init`, track signups and purchases, then show me today's visitors.";
+  "Add Dataflare analytics to this project: run `npx dataflare init`, track signups and purchases, then show me today's visitors.";
 
 /**
- * Glass measuring its own site. Leave empty until a Glass Worker exists for
+ * Dataflare measuring its own site. Leave empty until a Dataflare Worker exists for
  * the site; when set, every page loads the SDK in cookieless mode and the
  * copy buttons send events.
  */

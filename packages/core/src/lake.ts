@@ -5,7 +5,7 @@
  *
  * Pipelines stream schemas cannot be changed after creation, so treat these as
  * versioned: a change needs new streams (e.g. `glass_events_v2`) and a
- * migration step in `glass upgrade`.
+ * migration step in `dataflare upgrade`.
  */
 
 import { EVENT_COLUMNS } from './events.ts';

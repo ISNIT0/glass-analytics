@@ -2,7 +2,7 @@
  * Experiments: list, create, and the results readout.
  */
 
-import type { ExperimentResult } from '@glassanalytics/core/insights/experiment';
+import type { ExperimentResult } from '@dataflare/core/insights/experiment';
 import { api } from '../api.ts';
 import { kpiStat } from '../components/charts.ts';
 import { icon } from '../components/icons.ts';
@@ -353,7 +353,7 @@ export function experimentsPage(route: Route): Node[] {
     return [
       pageHeader(
         'New experiment',
-        'Glass creates a 50/50 control/test flag with the same key and measures your goal event.',
+        'Dataflare creates a 50/50 control/test flag with the same key and measures your goal event.',
       ),
       panel('Experiment', createForm(), { icon: 'flask' }),
     ];

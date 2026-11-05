@@ -1,5 +1,5 @@
 name: Feature request
-description: Suggest something Glass should do.
+description: Suggest something Dataflare should do.
 labels: [enhancement]
 body:
   - type: textarea

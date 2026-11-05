@@ -1,22 +1,22 @@
 # Agents: MCP, CLI and HTTP
 
-Everything in Glass is available to agents in three equivalent ways. They call the same service, so results match exactly.
+Everything in Dataflare is available to agents in three equivalent ways. They call the same service, so results match exactly.
 
 ## MCP
 
-`glass init` adds this to `.mcp.json`, which Claude Code, Cursor and other MCP clients read:
+`dataflare init` adds this to `.mcp.json`, which Claude Code, Cursor and other MCP clients read:
 
 ```json
-{ "mcpServers": { "glass": { "command": "npx", "args": ["-y", "@glassanalytics/cli", "mcp"] } } }
+{ "mcpServers": { "glass": { "command": "npx", "args": ["-y", "dataflare", "mcp"] } } }
 ```
 
-`glass mcp` is a small stdio bridge that forwards to your Worker's `/mcp` endpoint with the key from `.glass/credentials.json`, so no secret goes into the config file. Clients that support remote servers can connect directly instead:
+`dataflare mcp` is a small stdio bridge that forwards to your Worker's `/mcp` endpoint with the key from `.glass/credentials.json`, so no secret goes into the config file. Clients that support remote servers can connect directly instead:
 
 ```sh
 claude mcp add --transport http glass https://glass.<you>.workers.dev/mcp --header "Authorization: Bearer $GLASS_API_KEY"
 ```
 
-Use the read-only key (`npx @glassanalytics/cli key --read`) for agents that shouldn't change flags or experiments; write tools then return a clear error.
+Use the read-only key (`npx dataflare key --read`) for agents that shouldn't change flags or experiments; write tools then return a clear error.
 
 ### Tools
 
@@ -34,7 +34,7 @@ Use the read-only key (`npx @glassanalytics/cli key --read`) for agents that sho
 | `mark_event`                                                                       | Mark an event as a `conversion` (signup, purchase, pledge) or `important`; Reports and `overview` then show its count and rate, and conversion rates per source                                                                                  |
 | `query_sources`                                                                    | Visitors by channel, referrer, UTM source/medium/campaign, landing page, country or device (first touch in the range), with conversions and bounce                                                                                               |
 | `site_health`                                                                      | Errors over time and the share of sessions they hit, pages where errors happen, likely 404 pages, the slowest pages by LCP, replay frustration                                                                                                   |
-| `usage_and_cost`                                                                   | What Glass adds to the Cloudflare bill per month, with recommendations (replay sampling, lake store, retention, noisy events) and a prompt for each                                                                                              |
+| `usage_and_cost`                                                                   | What Dataflare adds to the Cloudflare bill per month, with recommendations (replay sampling, lake store, retention, noisy events) and a prompt for each                                                                                          |
 | `instrument`                                                                       | The exact code to track an event in a framework                                                                                                                                                                                                  |
 | `search_persons`, `get_person`                                                     | Identified people plus anonymous device counts; one person's properties, devices, events and replays                                                                                                                                             |
 | `property_values`, `list_person_properties`                                        | Top values of a property (with event and people counts) and the person property names, so filters use values that exist                                                                                                                          |
@@ -52,7 +52,7 @@ Every result includes a `summary` sentence, the `sql` that ran, and a `dashboard
 
 ### Recipes
 
-- **"First look at this project."** `overview` → `list_events`. If `upgradeAvailable` is set (also on `/health` and in MCP initialize instructions), tell the user. With their go-ahead, run `npx @glassanalytics/cli@latest upgrade`, which stages `.glass/` when `.github/workflows/glass.yml` exists, then commit and push so CI deploys it. Don't deploy Glass from a laptop. For every name in `undocumented`, find the capture site in code (or ask), then `define_event` with a how/when description and property meanings before building queries on those events.
+- **"First look at this project."** `overview` → `list_events`. If `upgradeAvailable` is set (also on `/health` and in MCP initialize instructions), tell the user. With their go-ahead, run `npx dataflare@latest upgrade`, which stages `.glass/` when `.github/workflows/glass.yml` exists, then commit and push so CI deploys it. Don't deploy Dataflare from a laptop. For every name in `undocumented`, find the capture site in code (or ask), then `define_event` with a how/when description and property meanings before building queries on those events.
 - **"Why did X drop?"** `overview` → `query_funnel` with `breakdown: "browser"` (or `utm_source`, `device`) → `list_replays` with `did_event` (the step before) and `not_event` (the step after), `sort: "most_frustrated"` → `summarise_replay` → `replay_snapshot` at the moment it goes wrong → grep the selector in the code → `annotate_replay` with what you found.
 - **"What's annoying users?"** `analyse_replays` for the period → open the top findings' example links with `summarise_replay`.
 - **"Add tracking for Y."** `instrument` with the event name → add the code → deploy → `describe_event` to confirm it arrives → `define_event` with how/when it fires and what each property means → if it means success (a signup, purchase, pledge), `mark_event` with role `conversion`.
@@ -61,22 +61,22 @@ Every result includes a `summary` sentence, the `sql` that ran, and a `dashboard
 
 ## CLI
 
-All commands accept `--json`. In a project set up with `glass init` they need no configuration; elsewhere set `GLASS_HOST`, `GLASS_API_KEY` and optionally `GLASS_PROJECT`.
+All commands accept `--json`. In a project set up with `dataflare init` they need no configuration; elsewhere set `GLASS_HOST`, `GLASS_API_KEY` and optionally `GLASS_PROJECT`.
 
 ```sh
-npx @glassanalytics/cli query web --from -7d
-npx @glassanalytics/cli query trends --event signup_completed --math unique_persons --interval week --breakdown utm_source
-npx @glassanalytics/cli query funnel --steps '$pageview,signup_started,signup_completed' --window 1d --where 'device=mobile'
-npx @glassanalytics/cli query retention --cohort signup_completed --return '$pageview' --period week
-npx @glassanalytics/cli query funnel --spec '{"steps":[{"event":"a"},{"event":"b"}],"from":"-90d"}' --sql
-npx @glassanalytics/cli sql "SELECT path, COUNT(*) AS n FROM events WHERE event = '\$pageview' GROUP BY path ORDER BY n DESC LIMIT 10"
-npx @glassanalytics/cli events signup_completed
-npx @glassanalytics/cli replays --errors --url /checkout --not purchase
-npx @glassanalytics/cli replays summary <session-id>
-npx @glassanalytics/cli replays snapshot <session-id> --at 01:24
-npx @glassanalytics/cli replays analyse --from -7d
-npx @glassanalytics/cli flags set new-checkout --variants control:50,test:50
-npx @glassanalytics/cli experiments create checkout-v2 --goal purchase_completed
+npx dataflare query web --from -7d
+npx dataflare query trends --event signup_completed --math unique_persons --interval week --breakdown utm_source
+npx dataflare query funnel --steps '$pageview,signup_started,signup_completed' --window 1d --where 'device=mobile'
+npx dataflare query retention --cohort signup_completed --return '$pageview' --period week
+npx dataflare query funnel --spec '{"steps":[{"event":"a"},{"event":"b"}],"from":"-90d"}' --sql
+npx dataflare sql "SELECT path, COUNT(*) AS n FROM events WHERE event = '\$pageview' GROUP BY path ORDER BY n DESC LIMIT 10"
+npx dataflare events signup_completed
+npx dataflare replays --errors --url /checkout --not purchase
+npx dataflare replays summary <session-id>
+npx dataflare replays snapshot <session-id> --at 01:24
+npx dataflare replays analyse --from -7d
+npx dataflare flags set new-checkout --variants control:50,test:50
+npx dataflare experiments create checkout-v2 --goal purchase_completed
 ```
 
 ## HTTP

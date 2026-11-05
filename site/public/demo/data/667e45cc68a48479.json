@@ -19,10 +19,10 @@
       "sessions": 1,
       "examples": [
         {
-          "session": "01a1a860-e417-7f72-ab7c-b12f5c1c0c74",
-          "t": 16548,
+          "session": "01a1ab3e-58ac-747d-a96c-1c76b5a96246",
+          "t": 16531,
           "at": "00:16",
-          "link": "http://127.0.0.1:55244/app#/replays/01a1a860-e417-7f72-ab7c-b12f5c1c0c74?project=demo&t=16548"
+          "link": "http://127.0.0.1:58904/app#/replays/01a1ab3e-58ac-747d-a96c-1c76b5a96246?project=demo&t=16531"
         }
       ]
     }
@@ -34,10 +34,10 @@
       "sessions": 1,
       "examples": [
         {
-          "session": "01a1a860-e417-7f72-ab7c-b12f5c1c0c74",
-          "t": 14517,
+          "session": "01a1ab3e-58ac-747d-a96c-1c76b5a96246",
+          "t": 14516,
           "at": "00:14",
-          "link": "http://127.0.0.1:55244/app#/replays/01a1a860-e417-7f72-ab7c-b12f5c1c0c74?project=demo&t=14517"
+          "link": "http://127.0.0.1:58904/app#/replays/01a1ab3e-58ac-747d-a96c-1c76b5a96246?project=demo&t=14516"
         }
       ]
     }
@@ -49,10 +49,10 @@
       "sessions": 1,
       "examples": [
         {
-          "session": "01a1a860-e417-7f72-ab7c-b12f5c1c0c74",
-          "t": 14521,
+          "session": "01a1ab3e-58ac-747d-a96c-1c76b5a96246",
+          "t": 14520,
           "at": "00:14",
-          "link": "http://127.0.0.1:55244/app#/replays/01a1a860-e417-7f72-ab7c-b12f5c1c0c74?project=demo&t=14521"
+          "link": "http://127.0.0.1:58904/app#/replays/01a1ab3e-58ac-747d-a96c-1c76b5a96246?project=demo&t=14520"
         }
       ]
     }
@@ -64,10 +64,10 @@
       "sessions": 1,
       "examples": [
         {
-          "session": "01a1a860-e417-7f72-ab7c-b12f5c1c0c74",
-          "t": 14529,
+          "session": "01a1ab3e-58ac-747d-a96c-1c76b5a96246",
+          "t": 14531,
           "at": "00:14",
-          "link": "http://127.0.0.1:55244/app#/replays/01a1a860-e417-7f72-ab7c-b12f5c1c0c74?project=demo&t=14529"
+          "link": "http://127.0.0.1:58904/app#/replays/01a1ab3e-58ac-747d-a96c-1c76b5a96246?project=demo&t=14531"
         }
       ]
     }
@@ -79,10 +79,10 @@
       "sessions": 1,
       "examples": [
         {
-          "session": "01a1a860-e417-7f72-ab7c-b12f5c1c0c74",
-          "t": 14529,
+          "session": "01a1ab3e-58ac-747d-a96c-1c76b5a96246",
+          "t": 14531,
           "at": "00:14",
-          "link": "http://127.0.0.1:55244/app#/replays/01a1a860-e417-7f72-ab7c-b12f5c1c0c74?project=demo&t=14529"
+          "link": "http://127.0.0.1:58904/app#/replays/01a1ab3e-58ac-747d-a96c-1c76b5a96246?project=demo&t=14531"
         }
       ]
     }
@@ -94,13 +94,13 @@
       "sessions": 1,
       "examples": [
         {
-          "session": "01a1a860-e417-7f72-ab7c-b12f5c1c0c74",
-          "t": 11467,
+          "session": "01a1ab3e-58ac-747d-a96c-1c76b5a96246",
+          "t": 11468,
           "at": "00:11",
-          "link": "http://127.0.0.1:55244/app#/replays/01a1a860-e417-7f72-ab7c-b12f5c1c0c74?project=demo&t=11467"
+          "link": "http://127.0.0.1:58904/app#/replays/01a1ab3e-58ac-747d-a96c-1c76b5a96246?project=demo&t=11468"
         }
       ]
     }
   ],
-  "summary": "3 sessions analysed: 1 rage clicks, 1 dead clicks, 2 clicks followed by an error, 1 errors, 6 console errors, 6 failed requests.\n\nRage-clicked elements:\n- \"Upgrade now\" (button) · #pay — 1 session, 5× (e.g. 01a1a860-e417-7f72-ab7c-b12f5c1c0c74)\n\nDead clicks (nothing happened):\n- \"Upgrade now\" (button) · #pay — 1 session, 1× (e.g. 01a1a860-e417-7f72-ab7c-b12f5c1c0c74)\n\nErrors:\n- TypeError: Cannot read properties of undefined (reading 'number') — 1 session, 1× (e.g. 01a1a860-e417-7f72-ab7c-b12f5c1c0c74)\n\nFailed requests:\n- POST http://inkwell.example/api/billing → 404 — 1 session, 6× (e.g. 01a1a860-e417-7f72-ab7c-b12f5c1c0c74)\n\nConsole errors:\n- Billing request failed: 404 — 1 session, 6× (e.g. 01a1a860-e417-7f72-ab7c-b12f5c1c0c74)\n\nLast page of sessions with problems:\n- http://inkwell.example/app — 1 session, 1× (e.g. 01a1a860-e417-7f72-ab7c-b12f5c1c0c74)"
+  "summary": "3 sessions analysed: 1 rage clicks, 1 dead clicks, 2 clicks followed by an error, 1 errors, 6 console errors, 6 failed requests.\n\nRage-clicked elements:\n- \"Upgrade now\" (button) · #pay — 1 session, 5× (e.g. 01a1ab3e-58ac-747d-a96c-1c76b5a96246)\n\nDead clicks (nothing happened):\n- \"Upgrade now\" (button) · #pay — 1 session, 1× (e.g. 01a1ab3e-58ac-747d-a96c-1c76b5a96246)\n\nErrors:\n- TypeError: Cannot read properties of undefined (reading 'number') — 1 session, 1× (e.g. 01a1ab3e-58ac-747d-a96c-1c76b5a96246)\n\nFailed requests:\n- POST http://inkwell.example/api/billing → 404 — 1 session, 6× (e.g. 01a1ab3e-58ac-747d-a96c-1c76b5a96246)\n\nConsole errors:\n- Billing request failed: 404 — 1 session, 6× (e.g. 01a1ab3e-58ac-747d-a96c-1c76b5a96246)\n\nLast page of sessions with problems:\n- http://inkwell.example/app — 1 session, 1× (e.g. 01a1ab3e-58ac-747d-a96c-1c76b5a96246)"
 }

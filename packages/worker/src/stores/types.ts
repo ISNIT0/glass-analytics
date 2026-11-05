@@ -2,7 +2,7 @@
  * Event stores.
  *
  * An EventStore is where events are written and how SQL against them is run.
- * Glass ships two:
+ * Dataflare ships two:
  *
  * - `D1Store` (default): events in the same D1 database as everything else.
  *   Free-plan friendly, real-time, simple. Good to a few million events a month.
@@ -15,9 +15,9 @@
  * implement this interface and a `Dialect`; see docs/extending.md.
  */
 
-import type { StoredEvent } from '@glassanalytics/core/events';
-import type { Row } from '@glassanalytics/core/insights/types';
-import type { Dialect } from '@glassanalytics/core/sql/dialect';
+import type { StoredEvent } from '@dataflare/core/events';
+import type { Row } from '@dataflare/core/insights/types';
+import type { Dialect } from '@dataflare/core/sql/dialect';
 
 export interface IdentityLink {
   project: string;

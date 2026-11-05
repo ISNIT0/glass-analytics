@@ -1,6 +1,6 @@
 # Getting started
 
-Glass deploys into your Cloudflare account with one command. You need a Cloudflare account and Node 20+.
+Dataflare deploys into your Cloudflare account with one command. You need a Cloudflare account and Node 20+.
 
 ## 1. Create an API token
 
@@ -8,27 +8,27 @@ At [dash.cloudflare.com/profile/api-tokens](https://dash.cloudflare.com/profile/
 
 | Permission                                                                        | Why                             |
 | --------------------------------------------------------------------------------- | ------------------------------- |
-| Account › Workers Scripts › Edit                                                  | Deploy the Glass Worker         |
+| Account › Workers Scripts › Edit                                                  | Deploy the Dataflare Worker     |
 | Account › D1 › Edit                                                               | Create and migrate the database |
 | Account › Workers R2 Storage › Edit                                               | Store session replays           |
 | Account › Account Settings › Read                                                 | Find your account               |
 | Zone › Workers Routes › Edit                                                      | Only with `--route`             |
 | Account › Pipelines › Edit, Workers R2 Data Catalog › Edit, Workers R2 SQL › Read | Only with `--lake`              |
 
-The token is used by the CLI on your machine. It is not stored by Glass, except in lake mode, where it becomes a Worker secret so the Worker can query Basin SQL. (Use a separate read-only token there if you prefer; see [lake.md](lake.md).)
+The token is used by the CLI on your machine. It is not stored by Dataflare, except in lake mode, where it becomes a Worker secret so the Worker can query Basin SQL. (Use a separate read-only token there if you prefer; see [lake.md](lake.md).)
 
-## 2. Run `glass init`
+## 2. Run `dataflare init`
 
 From your project's root:
 
 ```sh
-CLOUDFLARE_API_TOKEN=… npx @glassanalytics/cli init
+CLOUDFLARE_API_TOKEN=… npx dataflare init
 ```
 
 It will:
 
-1. Create a D1 database (`glass`) and an R2 bucket for replays (`glass-replays`). If R2 isn't enabled on your account yet, replay is skipped; enable R2 in the dashboard and run `glass upgrade` later.
-2. Deploy the Glass Worker to `https://glass.<your-subdomain>.workers.dev`, apply migrations, and set its secrets (two API keys and a salt).
+1. Create a D1 database (`glass`) and an R2 bucket for replays (`glass-replays`). If R2 isn't enabled on your account yet, replay is skipped; enable R2 in the dashboard and run `dataflare upgrade` later.
+2. Deploy the Dataflare Worker to `https://glass.<your-subdomain>.workers.dev`, apply migrations, and set its secrets (two API keys and a salt).
 3. Create a project named after your `package.json` (override with `--project`).
 4. Send a test event and check it arrived.
 5. Print the install snippet for your framework, and write files for your coding agent: `AGENTS.md` (and `CLAUDE.md` if you have one), `.claude/skills/glass/SKILL.md` and `.mcp.json`.
@@ -38,28 +38,28 @@ It also creates `.glass/` in your project. Commit it (`config.json`, `wrangler.j
 
 Useful flags:
 
-| Flag                   |                                                                                                                                          |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `--dry-run`            | Show what would be created, change nothing                                                                                               |
-| `--account <id>`       | Choose the account non-interactively                                                                                                     |
-| `--project <id>`       | Project id (lowercase letters, digits, `-`, `_`)                                                                                         |
-| `--eu`                 | Create the database and buckets in the EU jurisdiction                                                                                   |
-| `--route acme.com`     | Also serve Glass from your own domain at `/_glass` (first-party, so ad blockers don't block it). Needs the domain on Cloudflare, proxied |
-| `--no-route`           | Remove a route set by an earlier init                                                                                                    |
-| `--retention-days <n>` | Delete events older than n days (also on `glass upgrade`)                                                                                |
-| `--lake`               | Store events in Iceberg on R2 instead of D1 (beta; for high volume)                                                                      |
-| `--no-replay`          | Skip replay storage                                                                                                                      |
-| `--no-agent-files`     | Don't write AGENTS.md, SKILL.md or .mcp.json                                                                                             |
-| `--no-ci`              | Don't write `.github/workflows/glass.yml`                                                                                                |
-| `--json`               | Machine-readable output                                                                                                                  |
+| Flag                   |                                                                                                                                              |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--dry-run`            | Show what would be created, change nothing                                                                                                   |
+| `--account <id>`       | Choose the account non-interactively                                                                                                         |
+| `--project <id>`       | Project id (lowercase letters, digits, `-`, `_`)                                                                                             |
+| `--eu`                 | Create the database and buckets in the EU jurisdiction                                                                                       |
+| `--route acme.com`     | Also serve Dataflare from your own domain at `/_glass` (first-party, so ad blockers don't block it). Needs the domain on Cloudflare, proxied |
+| `--no-route`           | Remove a route set by an earlier init                                                                                                        |
+| `--retention-days <n>` | Delete events older than n days (also on `dataflare upgrade`)                                                                                |
+| `--lake`               | Store events in Iceberg on R2 instead of D1 (beta; for high volume)                                                                          |
+| `--no-replay`          | Skip replay storage                                                                                                                          |
+| `--no-agent-files`     | Don't write AGENTS.md, SKILL.md or .mcp.json                                                                                                 |
+| `--no-ci`              | Don't write `.github/workflows/glass.yml`                                                                                                    |
+| `--json`               | Machine-readable output                                                                                                                      |
 
-`glass init` is safe to re-run: it finds existing resources and keeps your keys.
+`dataflare init` is safe to re-run: it finds existing resources and keeps your keys.
 
-Each deployment is named after its project (`glass-<project>`: Worker, D1 database, replay bucket), so several sites can each have their own Glass in one Cloudflare account. Pass `--name` to choose another.
+Each deployment is named after its project (`glass-<project>`: Worker, D1 database, replay bucket), so several sites can each have their own Dataflare in one Cloudflare account. Pass `--name` to choose another.
 
 **Sites not on Cloudflare** (Vercel, Netlify): load the snippet straight from the Worker's URL. A rewrite or proxy from your own domain makes every visitor look like the proxy's server, which breaks countries and cookieless visitor counts.
 
-**Cookie banners:** load Glass with `data-persistence="cookieless"` (it stores nothing on the device, so it can run before consent) and call `glass.consent(true)` when the visitor accepts, `glass.consent(false)` when they reject. Cross-day visitor ids and session replay start after consent; add `data-replay-cookieless="true"` to record visitors who haven't chosen yet, still storing nothing on the device. Add Glass to your privacy page.
+**Cookie banners:** load Dataflare with `data-persistence="cookieless"` (it stores nothing on the device, so it can run before consent) and call `glass.consent(true)` when the visitor accepts, `glass.consent(false)` when they reject. Cross-day visitor ids and session replay start after consent; add `data-replay-cookieless="true"` to record visitors who haven't chosen yet, still storing nothing on the device. Add Dataflare to your privacy page.
 
 ## 3. Add the snippet
 
@@ -76,7 +76,7 @@ The script tag works everywhere and needs no build step:
 | SvelteKit            | `src/app.html`                                                                                                   |
 | Nuxt                 | `app.head.script` in `nuxt.config.ts`                                                                            |
 | Remix / React Router | `app/root.tsx`                                                                                                   |
-| Vite apps            | `npm i @glassanalytics/web`, then `glass.init({ host, project })` in `main.ts`                                   |
+| Vite apps            | `npm i dataflare-web`, then `glass.init({ host, project })` in `main.ts`                                         |
 | Server-side          | `POST <host>/e`; see [sdk.md](sdk.md#server-side-events)                                                         |
 
 ## 4. Track what matters
@@ -99,20 +99,20 @@ Name events `object_action` in snake_case and past tense. Put details in propert
 Document every custom event once it is shipping — agents and teammates need to know **how and when** it fires, and **what each property means**:
 
 ```sh
-npx @glassanalytics/cli events signup_completed --describe "Fired when the user finishes signup after email verification."
+npx dataflare events signup_completed --describe "Fired when the user finishes signup after email verification."
 ```
 
 Prefer the MCP `define_event` tool so you can set property meanings in the same call (`plan` → chosen plan id, etc.). `list_events` returns an `undocumented` list; clear it before building funnels or trends on those events.
 
 ## 5. Look at the data
 
-- **Dashboard:** `https://glass.<you>.workers.dev/app`. Sign in with the key from `npx @glassanalytics/cli key`. Share a view-only dashboard with `npx @glassanalytics/cli key --read`.
+- **Dashboard:** `https://glass.<you>.workers.dev/app`. Sign in with the key from `npx dataflare key`. Share a view-only dashboard with `npx dataflare key --read`.
 - **Your agent:** with `.mcp.json` in place, ask "what were our top traffic sources this week?". See [agents.md](agents.md).
-- **Terminal:** `npx @glassanalytics/cli query web --from -7d`, `npx @glassanalytics/cli events`, `npx @glassanalytics/cli --help`.
+- **Terminal:** `npx dataflare query web --from -7d`, `npx dataflare events`, `npx dataflare --help`.
 
 ## Upgrading
 
-Init is the only deploy that has to run on your machine. After that, the Glass version is pinned in `.glass/config.json` and `.github/workflows/glass.yml` deploys whatever `.glass/` holds when it changes on your default branch.
+Init is the only deploy that has to run on your machine. After that, the Dataflare version is pinned in `.glass/config.json` and `.github/workflows/glass.yml` deploys whatever `.glass/` holds when it changes on your default branch.
 
 One-time setup, right after init (agents should do this as part of init):
 
@@ -122,18 +122,18 @@ One-time setup, right after init (agents should do this as part of init):
 To upgrade:
 
 ```sh
-npx @glassanalytics/cli@latest upgrade   # stages the new Worker, migrations and version into .glass/; deploys nothing
-git add .glass && git commit -m "Upgrade Glass" && git push   # or open a PR; CI migrates and deploys
+npx dataflare@latest upgrade   # stages the new Worker, migrations and version into .glass/; deploys nothing
+git add .glass && git commit -m "Upgrade Dataflare" && git push   # or open a PR; CI migrates and deploys
 ```
 
-In CI, the workflow runs `npx @glassanalytics/cli@<pinned version> upgrade --ci`, which applies migrations and redeploys without prompts or local credentials.
+In CI, the workflow runs `npx dataflare@<pinned version> upgrade --ci`, which applies migrations and redeploys without prompts or local credentials.
 
-- No workflow yet (installed before this existed, or with `--no-ci`)? `npx @glassanalytics/cli ci` writes it. Options: `--branch`, `--secret`. A workflow you have edited by hand (without the generated header) is left alone.
-- No GitHub Actions? Without the workflow, `glass upgrade` deploys directly, as before. `glass upgrade --local` forces a direct deploy even when the workflow exists; use it only in emergencies, since the repo then no longer matches what is live.
-- `glass upgrade` refuses to replace a newer Worker with an older one (for example a stale `npx` cache). Use `@latest`. `--allow-downgrade` overrides this.
+- No workflow yet (installed before this existed, or with `--no-ci`)? `npx dataflare ci` writes it. Options: `--branch`, `--secret`. A workflow you have edited by hand (without the generated header) is left alone.
+- No GitHub Actions? Without the workflow, `dataflare upgrade` deploys directly, as before. `dataflare upgrade --local` forces a direct deploy even when the workflow exists; use it only in emergencies, since the repo then no longer matches what is live.
+- `dataflare upgrade` refuses to replace a newer Worker with an older one (for example a stale `npx` cache). Use `@latest`. `--allow-downgrade` overrides this.
 
-You'll also be told when an upgrade is available: the dashboard shows a banner after login, `glass status` (and other CLI commands) print a reminder, and MCP/`overview` include `upgradeAvailable` so agents can ask you to run the command above.
+You'll also be told when an upgrade is available: the dashboard shows a banner after login, `dataflare status` (and other CLI commands) print a reminder, and MCP/`overview` include `upgradeAvailable` so agents can ask you to run the command above.
 
-## Removing Glass
+## Removing Dataflare
 
-Delete the Worker, the D1 database and the R2 buckets from the Cloudflare dashboard (they're all named after `--name`, `glass` by default), then delete `.glass/` and the Glass section of `AGENTS.md`.
+Delete the Worker, the D1 database and the R2 buckets from the Cloudflare dashboard (they're all named after `--name`, `glass` by default), then delete `.glass/` and the Dataflare section of `AGENTS.md`.

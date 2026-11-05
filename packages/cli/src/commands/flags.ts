@@ -1,8 +1,8 @@
 /**
- * `glass flags` and `glass experiments`.
+ * `dataflare flags` and `dataflare experiments`.
  */
 
-import type { ExperimentResult } from '@glassanalytics/core/insights/experiment';
+import type { ExperimentResult } from '@dataflare/core/insights/experiment';
 import { call, withProject } from '../client.ts';
 import { UsageError } from '../config.ts';
 import { color, line, pct, printJson, table } from '../output.ts';
@@ -24,7 +24,7 @@ export async function flags(
     }>('GET', `/api/flags${projectQuery(flags)}`);
     if (flags.json) return printJson(r);
     if (!r.flags.length)
-      return line('No flags yet. Create one: glass flags set new-checkout --rollout 10');
+      return line('No flags yet. Create one: dataflare flags set new-checkout --rollout 10');
     table(
       ['Flag', 'On', 'Rollout', 'Variants'],
       r.flags.map((f) => [
@@ -36,7 +36,7 @@ export async function flags(
     );
     return;
   }
-  if (!key) throw new UsageError(`Pass a flag key: glass flags ${sub} <key>`);
+  if (!key) throw new UsageError(`Pass a flag key: dataflare flags ${sub} <key>`);
   if (sub === 'delete') {
     const r = await call<{ summary: string }>(
       'DELETE',
@@ -66,7 +66,7 @@ export async function flags(
   }
   throw new UsageError(
     `Unknown subcommand "flags ${sub}".`,
-    'Use: glass flags [list | set <key> | delete <key>]',
+    'Use: dataflare flags [list | set <key> | delete <key>]',
   );
 }
 
@@ -84,7 +84,7 @@ export async function experiments(
     if (flags.json) return printJson(r);
     if (!r.experiments.length)
       return line(
-        'No experiments yet. Create one: glass experiments create pricing-v2 --goal signup_completed',
+        'No experiments yet. Create one: dataflare experiments create pricing-v2 --goal signup_completed',
       );
     table(
       ['Experiment', 'Status', 'Goal'],
@@ -92,7 +92,7 @@ export async function experiments(
     );
     return;
   }
-  if (!key) throw new UsageError(`Pass an experiment key: glass experiments ${sub} <key>`);
+  if (!key) throw new UsageError(`Pass an experiment key: dataflare experiments ${sub} <key>`);
   if (sub === 'create') {
     const goal = str(flags.goal);
     if (!goal) throw new UsageError('Pass the goal event: --goal signup_completed');
@@ -112,7 +112,7 @@ export async function experiments(
   if (sub === 'start' || sub === 'stop' || sub === 'ship') {
     const variant = rest[0] ?? str(flags.variant);
     if (sub === 'ship' && !variant)
-      throw new UsageError('Pass the variant to ship: glass experiments ship <key> <variant>');
+      throw new UsageError('Pass the variant to ship: dataflare experiments ship <key> <variant>');
     const r = await call<{ summary: string }>(
       'POST',
       `/api/experiments/${encodeURIComponent(key)}/${sub}`,
@@ -142,6 +142,6 @@ export async function experiments(
   }
   throw new UsageError(
     `Unknown subcommand "experiments ${sub}".`,
-    'Use: glass experiments [list | create | start | stop | ship | results]',
+    'Use: dataflare experiments [list | create | start | stop | ship | results]',
   );
 }

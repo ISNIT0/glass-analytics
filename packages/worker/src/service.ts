@@ -1,16 +1,11 @@
 /**
- * The Glass service: every operation the HTTP API, the MCP server and the
+ * The Dataflare service: every operation the HTTP API, the MCP server and the
  * dashboard can perform, in one place. Inputs are validated here (with the
  * shared zod schemas), so all three surfaces behave identically and an agent
  * gets the same answer whichever way it asks.
  */
 
-import {
-  COHORT_PROPERTY,
-  type CohortMembers,
-  type Filter,
-  toList,
-} from '@glassanalytics/core/filters';
+import { COHORT_PROPERTY, type CohortMembers, type Filter, toList } from '@dataflare/core/filters';
 import {
   experimentSpec,
   filterSchema,
@@ -19,8 +14,8 @@ import {
   isInsightKind,
   sqlSpec,
   webSpec,
-} from '@glassanalytics/core/insights';
-import { runExperiment } from '@glassanalytics/core/insights/experiment';
+} from '@dataflare/core/insights';
+import { runExperiment } from '@dataflare/core/insights/experiment';
 import {
   type EventRole,
   type KeyEvent,
@@ -29,16 +24,16 @@ import {
   runSources,
   SOURCE_DIMENSIONS,
   type SourceDimension,
-} from '@glassanalytics/core/insights/report';
-import type { QueryContext, ResultBase } from '@glassanalytics/core/insights/types';
-import { runWeb } from '@glassanalytics/core/insights/web';
+} from '@dataflare/core/insights/report';
+import type { QueryContext, ResultBase } from '@dataflare/core/insights/types';
+import { runWeb } from '@dataflare/core/insights/web';
 import {
   EVENT_DOCUMENTATION_GUIDE,
   EVENT_NAMING_GUIDE,
   FRAMEWORKS,
   type Framework,
-} from '@glassanalytics/core/instrument';
-import { analyseReplays } from '@glassanalytics/core/replay-analysis';
+} from '@dataflare/core/instrument';
+import { analyseReplays } from '@dataflare/core/replay-analysis';
 import {
   clock,
   parseOffset,
@@ -47,18 +42,18 @@ import {
   snapshotAt,
   summariseReplay,
   type TimelineItem,
-} from '@glassanalytics/core/replay-summary';
-import { propertyText } from '@glassanalytics/core/sql/filters';
-import { assertReadOnlySql } from '@glassanalytics/core/sql/guard';
-import { eventsCte, num, text } from '@glassanalytics/core/sql/source';
-import { DAY_MS, resolveRange } from '@glassanalytics/core/time';
-import { estimateUsage } from '@glassanalytics/core/usage';
+} from '@dataflare/core/replay-summary';
+import { propertyText } from '@dataflare/core/sql/filters';
+import { assertReadOnlySql } from '@dataflare/core/sql/guard';
+import { eventsCte, num, text } from '@dataflare/core/sql/source';
+import { DAY_MS, resolveRange } from '@dataflare/core/time';
+import { estimateUsage } from '@dataflare/core/usage';
 import {
   GLASS_VERSION,
   isNewerThan,
   UPGRADE_COMMAND,
   upgradeMessage,
-} from '@glassanalytics/core/version';
+} from '@dataflare/core/version';
 import { z } from 'zod/v4';
 import type { Env } from './env.ts';
 import {
@@ -1034,7 +1029,7 @@ GROUP BY v ORDER BY n DESC LIMIT ${d.num(limit)}`;
     });
     const warnings: string[] = [];
     if (spec.event.startsWith('$'))
-      warnings.push('Names starting with "$" are reserved for Glass.');
+      warnings.push('Names starting with "$" are reserved for Dataflare.');
     if (!/^[a-z][a-z0-9]*(_[a-z0-9]+)+$/.test(spec.event))
       warnings.push(`Consider snake_case object_action names. ${EVENT_NAMING_GUIDE}`);
     return {
@@ -1623,7 +1618,7 @@ GROUP BY session_id ORDER BY last_ms DESC LIMIT ${SESSION_MATCH_LIMIT}`;
       throw new HttpError(
         501,
         'Session replay is not enabled on this deployment',
-        'Enable R2 on your Cloudflare account, then run `glass upgrade`.',
+        'Enable R2 on your Cloudflare account, then run `dataflare upgrade`.',
       );
     const row = await getReplay(this.env.DB, project, session);
     if (!row)
@@ -1635,7 +1630,7 @@ GROUP BY session_id ORDER BY last_ms DESC LIMIT ${SESSION_MATCH_LIMIT}`;
     return row;
   }
 
-  /** Glass events recorded in the same session (pageviews, custom events, errors). */
+  /** Dataflare events recorded in the same session (pageviews, custom events, errors). */
   private async sessionEvents(project: string, row: ReplayRow) {
     const d = this.store.dialect;
     const sql = `SELECT event, ts_ms, path, url, title, props FROM ${d.table('events')}
@@ -1708,7 +1703,7 @@ ORDER BY ts_ms LIMIT 2000`;
     return done;
   }
 
-  /** Epoch ms that transcript times count from: the first recorded or Glass event of the session. */
+  /** Epoch ms that transcript times count from: the first recorded or Dataflare event of the session. */
   private async sessionStart(project: string, row: ReplayRow): Promise<number> {
     const d = this.store.dialect;
     const first = await this.store.query(`SELECT MIN(ts_ms) AS first_ms FROM ${d.table('events')}
