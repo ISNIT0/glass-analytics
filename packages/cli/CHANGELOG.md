@@ -1,5 +1,11 @@
 # dataflare-cli
 
+## 0.6.2
+
+### Patch Changes
+
+- c901828: Fix `npx dataflare-cli` doing nothing: the CLI only started when its bin was named `glass`, and npm links it as `dataflare`. It now compares real paths, so it runs under any bin name.
+
 ## 0.6.1
 
 ### Patch Changes
