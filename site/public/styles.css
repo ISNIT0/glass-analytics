@@ -418,7 +418,9 @@ h3 {
   background: var(--night);
   color: var(--night-ink);
   overflow: hidden;
-  padding: 72px var(--gutter) 0;
+  /* Room below the screenshot for its shadow (--shadow-lg reaches ~110px down), which
+     overflow: hidden would otherwise cut off in a hard line. */
+  padding: 72px var(--gutter) 72px;
 }
 
 .hero-glow {
@@ -730,7 +732,7 @@ h3 {
 .facts ul {
   list-style: none;
   margin: 0 auto;
-  padding: 40px var(--gutter) 8px;
+  padding: 0 var(--gutter) 8px;
   max-width: var(--page);
   display: grid;
   grid-template-columns: repeat(5, 1fr);
