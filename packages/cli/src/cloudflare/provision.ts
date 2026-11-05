@@ -302,7 +302,9 @@ export function renderWranglerConfig(config: GlassConfig): string {
     name: config.name,
     main: 'worker.js',
     compatibility_date: '2026-10-01',
-    workers_dev: true,
+    // On a route, the zone's WAF and rate limits guard the Worker; a live
+    // workers.dev address would be a way around them.
+    workers_dev: !config.route,
     d1_databases: [
       {
         binding: 'DB',

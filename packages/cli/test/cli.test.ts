@@ -25,7 +25,7 @@ import { fileURLToPath } from 'node:url';
 import { GLASS_VERSION } from '@dataflare/core/version';
 import { testApp } from '../../worker/test/harness.ts';
 import { agentsSection, importsAgentsMd, upsertSection } from '../src/agent-files.ts';
-import { lakeResourceNames } from '../src/cloudflare/provision.ts';
+import { lakeResourceNames, renderWranglerConfig } from '../src/cloudflare/provision.ts';
 import {
   localWrangler,
   type RunResult,
@@ -36,6 +36,7 @@ import { init, normaliseRoute } from '../src/commands/init.ts';
 import { lakeMaintain, PYICEBERG } from '../src/commands/lake.ts';
 import { mcpBridge } from '../src/commands/mcp.ts';
 import { ci, upgrade } from '../src/commands/upgrade.ts';
+import type { GlassConfig } from '../src/config.ts';
 
 const HOST = 'https://glass.test-account.workers.dev';
 
@@ -657,6 +658,27 @@ describe('onboarding details', () => {
     const bin = localWrangler();
     assert.ok(bin?.endsWith(join('wrangler', 'bin', 'wrangler.js')), String(bin));
     assert.ok(existsSync(bin));
+  });
+
+  it('turns workers.dev off once the Worker has a route, so zone rules cannot be bypassed', () => {
+    const config: GlassConfig = {
+      name: 'glass-web-app',
+      accountId: 'acc',
+      host: HOST,
+      project: 'web-app',
+      store: 'd1',
+      d1: { name: 'glass-web-app', id: 'db' },
+      replay: null,
+      lake: null,
+      route: null,
+      eu: false,
+      version: GLASS_VERSION,
+    };
+    assert.match(renderWranglerConfig(config), /"workers_dev": true/);
+    assert.match(
+      renderWranglerConfig({ ...config, route: 'acme.com/_glass/*' }),
+      /"workers_dev": false/,
+    );
   });
 
   it("doesn't copy the Dataflare section into a CLAUDE.md that imports AGENTS.md", () => {
