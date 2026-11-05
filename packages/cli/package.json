@@ -1,6 +1,6 @@
 {
   "name": "dataflare",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Agent-first analytics in your own Cloudflare account. `npx dataflare init` deploys it.",
   "license": "MIT",
   "type": "module",
