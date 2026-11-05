@@ -35,7 +35,7 @@ This project uses Glass for analytics, session replay, feature flags and A/B tes
 Tracking (project \`${o.project}\`):
 - Install (${o.snippet.file}): \`${o.snippet.code.split('\n').pop()}\`
 - Custom events: \`glass.capture('signup_completed', { plan: 'pro' })\`. After login: \`glass.identify(user.id, { plan })\`.
-- Consent: if the site has a cookie banner, load Glass with \`data-persistence="cookieless"\` and call \`glass.consent(true)\` when the visitor accepts (\`false\` on reject). Cookieless stores nothing on the device; session replay starts after consent. Mention Glass on the privacy page.
+- Consent: if the site has a cookie banner, load Glass with \`data-persistence="cookieless"\` and call \`glass.consent(true)\` when the visitor accepts (\`false\` on reject). Cookieless stores nothing on the device; session replay starts after consent unless you add \`data-replay-cookieless="true"\` (records without storing anything; call \`glass.consent(false)\` on load for visitors who rejected). Mention Glass on the privacy page.
 - If the code already has an analytics helper (a \`track()\` that calls gtag, fbq or PostHog), add \`glass.capture\` inside it rather than at every call site.
 - Events that mean success (signup, purchase, pledge): \`mark_event\` with role "conversion" so Reports show conversion rates per source.
 - ${EVENT_NAMING_GUIDE}

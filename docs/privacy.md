@@ -18,13 +18,14 @@ Set `GLASS_RETENTION_DAYS` (a Worker variable) to delete events older than that 
 
 With `persistence: 'cookieless'` (or `data-persistence="cookieless"`), the SDK stores nothing on the device. The Worker derives a visitor id from a daily-rotating secret salt, your project, the IP address and the user agent, hashes it with SHA-256, and stores only the hash. The salt changes every day, so ids can't be linked across days or reversed to an IP. Sessions are 30-minute windows of that id.
 
-This is enough for web analytics. It is not enough for funnels across days, retention, experiments or replay, which need a stable id; call `glass.consent(true)` once the user agrees to switch to a persistent id. Whether you need consent in your jurisdiction is a question for your own legal advice.
+This is enough for web analytics. It is not enough for funnels across days, retention or experiments, which need a stable id; call `glass.consent(true)` once the user agrees to switch to a persistent id. Whether you need consent in your jurisdiction is a question for your own legal advice.
 
 ## Session replay
 
 - Every input is masked (`maskAllInputs`). Set `maskAllText` to mask all text as well, or mark elements with `data-glass-mask` to mask just their text.
 - Elements matching `[data-glass-block]` (configurable) aren't recorded.
 - Recording is sampled; nothing is recorded unless you set a sample rate.
+- In cookieless mode replay is off unless you also set `replay.cookieless` (`data-replay-cookieless="true"`). Then nothing is stored on the device either: each page load's recording is filed under the same daily-rotating visitor and session ids as its events, and the sampling decision lasts one page load. `glass.consent(false)` stops recording for the rest of the page. Recording a visitor who hasn't consented may need a legal basis such as legitimate interest where you are; describe it on your privacy page.
 - Network requests are recorded as method, URL without its query string, status and timing. Headers and bodies never are. Turn it off with `network: false`.
 - Console `warn` and `error` messages are recorded by default; they contain whatever your code logs. Turn it off with `console: false`.
 - Notes left on a session, and its cached summary, are deleted with the session (retention, or erasing a person).

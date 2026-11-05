@@ -39,6 +39,8 @@ export class Glass {
   private replay: ReplayController | null = null;
   private replayMode: 'record' | 'buffer' | null = null;
   private replaySession: string | null = null;
+  /** Set by `consent(false)`: no more replay on this page, cookieless or not. */
+  private replayDeclined = false;
   private teardown: (() => void)[] = [];
   private pageStart = Date.now();
 
@@ -231,10 +233,15 @@ export class Glass {
    */
   consent(granted: boolean): void {
     if (!this.store) return;
+    const wasCookieless = this.store.cookieless;
     this.store.setPersistence(granted ? 'localStorage' : 'cookieless');
+    this.replayDeclined = !granted;
     if (!granted) {
       this.replay?.stop();
       this.replay = null;
+    } else if (wasCookieless) {
+      // A cookieless recording is filed under server-derived ids; start again under the stored session.
+      void this.restartReplay();
     } else {
       void this.maybeStartReplay();
     }
@@ -242,6 +249,7 @@ export class Glass {
 
   /** Start recording this session now, regardless of sampling. */
   async startReplay(): Promise<void> {
+    this.replayDeclined = false;
     this.store?.setReplayDecision('record');
     if (this.replay && this.replayMode === 'buffer') {
       this.replay.flushBuffer();
@@ -282,7 +290,8 @@ export class Glass {
 
   private async maybeStartReplay(): Promise<void> {
     const opts = this.options?.replay as ReplayOptions | false | undefined;
-    if (!opts || !this.store || this.store.cookieless || this.replay) return;
+    if (!opts || !this.store || this.replay || this.replayDeclined) return;
+    if (this.store.cookieless && !opts.cookieless) return;
     const session = this.store.session(false);
     let decision = session.replay;
     if (!decision) {
@@ -306,15 +315,17 @@ export class Glass {
   private async loadReplay(mode: 'record' | 'buffer'): Promise<void> {
     if (!this.store || !this.options) return;
     const module = await loadReplayModule(this.host);
-    if (!module || !this.store || !this.options) return;
+    if (!module || !this.store || !this.options || this.replay || this.replayDeclined) return;
     const opts = (this.options.replay || {}) as ReplayOptions;
+    const cookieless = this.store.cookieless;
     const session = this.store.session(false);
-    this.replaySession = session.id;
+    this.replaySession = cookieless ? 'cookieless' : session.id;
     this.replayMode = mode;
     this.replay = module.startReplay({
       host: this.host,
       project: this.options.project,
       sessionId: this.replaySession,
+      cookieless,
       distinctId: this.store.distinctId(),
       userId: this.store.userId(),
       mode,

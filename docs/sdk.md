@@ -15,13 +15,13 @@ The SDK is about 4 KB gzipped and has no dependencies. Session replay loads a se
 | `project`         | required         | Project id                                                                                                                                                                             |
 | `persistence`     | `'localStorage'` | `'cookieless'` stores nothing on the device (see [privacy.md](privacy.md))                                                                                                             |
 | `autocapture`     | `true`           | `false`, or `{ pageviews, clicks, errors, webVitals }` to pick                                                                                                                         |
-| `replay`          | off              | `{ sampleRate: 0.1, onErrorSampleRate: 1, maskAllText: false, maskTextSelector: '[data-glass-mask]', blockSelector: '[data-glass-block]', console: ['warn', 'error'], network: true }` |
+| `replay`          | off              | `{ sampleRate: 0.1, onErrorSampleRate: 1, maskAllText: false, maskTextSelector: '[data-glass-mask]', blockSelector: '[data-glass-block]', console: ['warn', 'error'], network: true, cookieless: false }` |
 | `flags`           | `true`           | Load feature flags on init                                                                                                                                                             |
 | `beforeSend`      |                  | `(event) => event                                                                                                                                                                      | null` to edit or drop events |
 | `flushIntervalMs` | `5000`           | How often queued events are sent                                                                                                                                                       |
 | `debug`           | `false`          | Log events to the console                                                                                                                                                              |
 
-Script tag equivalents: `data-project`, `data-host`, `data-persistence="cookieless"`, `data-autocapture="false"`, `data-replay-sample-rate="0.1"`, `data-replay-on-error-sample-rate="1"`, `data-replay-console="false"` (or `"all"`), `data-replay-network="false"`, `data-replay-mask-all-text="true"`, `data-debug="true"`.
+Script tag equivalents: `data-project`, `data-host`, `data-persistence="cookieless"`, `data-autocapture="false"`, `data-replay-sample-rate="0.1"`, `data-replay-on-error-sample-rate="1"`, `data-replay-console="false"` (or `"all"`), `data-replay-network="false"`, `data-replay-mask-all-text="true"`, `data-replay-cookieless="true"`, `data-debug="true"`.
 
 ## Events
 
@@ -96,6 +96,8 @@ glass.init({ host, project, persistence: 'cookieless' }); // before consent
 glass.consent(true); // after the user agrees: switch to a persistent id, allow replay
 glass.consent(false); // delete stored ids, stop replay, go back to cookieless
 ```
+
+Replay normally waits for consent. With `replay: { sampleRate: 1, cookieless: true }` (`data-replay-cookieless="true"`) it also records cookieless visitors, storing nothing on the device; the Worker files each page load under the visit's cookieless ids. `consent(false)` stops it for the rest of the page, so call it on load for visitors who rejected earlier.
 
 ## Server-side events
 

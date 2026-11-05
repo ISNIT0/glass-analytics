@@ -177,6 +177,7 @@ function startReplay(options: ReplayStartOptions): ReplayController {
   let mode = options.mode;
   // A session spans page loads, and each load restarts `seq`; the page id keeps chunk keys unique.
   const page = Math.random().toString(36).slice(2, 10);
+  const pageStart = Date.now();
   let seq = 0;
   // Events waiting to be uploaded, as JSON: each event is serialised once, and the size is exact.
   let pending: string[] = [];
@@ -286,6 +287,10 @@ function startReplay(options: ReplayStartOptions): ReplayController {
       failed: String(counts.failed),
       href: location.href.split('?')[0]!.slice(0, 500),
     });
+    if (options.cookieless) {
+      q.set('cl', '1');
+      q.set('ps', String(pageStart));
+    }
     if (options.distinctId) q.set('d', options.distinctId);
     if (options.userId) q.set('u', options.userId);
     pending = [];

@@ -156,6 +156,27 @@ describe('ingest', () => {
       rows('SELECT session_id FROM events').every((r) => String(r.session_id).startsWith('cs_')),
     );
   });
+  it('files cookieless replays under the session their events get', async () => {
+    const anon = { distinct_id: null, session_id: null, ts: Date.now() };
+    const headers = { 'CF-Connecting-IP': '203.0.113.9' };
+    await t.ingest([wire('$pageview', anon)], { headers });
+    const ps = Date.now();
+    const chunk = [{ type: 4, timestamp: ps, data: { href: 'https://acme.com/' } }];
+    for (const seq of [0, 1]) {
+      const res = await t.call(
+        'POST',
+        `/r?project=acme&session=cookieless&cl=1&ps=${ps}&seq=${seq}&page=p1&start=${ps}&enc=json`,
+        { key: null, body: JSON.stringify(chunk), headers },
+      );
+      assert.equal(res.status, 204);
+    }
+    const [event] = rows('SELECT session_id, distinct_id FROM events');
+    const replays = rows('SELECT session_id, distinct_id, chunks FROM replays');
+    assert.equal(replays.length, 1);
+    assert.equal(replays[0]!.session_id, event!.session_id);
+    assert.equal(replays[0]!.distinct_id, event!.distinct_id);
+    assert.equal(replays[0]!.chunks, 2);
+  });
 });
 
 describe('identity and persons', () => {

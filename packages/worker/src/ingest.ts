@@ -201,12 +201,19 @@ function boundedJson(value: unknown): string {
  * secret salt + IP + user agent, so nothing is stored on the device and ids can't
  * be linked across days. Sessions are 30-minute windows of that id.
  */
-async function deriveCookielessIds(ctx: RowContext) {
-  const day = Math.floor(ctx.now / 86_400_000);
-  const salt = `${ctx.env.GLASS_SALT_SECRET ?? ctx.env.GLASS_ADMIN_KEY ?? 'glass'}:${day}`;
-  const visitor = (
-    await sha256Hex(`${salt}:${ctx.project}:${ctx.info.ip}:${ctx.info.userAgent}`)
-  ).slice(0, 20);
+function deriveCookielessIds(ctx: RowContext) {
+  return cookielessIds(ctx.env, ctx.project, ctx.info, ctx.now);
+}
+
+/**
+ * The ids used when the browser stores nothing: a visitor hash of IP + user
+ * agent with a salt that rotates daily, and a session per 30-minute bucket.
+ * Cookieless replays use the same ids, so they join the visit's events.
+ */
+export async function cookielessIds(env: Env, project: string, info: RequestInfo, now: number) {
+  const day = Math.floor(now / 86_400_000);
+  const salt = `${env.GLASS_SALT_SECRET ?? env.GLASS_ADMIN_KEY ?? 'glass'}:${day}`;
+  const visitor = (await sha256Hex(`${salt}:${project}:${info.ip}:${info.userAgent}`)).slice(0, 20);
   return {
     distinctId: `c_${visitor}`,
     sessionId: (ts: number) => `cs_${visitor}_${Math.floor(ts / SESSION_BUCKET_MS)}`,

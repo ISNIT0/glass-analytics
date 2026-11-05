@@ -296,4 +296,39 @@ describe('Glass end to end', { timeout: 120_000 }, () => {
       'the full snapshot, bigger than a beacon, was stored',
     );
   });
+  it('records cookieless visits without storing anything', async () => {
+    const visitor = await browser.newContext({ userAgent: UA });
+    const page = await visitor.newPage();
+    // The pricing page, with Glass loaded the way a site without consent loads it.
+    await page.addInitScript(() => {
+      new MutationObserver((_, observer) => {
+        const tag = document.querySelector<HTMLScriptElement>('script[src$="/s.js"]');
+        if (!tag) return;
+        tag.dataset.persistence = 'cookieless';
+        tag.dataset.replayCookieless = 'true';
+        observer.disconnect();
+      }).observe(document, { childList: true, subtree: true });
+    });
+    await page.goto(`${server.demoUrl}/pricing`);
+    await page.waitForTimeout(500);
+    const stored = await page.evaluate(() =>
+      Object.keys(localStorage).filter((k) => k.startsWith('glass')),
+    );
+    assert.deepEqual(stored, [], 'nothing is stored on the device');
+    await page.goto('about:blank');
+    await visitor.close();
+
+    const list = await eventually(
+      () =>
+        api<{ replays: { session: string; url: string }[] }>('GET', '/api/replays?project=demo'),
+      (r) => r.replays.some((x) => x.url.endsWith('/pricing') && x.session.startsWith('cs_')),
+      'a cookieless replay of the pricing page',
+    );
+    const replay = list.replays.find((x) => x.session.startsWith('cs_'))!;
+    const sql = await api<{ rows: { n: number }[] }>('POST', '/api/sql', {
+      project: 'demo',
+      query: `SELECT COUNT(*) AS n FROM events WHERE event = '$pageview' AND session_id = '${replay.session}'`,
+    });
+    assert.ok(sql.rows[0]!.n >= 1, "the replay joins the visit's events");
+  });
 });

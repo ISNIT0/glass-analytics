@@ -460,7 +460,7 @@ function list(route: Route): Node[] {
                 { icon: 'search', title: 'No matches' },
               )
             : empty(
-                'Set data-replay-sample-rate="0.1" on the script tag to record 10% of sessions. Inputs are masked.',
+                'Set data-replay-sample-rate="0.1" on the script tag to record 10% of sessions. Inputs are masked. Loading Glass cookieless? Replay waits for consent unless you also add data-replay-cookieless="true".',
                 h(
                   'a',
                   { class: 'button', href: href('settings') },

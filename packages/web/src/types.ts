@@ -55,6 +55,13 @@ export interface ReplayOptions {
    * timing. Never headers or bodies. Default true.
    */
   network?: boolean;
+  /**
+   * Record in cookieless mode too. Nothing is stored on the device: the Worker
+   * files each page load's recording under the same daily-rotating visitor and
+   * session ids as its events. A sampling decision lasts one page load. Off by
+   * default; `consent(false)` stops recording for the rest of the page.
+   */
+  cookieless?: boolean;
 }
 
 export type ConsoleLevel = 'log' | 'info' | 'warn' | 'error' | 'debug';
@@ -104,6 +111,8 @@ export interface ReplayStartOptions {
   /** Console levels to record; empty for none. */
   console: ConsoleLevel[];
   network: boolean;
+  /** No device ids: the Worker derives the session from the request and `pageStart`. */
+  cookieless?: boolean;
 }
 
 export interface ReplayController {

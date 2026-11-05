@@ -59,7 +59,7 @@ Each deployment is named after its project (`glass-<project>`: Worker, D1 databa
 
 **Sites not on Cloudflare** (Vercel, Netlify): load the snippet straight from the Worker's URL. A rewrite or proxy from your own domain makes every visitor look like the proxy's server, which breaks countries and cookieless visitor counts.
 
-**Cookie banners:** load Glass with `data-persistence="cookieless"` (it stores nothing on the device, so it can run before consent) and call `glass.consent(true)` when the visitor accepts, `glass.consent(false)` when they reject. Session replay and cross-day visitor ids start after consent. Add Glass to your privacy page.
+**Cookie banners:** load Glass with `data-persistence="cookieless"` (it stores nothing on the device, so it can run before consent) and call `glass.consent(true)` when the visitor accepts, `glass.consent(false)` when they reject. Cross-day visitor ids and session replay start after consent; add `data-replay-cookieless="true"` to record visitors who haven't chosen yet, still storing nothing on the device. Add Glass to your privacy page.
 
 ## 3. Add the snippet
 

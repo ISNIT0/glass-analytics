@@ -10,6 +10,7 @@
  * `data-autocapture="false"`, `data-replay-sample-rate="0.1"`,
  * `data-replay-on-error-sample-rate="1"`, `data-replay-console="false"` (or
  * `"all"`), `data-replay-network="false"`, `data-replay-mask-all-text="true"`,
+ * `data-replay-cookieless="true"` (record without stored ids),
  * `data-debug="true"`.
  *
  * Calls made before the script loads can be queued with this one-line stub:
@@ -48,6 +49,7 @@ if (script && data?.project) {
                   : undefined,
             network: data.replayNetwork !== 'false',
             maskAllText: data.replayMaskAllText === 'true',
+            cookieless: data.replayCookieless === 'true',
           }
         : false,
     debug: data.debug === 'true',

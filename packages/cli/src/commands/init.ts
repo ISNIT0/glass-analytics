@@ -410,7 +410,7 @@ export async function init(options: InitOptions, deps: InitDeps = {}): Promise<v
     line();
     line(color.bold('Before you ship it'));
     line(
-      `  Cookie banner? Load Glass with ${color.cyan('data-persistence="cookieless"')} (it stores nothing on the device) and call ${color.cyan('glass.consent(true)')} on Accept. Session replay starts after consent.`,
+      `  Cookie banner? Load Glass with ${color.cyan('data-persistence="cookieless"')} (it stores nothing on the device) and call ${color.cyan('glass.consent(true)')} on Accept. Session replay starts after consent, or add ${color.cyan('data-replay-cookieless="true"')} to record without storing anything.`,
     );
     line(
       '  Add Glass to your privacy page: your own analytics, in your Cloudflare account, cookieless until consent.',

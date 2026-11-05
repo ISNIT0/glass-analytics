@@ -27,7 +27,7 @@ import type { RrwebEvent } from '@glassanalytics/core/replay-summary';
 import { parseUserAgent } from '@glassanalytics/core/ua';
 import type { D1Database, Env, R2Bucket } from './env.ts';
 import { HttpError } from './http.ts';
-import { requestInfo } from './ingest.ts';
+import { cookielessIds, requestInfo } from './ingest.ts';
 import { getProject } from './projects.ts';
 
 const SAFE_ID = /^[A-Za-z0-9_.:-]{1,100}$/;
@@ -66,10 +66,21 @@ export async function handleReplayChunk(request: Request, env: Env, url: URL): P
   const bucket = requireBucket(env);
   const q = url.searchParams;
   const project = q.get('project') ?? '';
-  const session = q.get('session') ?? '';
+  let session = q.get('session') ?? '';
+  let distinct = q.get('d') ?? '';
   const seq = Number(q.get('seq'));
   if (!(await getProject(env.DB, project)))
     throw new HttpError(404, `Unknown project "${project}"`);
+  const info = requestInfo(request);
+  if (q.get('cl') === '1') {
+    // Cookieless: the browser has no ids, so derive the ones its events get. The
+    // session comes from the page load's start, so every chunk of a page stays together.
+    const now = Date.now();
+    const pageStart = Math.min(now, Math.max(now - 86_400_000, Number(q.get('ps')) || now));
+    const ids = await cookielessIds(env, project, info, pageStart);
+    session = ids.sessionId(pageStart);
+    distinct = ids.distinctId;
+  }
   if (!SAFE_ID.test(session) || !Number.isInteger(seq) || seq < 0)
     throw new HttpError(400, 'Invalid session or seq');
 
@@ -91,7 +102,6 @@ export async function handleReplayChunk(request: Request, env: Env, url: URL): P
     },
   );
 
-  const info = requestInfo(request);
   const ua = parseUserAgent(info.userAgent);
   const n = (name: string) => {
     const v = Number(q.get(name));
@@ -119,7 +129,7 @@ export async function handleReplayChunk(request: Request, env: Env, url: URL): P
     .bind(
       project,
       session,
-      q.get('d') ?? '',
+      distinct,
       q.get('u') || null,
       start,
       n('end') || start,
