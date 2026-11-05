@@ -35,18 +35,62 @@ export class UnsafeSqlError extends Error {
   override readonly name = 'UnsafeSqlError';
 }
 
+/** SQLite's IdChar: letters, digits, `_`, `$` and every non-ASCII character. */
+function isIdChar(c: string | undefined): boolean {
+  return c !== undefined && (/[A-Za-z0-9_$]/.test(c) || c.charCodeAt(0) >= 0x80);
+}
+
 /**
- * Blanks out comments and quoted strings in one left-to-right pass. Doing them
- * in separate passes lets one hide the other: a `/*` or `--` inside a string
- * literal would otherwise be read as a comment that swallows the closing quote
- * and whatever statement follows it.
+ * Blanks out comments, quoted strings and identifiers in one left-to-right
+ * pass that tokenizes the way SQLite does. Doing them in separate passes lets
+ * one hide the other: a `/*` or `--` inside a string literal would otherwise be
+ * read as a comment that swallows the closing quote and whatever statement
+ * follows it. The same goes for any token SQLite reads differently from us, so
+ * `[bracketed]` identifiers and Tcl-style `$name(...)` parameters are scanned
+ * too: either can contain a quote that would otherwise open a fake string.
  */
 function stripLiteralsAndComments(sql: string): string {
   let out = '';
   let i = 0;
   while (i < sql.length) {
-    const c = sql[i];
-    if (c === '-' && sql[i + 1] === '-') {
+    const c = sql[i]!;
+    if (isIdChar(c) && c !== '$') {
+      // A whole identifier or number, so a `$` inside one (`a$b`) is not read as a parameter.
+      let j = i + 1;
+      while (isIdChar(sql[j])) j++;
+      out += sql.slice(i, j);
+      i = j;
+    } else if (c === '$' || c === '@' || c === ':' || c === '#') {
+      // A named parameter. Like SQLite, allow `::` inside the name and a `(...)` suffix that
+      // runs to the next `)` or whitespace, whatever it contains.
+      let j = i + 1;
+      let named = 0;
+      for (;;) {
+        const d = sql[j];
+        if (isIdChar(d)) {
+          named++;
+          j++;
+        } else if (d === '(' && named > 0) {
+          j++;
+          while (j < sql.length && sql[j] !== ')' && !/\s/.test(sql[j]!)) j++;
+          if (sql[j] !== ')') throw new UnsafeSqlError('Unterminated parameter name.');
+          j++;
+          break;
+        } else if (d === ':' && sql[j + 1] === ':') {
+          j += 2;
+        } else {
+          break;
+        }
+      }
+      out += j === i + 1 ? c : '?';
+      i = j;
+    } else if (c === '[') {
+      // A bracketed identifier runs to the first `]`; there is no escape.
+      const end = sql.indexOf(']', i + 1);
+      if (end === -1) throw new UnsafeSqlError('Unterminated bracketed identifier.');
+      i = end + 1;
+      out += '""';
+    } else if (c === '-' && sql[i + 1] === '-') {
       const end = sql.indexOf('\n', i);
       i = end === -1 ? sql.length : end;
       out += ' ';

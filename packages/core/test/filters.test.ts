@@ -118,6 +118,9 @@ describe('read-only SQL guard', () => {
     assert.ok(assertReadOnlySql("SELECT '-- not a comment; nor this /*' AS s FROM events"));
     assert.ok(assertReadOnlySql('SELECT /* note */ count(*) FROM events -- trailing'));
     assert.ok(assertReadOnlySql("SELECT 'it''s' AS s"));
+    assert.ok(assertReadOnlySql("SELECT [it's] FROM events WHERE a$b = 1"));
+    assert.ok(assertReadOnlySql('SELECT props::varchar AS p FROM events'));
+    assert.ok(assertReadOnlySql("SELECT * FROM events WHERE props @> '{}'"));
   });
 
   it('rejects statements hidden by mixing comments and literals', () => {
@@ -126,6 +129,12 @@ describe('read-only SQL guard', () => {
       "select '/*') q; delete from flags; select * from (select '*/'",
       "select '--'\n; delete from flags",
       "select 'unterminated",
+      // SQLite reads [x'] as one identifier, so the quote must not open a string.
+      "select 1 as [']) x; delete from flags; select * from (select 1 as [']",
+      // A Tcl-style parameter name swallows everything up to `)`, quotes included.
+      "select $a(')+1 x) y;delete/**/from/**/flags;select * from (select $b(') z",
+      "select @a(')+1 x) y;delete/**/from/**/flags;select * from (select :b(') z",
+      'select 1 as [unterminated',
     ]) {
       assert.throws(() => assertReadOnlySql(sql), UnsafeSqlError, sql);
     }

@@ -39,7 +39,12 @@ export class D1Store implements EventStore {
   }
 
   async query(sql: string): Promise<Row[]> {
-    const { results } = await this.db.prepare(sql).all<Row>();
+    const { results, meta } = await this.db.prepare(sql).all<Row>();
+    // Every caller reads, and people's own SQL is guarded before it gets here. This can't undo
+    // a write, but if something ever slips past the guard it fails loudly instead of quietly.
+    if (meta?.changed_db) {
+      throw new Error('A read-only query changed the database. Please report this as a bug.');
+    }
     return results;
   }
 

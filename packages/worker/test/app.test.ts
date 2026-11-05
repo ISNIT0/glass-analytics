@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { beforeEach, describe, it } from 'node:test';
 import { GLASS_VERSION, UPGRADE_COMMAND } from '@dataflare/core/version';
 import { configureLatestCheck } from '../src/latest.ts';
-import { ArrayStream, READ, type TestApp, testApp, wire } from './harness.ts';
+import { D1Store } from '../src/stores/d1.ts';
+import { ArrayStream, READ, SqliteD1, type TestApp, testApp, wire } from './harness.ts';
 
 let t: TestApp;
 
@@ -565,6 +566,19 @@ describe('query API', () => {
     assert.equal(res.rows[0]!.n, 3);
     const bad = await t.call('POST', '/api/sql', { body: { query: 'DELETE FROM events' } });
     assert.equal(bad.status, 400);
+  });
+
+  it('fails loudly if a read-only query ever writes', async () => {
+    const store = new D1Store(new SqliteD1());
+    assert.equal((await store.query('SELECT 1 AS n'))[0]?.n, 1);
+    await assert.rejects(
+      store.query(
+        "INSERT INTO flags (project, key, definition, created_at, updated_at) VALUES ('p', 'k', '{}', 1, 1) RETURNING key",
+      ),
+      /changed the database/,
+    );
+    // The INSERT above went through before the check threw, so there is a row to delete.
+    await assert.rejects(store.query('DELETE FROM flags RETURNING *'), /changed the database/);
   });
 
   it('lists and describes events, and flags undocumented ones', async () => {
@@ -1378,7 +1392,7 @@ describe('lake store', () => {
         LAKE_BUCKET: 'b',
         CF_API_TOKEN: 't',
       } as never);
-      assert.deepEqual(await store.query('SELECT 1 AS n'), [{ n: 1 }]);
+      assert.equal((await store.query('SELECT 1 AS n'))[0]?.n, 1);
     } finally {
       globalThis.fetch = realFetch;
     }

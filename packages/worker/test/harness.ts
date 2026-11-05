@@ -49,7 +49,14 @@ class Statement implements D1PreparedStatement {
   }
 
   async all<T>(): Promise<D1Result<T>> {
-    return { results: this.db.prepare(this.sql).all(...this.args) as T[], success: true, meta: {} };
+    // D1 reports changed_db from total_changes(), as miniflare does; the store relies on it.
+    const before = this.totalChanges();
+    const results = this.db.prepare(this.sql).all(...this.args) as T[];
+    return { results, success: true, meta: { changed_db: this.totalChanges() !== before } };
+  }
+
+  private totalChanges(): number {
+    return Number((this.db.prepare('SELECT total_changes() AS n').get() as { n: number }).n);
   }
 
   async run(): Promise<D1Result> {
