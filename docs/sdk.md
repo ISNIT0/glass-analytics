@@ -9,17 +9,17 @@ The SDK is about 4 KB gzipped and has no dependencies. Session replay loads a se
 
 ## `glass.init(options)`
 
-| Option            | Default          |                                                                                                                                                                                        |
-| ----------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `host`            | required         | Your Worker URL, e.g. `https://glass.acme.workers.dev` or `/_glass`                                                                                                                    |
-| `project`         | required         | Project id                                                                                                                                                                             |
-| `persistence`     | `'localStorage'` | `'cookieless'` stores nothing on the device (see [privacy.md](privacy.md))                                                                                                             |
-| `autocapture`     | `true`           | `false`, or `{ pageviews, clicks, errors, webVitals }` to pick                                                                                                                         |
+| Option            | Default          |                                                                                                                                                                                                           |
+| ----------------- | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `host`            | required         | Your Worker URL, e.g. `https://glass.acme.workers.dev` or `/_glass`                                                                                                                                       |
+| `project`         | required         | Project id                                                                                                                                                                                                |
+| `persistence`     | `'localStorage'` | `'cookieless'` stores nothing on the device (see [privacy.md](privacy.md))                                                                                                                                |
+| `autocapture`     | `true`           | `false`, or `{ pageviews, clicks, errors, webVitals }` to pick                                                                                                                                            |
 | `replay`          | off              | `{ sampleRate: 0.1, onErrorSampleRate: 1, maskAllText: false, maskTextSelector: '[data-glass-mask]', blockSelector: '[data-glass-block]', console: ['warn', 'error'], network: true, cookieless: false }` |
-| `flags`           | `true`           | Load feature flags on init                                                                                                                                                             |
-| `beforeSend`      |                  | `(event) => event                                                                                                                                                                      | null` to edit or drop events |
-| `flushIntervalMs` | `5000`           | How often queued events are sent                                                                                                                                                       |
-| `debug`           | `false`          | Log events to the console                                                                                                                                                              |
+| `flags`           | `true`           | Load feature flags on init                                                                                                                                                                                |
+| `beforeSend`      |                  | `(event) => event                                                                                                                                                                                         | null` to edit or drop events |
+| `flushIntervalMs` | `5000`           | How often queued events are sent                                                                                                                                                                          |
+| `debug`           | `false`          | Log events to the console                                                                                                                                                                                 |
 
 Script tag equivalents: `data-project`, `data-host`, `data-persistence="cookieless"`, `data-autocapture="false"`, `data-replay-sample-rate="0.1"`, `data-replay-on-error-sample-rate="1"`, `data-replay-console="false"` (or `"all"`), `data-replay-network="false"`, `data-replay-mask-all-text="true"`, `data-replay-cookieless="true"`, `data-debug="true"`.
 
