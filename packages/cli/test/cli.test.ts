@@ -657,7 +657,7 @@ describe('onboarding details', () => {
   it('runs the installed wrangler rather than downloading one with npx', () => {
     const bin = localWrangler();
     assert.ok(bin?.endsWith(join('wrangler', 'bin', 'wrangler.js')), String(bin));
-    assert.ok(existsSync(bin));
+    assert.ok(bin && existsSync(bin));
   });
 
   it('turns workers.dev off once the Worker has a route, so zone rules cannot be bypassed', () => {
