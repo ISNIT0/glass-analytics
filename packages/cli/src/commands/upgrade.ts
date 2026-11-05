@@ -9,6 +9,7 @@
 import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { LAKE_VERSION, type LakeSchemaChange } from '@dataflare/core/lake';
 import { GLASS_VERSION, isNewerThan, UPGRADE_COMMAND } from '@dataflare/core/version';
 import {
   CI_WORKFLOW_PATH,
@@ -22,8 +23,10 @@ import { call } from '../client.ts';
 import {
   deploy,
   ensureBucket,
+  ensureLake,
   installWorkerFiles,
   migrate,
+  pipelinesLister,
   putSecrets,
   renderWranglerConfig,
 } from '../cloudflare/provision.ts';
@@ -75,6 +78,9 @@ export interface UpgradeDeps {
   root?: string;
   bundleDir?: string;
   env?: NodeJS.ProcessEnv;
+  /** Lake schema version and changes to move to (tests simulate a schema change). */
+  lakeVersion?: number;
+  lakeChanges?: readonly LakeSchemaChange[];
 }
 
 /** The version the live Worker reports, or null if it can't be reached quickly. */
@@ -185,6 +191,40 @@ export async function upgrade(options: UpgradeOptions, deps: UpgradeDeps = {}): 
     (await ensureBucket(wrangler, `${config.name}-replays`, config.eu, report, 'session replay'))
   ) {
     config.replay = { bucket: `${config.name}-replays` };
+  }
+  // Lake schema change: a new version gets its own streams, sinks and tables (a stream's schema is
+  // fixed and a sink can't write to an existing table). The Worker switches to writing the new
+  // version; queries read every version together. Old tables keep their rows.
+  const lakeVersion = deps.lakeVersion ?? LAKE_VERSION;
+  if (config.lake && (config.lake.version ?? 1) < lakeVersion) {
+    const from = config.lake.version ?? 1;
+    const next = await ensureLake(
+      wrangler,
+      {
+        name: config.name,
+        bucket: config.lake.bucket,
+        namespace: config.lake.namespace,
+        token,
+        dir,
+        list: pipelinesLister(deps.fetcher ?? fetch, { token, accountId: config.accountId }),
+        version: lakeVersion,
+        changes: deps.lakeChanges,
+      },
+      report,
+    );
+    config.lake = {
+      ...config.lake,
+      streams: next.streams,
+      version: lakeVersion,
+      versions: [...new Set([...(config.lake.versions ?? [from]), lakeVersion])].sort(
+        (a, b) => a - b,
+      ),
+    };
+    report(
+      'ok',
+      `Lake schema ${from} → ${lakeVersion}`,
+      'new events go to the new tables; old ones stay',
+    );
   }
   installWorkerFiles(dir, bundle);
   const configPath = join(dir, 'wrangler.jsonc');

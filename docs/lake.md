@@ -1,4 +1,4 @@
-# The lake store (beta)
+# The lake store
 
 By default Dataflare keeps events in D1, which is exact, real-time and free-plan friendly. D1 databases have a size limit, though, so for high volumes Dataflare can stream events into Apache Iceberg tables in R2 and query them with Basin SQL (Cloudflare's DataFusion engine, formerly R2 SQL):
 
@@ -6,7 +6,7 @@ By default Dataflare keeps events in D1, which is exact, real-time and free-plan
 npx dataflare-cli init --lake
 ```
 
-Status: **beta**. Every query kind (web, trends, funnels, retention, SQL, the event list) has been run against production Basin SQL, and the response format is recorded in the tests. Still missing before it leaves beta: deleting a person's events, retention, schema migrations and testing at high volume (see the [roadmap](../ROADMAP.md)). Please report anything odd.
+Status: **stable** on Dataflare's side (0.8). Every read API is checked against DataFusion in CI and gives the same answers as D1; every query kind runs against production Basin SQL at 30 million events in 1–7 seconds; erasure, retention and schema changes work end to end. Cloudflare Pipelines is still in beta, so watch [its changelog](https://developers.cloudflare.com/pipelines/) for changes. Please report anything odd.
 
 Lake mode can't be combined with `--eu`: Basin Catalog doesn't support R2 buckets in a jurisdiction yet, so `init` refuses the combination. Use the D1 store if your data must stay in the EU jurisdiction.
 
@@ -55,4 +55,10 @@ npx wrangler secret put CF_API_TOKEN --config .glass/wrangler.jsonc
 
 ## Schema changes
 
-Pipelines streams can't be altered after creation, so the stream schemas are versioned (`LAKE_VERSION` in `packages/core/src/lake.ts`). Custom properties never need a schema change: they live in the `props` JSON column. A new built-in column would need new streams (`<name>_events_v2`) and queries over both tables; that migration path isn't built yet and is tracked in the roadmap.
+Custom properties never need a schema change: they live in the `props` JSON column. A new built-in column does, and Cloudflare constrains how: a Pipelines stream's schema can't change, and a sink can't write to a table it didn't create. So a schema change makes new tables:
+
+- `LAKE_SCHEMA_CHANGES` in `packages/core/src/lake.ts` lists the columns each version adds; `LAKE_VERSION` follows it.
+- `dataflare upgrade` (from CI) creates the new version's streams, sinks and tables (`<name>_events_v2`, `glass.events_v2`, and the same for identities) and points the Worker at them.
+- Old tables keep their rows. Queries read every version through a `UNION ALL`, with NULL for columns an older version lacks (`LAKE_VERSIONS` on the Worker lists them). Your own SQL can keep saying `glass.events`: the Worker expands it to every version.
+- Erasure and retention cover every version's table.
+- The old pipeline is left in place; with nothing writing to its stream it costs nothing, and you can delete it in the dashboard.

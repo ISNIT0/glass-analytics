@@ -6,7 +6,15 @@
 
 import { copyFileSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { LAKE_TABLES, type LakeTable, streamSchemaFile } from '@dataflare/core/lake';
+import {
+  LAKE_SCHEMA_CHANGES,
+  LAKE_TABLES,
+  LAKE_VERSION,
+  type LakeSchemaChange,
+  type LakeTable,
+  lakeTableName,
+  streamSchemaFile,
+} from '@dataflare/core/lake';
 import type { GlassConfig } from '../config.ts';
 import { must, parseJsonOutput, type Wrangler, WranglerError } from './wrangler.ts';
 
@@ -122,12 +130,14 @@ export function pipelinesLister(
 export function lakeResourceNames(
   deployment: string,
   table: LakeTable,
+  version = 1,
 ): { stream: string; sink: string; pipeline: string } {
   const prefix = deployment
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '');
-  const stream = `${prefix}_${table}`;
+  // Version 2 onwards gets new names: a stream's schema is fixed, and its sink writes one table.
+  const stream = `${prefix}_${lakeTableName(table, version)}`;
   return { stream, sink: `${stream}_sink`, pipeline: stream };
 }
 
@@ -146,9 +156,19 @@ export async function ensureLake(
     token: string;
     dir: string;
     list: PipelinesLister;
+    /** Schema version to create streams, sinks and tables for (default: the current one). */
+    version?: number;
+    changes?: readonly LakeSchemaChange[];
   },
   report: ProvisionReport,
-): Promise<{ bucket: string; namespace: string; streams: Record<LakeTable, string> }> {
+): Promise<{
+  bucket: string;
+  namespace: string;
+  streams: Record<LakeTable, string>;
+  version: number;
+}> {
+  const version = options.version ?? LAKE_VERSION;
+  const changes = options.changes ?? LAKE_SCHEMA_CHANGES;
   // Basin Catalog doesn't support buckets in a jurisdiction (init refuses --lake with --eu).
   if (!(await ensureBucket(wrangler, options.bucket, false, report, 'event lake'))) {
     throw new Error(
@@ -205,14 +225,18 @@ export async function ensureLake(
       stream: streamName,
       sink: sinkName,
       pipeline: pipelineName,
-    } = lakeResourceNames(options.name, table);
+    } = lakeResourceNames(options.name, table, version);
+    const tableName = lakeTableName(table, version);
     const find = async (kind: 'streams' | 'sinks' | 'pipelines', name: string) =>
       (await options.list(kind)).find((i) => i.name === name);
     let stream = await find('streams', streamName);
     if (!stream) {
-      const schemaPath = join(options.dir, 'schemas', `${table}.json`);
+      const schemaPath = join(options.dir, 'schemas', `${tableName}.json`);
       mkdirSync(join(options.dir, 'schemas'), { recursive: true });
-      writeFileSync(schemaPath, `${JSON.stringify(streamSchemaFile(table), null, 2)}\n`);
+      writeFileSync(
+        schemaPath,
+        `${JSON.stringify(streamSchemaFile(table, version, changes), null, 2)}\n`,
+      );
       await must(wrangler, [
         'pipelines',
         'streams',
@@ -241,13 +265,13 @@ export async function ensureLake(
         '--namespace',
         options.namespace,
         '--table',
-        table,
+        tableName,
         '--catalog-token',
         options.token,
         '--roll-interval',
         '60',
       ]);
-      report('created', `Iceberg table "${options.namespace}.${table}"`);
+      report('created', `Iceberg table "${options.namespace}.${tableName}"`);
     }
     if (!(await find('pipelines', pipelineName))) {
       await must(wrangler, [
@@ -260,7 +284,7 @@ export async function ensureLake(
       report('created', `Pipeline "${pipelineName}"`);
     }
   }
-  return { bucket: options.bucket, namespace: options.namespace, streams };
+  return { bucket: options.bucket, namespace: options.namespace, streams, version };
 }
 
 /** The Worker's wrangler.jsonc, generated from config. */
@@ -269,6 +293,7 @@ export function renderWranglerConfig(config: GlassConfig): string {
   if (config.lake) {
     vars.LAKE_BUCKET = config.lake.bucket;
     vars.LAKE_NAMESPACE = config.lake.namespace;
+    vars.LAKE_VERSIONS = (config.lake.versions ?? [1]).join(',');
     vars.CF_ACCOUNT_ID = config.accountId;
   }
   if (config.route) vars.GLASS_PUBLIC_URL = `https://${config.route.replace(/\/\*$/, '')}`;

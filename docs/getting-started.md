@@ -47,7 +47,7 @@ Useful flags:
 | `--route acme.com`     | Also serve Dataflare from your own domain at `/_glass` (first-party, so ad blockers don't block it). Needs the domain on Cloudflare, proxied |
 | `--no-route`           | Remove a route set by an earlier init                                                                                                        |
 | `--retention-days <n>` | Delete events older than n days (also on `dataflare upgrade`)                                                                                |
-| `--lake`               | Store events in Iceberg on R2 instead of D1 (beta; for high volume)                                                                          |
+| `--lake`               | Store events in Iceberg on R2 instead of D1 (for high volume; not with --eu)                                                                 |
 | `--no-replay`          | Skip replay storage                                                                                                                          |
 | `--no-agent-files`     | Don't write AGENTS.md, SKILL.md or .mcp.json                                                                                                 |
 | `--no-ci`              | Don't write `.github/workflows/glass.yml`                                                                                                    |

@@ -11,6 +11,11 @@
 
 import type { StoredEvent } from '@dataflare/core/events';
 import type { Row } from '@dataflare/core/insights/types';
+import {
+  LAKE_SCHEMA_CHANGES,
+  type LakeSchemaChange,
+  parseLakeVersions,
+} from '@dataflare/core/lake';
 import { basin } from '@dataflare/core/sql/dialect';
 import type { Env } from '../env.ts';
 import { HttpError } from '../http.ts';
@@ -28,12 +33,21 @@ export class LakeStore implements EventStore {
   private readonly env: Env;
   private readonly fetcher: typeof fetch;
 
-  constructor(env: Env, fetcher?: typeof fetch) {
+  constructor(
+    env: Env,
+    fetcher?: typeof fetch,
+    /** Schema changes (tests pass their own to exercise multi-version tables). */
+    changes: readonly LakeSchemaChange[] = LAKE_SCHEMA_CHANGES,
+  ) {
     this.env = env;
     // Not `this.fetcher = fetch`: Workers throw "Illegal invocation" when fetch is called as a
     // method of another object, which `this.fetcher(...)` does.
     this.fetcher = fetcher ?? ((input, init) => fetch(input, init));
-    this.dialect = basin(env.LAKE_NAMESPACE ?? 'glass');
+    this.dialect = basin(
+      env.LAKE_NAMESPACE ?? 'glass',
+      parseLakeVersions(env.LAKE_VERSIONS),
+      changes,
+    );
   }
 
   async write(events: StoredEvent[]): Promise<void> {
@@ -51,6 +65,23 @@ export class LakeStore implements EventStore {
 
   async writeIdentity(link: IdentityLink): Promise<void> {
     await this.env.IDENTITIES_STREAM?.send([link]);
+  }
+
+  get userTables(): string {
+    const ns = this.env.LAKE_NAMESPACE ?? 'glass';
+    return `${ns}.events, ${ns}.identities`;
+  }
+
+  /**
+   * People write `glass.events`; after a schema change the rows are split across `events` and
+   * `events_v2`, so the plain names are replaced with the union of every version.
+   */
+  userSql(sql: string): string {
+    const ns = this.env.LAKE_NAMESPACE ?? 'glass';
+    return sql.replace(
+      new RegExp(`\\b${ns}\\.(events|identities)\\b(?!_v\\d)`, 'g'),
+      (_m, table: 'events' | 'identities') => this.dialect.table(table),
+    );
   }
 
   async query(sql: string): Promise<Row[]> {

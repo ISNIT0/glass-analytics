@@ -121,10 +121,17 @@ function breakdownsSql(
     filters,
   });
   const none = (expr: string) => `COALESCE(NULLIF(${expr}, ''), '(none)')`;
+  // Visitors are counted in two steps (one row per value and visitor, then rows per value)
+  // rather than COUNT(DISTINCT): exact on both engines, and Basin SQL rejects this many
+  // COUNT(DISTINCT … GROUP BY) in one query at tens of millions of events.
   const simple = (name: string, expr: string, event: string = PV) =>
     `SELECT * FROM (
-  SELECT ${d.str(name)} AS dim, val, COUNT(DISTINCT distinct_id) AS visitors, COUNT(*) AS n
-  FROM (SELECT ${expr} AS val, distinct_id FROM ev WHERE event = ${d.str(event)}) t
+  SELECT ${d.str(name)} AS dim, val, COUNT(*) AS visitors, SUM(c) AS n
+  FROM (
+    SELECT val, distinct_id, COUNT(*) AS c
+    FROM (SELECT ${expr} AS val, distinct_id FROM ev WHERE event = ${d.str(event)}) t
+    GROUP BY val, distinct_id
+  ) u
   GROUP BY val ORDER BY visitors DESC, n DESC, val ASC LIMIT 10
 ) ${name}_t`;
   // Per-session value taken from the first (entry) or last (exit) pageview. Sources are
@@ -132,13 +139,17 @@ function breakdownsSql(
   // once per internal page viewed afterwards. `n` counts sessions.
   const edge = (name: string, agg: 'MIN' | 'MAX', expr: string) =>
     `SELECT * FROM (
-  SELECT ${d.str(name)} AS dim, val, COUNT(DISTINCT distinct_id) AS visitors, COUNT(*) AS n
+  SELECT ${d.str(name)} AS dim, val, COUNT(*) AS visitors, SUM(c) AS n
   FROM (
-    SELECT ev.session_id, MIN(${expr}) AS val, MIN(ev.distinct_id) AS distinct_id
-    FROM (SELECT session_id, ${agg}(ts_ms) AS t FROM ev WHERE event = ${d.str(PV)} GROUP BY session_id) x
-    JOIN ev ON ev.session_id = x.session_id AND ev.ts_ms = x.t AND ev.event = ${d.str(PV)}
-    GROUP BY ev.session_id
-  ) t
+    SELECT val, distinct_id, COUNT(*) AS c
+    FROM (
+      SELECT ev.session_id, MIN(${expr}) AS val, MIN(ev.distinct_id) AS distinct_id
+      FROM (SELECT session_id, ${agg}(ts_ms) AS t FROM ev WHERE event = ${d.str(PV)} GROUP BY session_id) x
+      JOIN ev ON ev.session_id = x.session_id AND ev.ts_ms = x.t AND ev.event = ${d.str(PV)}
+      GROUP BY ev.session_id
+    ) t
+    GROUP BY val, distinct_id
+  ) u
   GROUP BY val ORDER BY visitors DESC, n DESC, val ASC LIMIT 10
 ) ${name}_t`;
   const parts = [

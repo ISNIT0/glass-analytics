@@ -17,6 +17,8 @@
  * interface — see docs/extending.md.
  */
 
+import { LAKE_SCHEMA_CHANGES, type LakeSchemaChange, lakeTableSql } from '../lake.ts';
+
 export type DialectName = 'sqlite' | 'basin';
 
 /** Tables the compilers read. */
@@ -105,7 +107,11 @@ function sqlitePath(path: readonly string[]): string {
  * Basin SQL (Cloudflare's DataFusion-based engine over Iceberg in R2).
  * JSON functions: https://developers.cloudflare.com/basin-sql/sql-reference/scalar-functions/
  */
-export function basin(namespace = 'glass'): Dialect {
+export function basin(
+  namespace = 'glass',
+  versions: readonly number[] = [1],
+  changes: readonly LakeSchemaChange[] = LAKE_SCHEMA_CHANGES,
+): Dialect {
   if (!/^[a-z_][a-z0-9_]*$/i.test(namespace))
     throw new TypeError(`Invalid namespace "${namespace}"`);
   const args = (column: string, path: readonly string[]) => {
@@ -114,7 +120,8 @@ export function basin(namespace = 'glass'): Dialect {
   };
   return {
     name: 'basin',
-    table: (name) => `${namespace}.${name}`,
+    // Every table version, unioned when a schema change added one (see core/lake.ts).
+    table: (name) => lakeTableSql(namespace, name, versions, changes),
     str: sqlString,
     num: sqlNumber,
     bool: (v) => (v ? 'TRUE' : 'FALSE'),

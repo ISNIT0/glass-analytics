@@ -11,6 +11,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomToken } from '@dataflare/core/ids';
 import { detectFramework, FRAMEWORKS } from '@dataflare/core/instrument';
+import { LAKE_VERSION } from '@dataflare/core/lake';
 import { GLASS_VERSION } from '@dataflare/core/version';
 import { writeAgentFiles } from '../agent-files.ts';
 import { CI_WORKFLOW_PATH, ciNextSteps, writeCiWorkflow } from '../ci.ts';
@@ -273,19 +274,25 @@ export async function init(options: InitOptions, deps: InitDeps = {}): Promise<v
     } else {
       report('skipped', 'Session replay', 'disabled with --no-replay');
     }
+    // Re-running init keeps an existing deployment's schema version; `upgrade` moves it on.
+    const lakeVersion = existing?.lake?.version ?? LAKE_VERSION;
     const lakeConfig = lake
-      ? await ensureLake(
-          wrangler,
-          {
-            name,
-            bucket: `${name}-data`,
-            namespace: 'glass',
-            token,
-            dir,
-            list: pipelinesLister(fetcher, { token, accountId: account.id }),
-          },
-          report,
-        )
+      ? {
+          ...(await ensureLake(
+            wrangler,
+            {
+              name,
+              bucket: `${name}-data`,
+              namespace: 'glass',
+              token,
+              dir,
+              list: pipelinesLister(fetcher, { token, accountId: account.id }),
+              version: lakeVersion,
+            },
+            report,
+          )),
+          versions: existing?.lake?.versions ?? [lakeVersion],
+        }
       : null;
 
     const config: GlassConfig = {

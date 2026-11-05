@@ -63,6 +63,21 @@ def seed(root):
             }
         )
     )
+    # A later schema version's table (see LAKE_SCHEMA_CHANGES): alice has a row here too.
+    v2 = cat.create_table("glass.events_v2", schema=events_schema, partition_spec=spec)
+    v2.append(
+        pa.table(
+            {
+                "__ingest_ts": pa.array([datetime.fromtimestamp(NOW / 1000, tz=timezone.utc)] * 2, pa.timestamp("us", tz="UTC")),
+                "project": ["acme", "acme"],
+                "event": ["$pageview", "$pageview"],
+                "ts_ms": pa.array([NOW, NOW], pa.int64()),
+                "distinct_id": ["dev-alice", "dev-carol"],
+                "user_id": pa.array([None, None], pa.string()),
+                "person_id": ["dev-alice", "dev-carol"],
+            }
+        )
+    )
     identities_schema = Schema(
         NestedField(1, "project", StringType(), required=False),
         NestedField(2, "distinct_id", StringType(), required=False),
@@ -85,9 +100,9 @@ def seed(root):
 def dump(root):
     cat = catalog(root)
     out = {}
-    for name in ("events", "identities"):
+    for name in ("events", "events_v2", "identities"):
         out[name] = cat.load_table(f"glass.{name}").scan().to_arrow().drop_columns(
-            [c for c in ("__ingest_ts",) if name == "events"]
+            [c for c in ("__ingest_ts",) if name.startswith("events")]
         ).to_pylist()
     json.dump(out, sys.stdout)
 

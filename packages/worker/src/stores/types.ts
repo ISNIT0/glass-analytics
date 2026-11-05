@@ -34,6 +34,10 @@ export interface EventStore {
   write(events: StoredEvent[]): Promise<void>;
   /** Mirror a new identity link into the store (D1 already has it). */
   writeIdentity(link: IdentityLink): Promise<void>;
+  /** Table names to show people writing their own SQL. */
+  readonly userTables: string;
+  /** Rewrite people's own SQL for this store (the lake reads every table version). */
+  userSql(sql: string): string;
   /** Run one read-only statement. */
   query(sql: string): Promise<Row[]>;
   /**

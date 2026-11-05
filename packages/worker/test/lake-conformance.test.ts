@@ -14,7 +14,7 @@ import { createInterface } from 'node:readline';
 import type { Readable, Writable } from 'node:stream';
 import { after, before, describe, it, mock } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { LAKE_TABLES } from '@dataflare/core/lake';
+import { LAKE_TABLES, type LakeSchemaChange, lakeFields } from '@dataflare/core/lake';
 import { LakeStore } from '../src/stores/lake.ts';
 import { type TestApp, testApp } from './harness.ts';
 
@@ -304,70 +304,99 @@ function normalise(value: unknown): unknown {
   return value;
 }
 
-describe('lake conformance', { skip }, () => {
-  let df: DataFusion;
-  let d1: TestApp;
-  let lake: TestApp;
+/** A schema change for the split run: events_v2 adds a column the compilers never read. */
+const V2: LakeSchemaChange[] = [
+  { version: 2, table: 'events', add: [{ name: 'locale', type: 'string', required: false }] },
+];
 
-  before(async () => {
-    // One frozen clock, so both Workers resolve `-7d` to the same instant.
-    mock.timers.enable({ apis: ['Date'], now: Date.UTC(2026, 10, 5, 15, 30) });
-    df = new DataFusion();
-    for (const table of ['events', 'identities'] as const)
-      await df.request({ op: 'schema', table, fields: LAKE_TABLES[table].fields });
-    const stream = (table: string) => ({
-      send: async (rows: object[]) => {
-        await df.request({ op: 'write', table, rows });
-      },
+/**
+ * One conformance run. With `split`, the lake has had a schema change: event batches alternate
+ * between `events` (version 1) and `events_v2`, and queries read both through a UNION ALL.
+ */
+function conformance(name: string, split: boolean) {
+  describe(name, { skip }, () => {
+    let df: DataFusion;
+    let d1: TestApp;
+    let lake: TestApp;
+
+    before(async () => {
+      // One frozen clock, so both Workers resolve `-7d` to the same instant.
+      mock.timers.enable({ apis: ['Date'], now: Date.UTC(2026, 10, 5, 15, 30) });
+      df = new DataFusion();
+      for (const table of ['events', 'identities'] as const)
+        await df.request({ op: 'schema', table, fields: LAKE_TABLES[table].fields });
+      // A version applies to the whole lake: upgrade creates events_v2 and identities_v2.
+      if (split)
+        for (const table of ['events', 'identities'] as const)
+          await df.request({
+            op: 'schema',
+            table: `${table}_v2`,
+            fields: lakeFields(table, 2, V2),
+          });
+      const sent = { events: 0, identities: 0 };
+      const stream = (table: 'events' | 'identities') => ({
+        send: async (rows: object[]) => {
+          const v2 = split && sent[table]++ % 2 === 1;
+          await df.request({
+            op: 'write',
+            table: v2 ? `${table}_v2` : table,
+            rows: v2 && table === 'events' ? rows.map((r) => ({ ...r, locale: 'en-GB' })) : rows,
+          });
+        },
+      });
+      const basin = (async (_url: string, init: RequestInit) => {
+        const reply = await df.request<{ success: boolean }>({
+          op: 'query',
+          sql: JSON.parse(String(init.body)).query,
+        });
+        return Response.json(reply, { status: reply.success ? 200 : 400 });
+      }) as typeof fetch;
+
+      d1 = testApp();
+      lake = testApp(
+        {
+          GLASS_STORE: 'lake',
+          EVENTS_STREAM: stream('events'),
+          IDENTITIES_STREAM: stream('identities'),
+          CF_ACCOUNT_ID: 'acct',
+          LAKE_BUCKET: 'lake',
+          CF_API_TOKEN: 'tok',
+          ...(split ? { LAKE_VERSIONS: '1,2' } : {}),
+        },
+        { createStore: (e) => new LakeStore(e, basin, split ? V2 : []) },
+      );
+      const events = fixture(Date.now());
+      for (const app of [d1, lake]) {
+        await app.json('POST', '/api/projects', { body: { id: 'acme' } });
+        await app.json('POST', '/api/experiments', {
+          body: { key: 'checkout-v2', goal: { event: 'purchase' } },
+        });
+        await app.json('POST', '/api/experiments/checkout-v2/start');
+        // Batches as the SDK sends them, so identities resolve in the same order in both stores.
+        for (let i = 0; i < events.length; i += 25) await app.ingest(events.slice(i, i + 25));
+      }
     });
-    const basin = (async (_url: string, init: RequestInit) => {
-      const reply = await df.request<{ success: boolean }>({
-        op: 'query',
-        sql: JSON.parse(String(init.body)).query,
-      });
-      return Response.json(reply, { status: reply.success ? 200 : 400 });
-    }) as typeof fetch;
 
-    d1 = testApp();
-    lake = testApp(
-      {
-        GLASS_STORE: 'lake',
-        EVENTS_STREAM: stream('events'),
-        IDENTITIES_STREAM: stream('identities'),
-        CF_ACCOUNT_ID: 'acct',
-        LAKE_BUCKET: 'lake',
-        CF_API_TOKEN: 'tok',
-      },
-      { createStore: (e) => new LakeStore(e, basin) },
-    );
-    const events = fixture(Date.now());
-    for (const app of [d1, lake]) {
-      await app.json('POST', '/api/projects', { body: { id: 'acme' } });
-      await app.json('POST', '/api/experiments', {
-        body: { key: 'checkout-v2', goal: { event: 'purchase' } },
+    after(() => {
+      mock.timers.reset();
+      df?.close();
+    });
+
+    for (const [method, path, body] of READS) {
+      it(`${method} ${path}${body ? ` ${JSON.stringify(body)}` : ''}`, async () => {
+        const [a, b] = await Promise.all(
+          [d1, lake].map(async (app) => {
+            const res = await app.call(method, path, body === undefined ? {} : { body });
+            const text = await res.text();
+            assert.equal(res.status, 200, `${app === d1 ? 'D1' : 'lake'}: ${text.slice(0, 600)}`);
+            return JSON.parse(text) as unknown;
+          }),
+        );
+        assert.deepEqual(normalise(b), normalise(a));
       });
-      await app.json('POST', '/api/experiments/checkout-v2/start');
-      // Batches as the SDK sends them, so identities resolve in the same order in both stores.
-      for (let i = 0; i < events.length; i += 25) await app.ingest(events.slice(i, i + 25));
     }
   });
+}
 
-  after(() => {
-    mock.timers.reset();
-    df?.close();
-  });
-
-  for (const [method, path, body] of READS) {
-    it(`${method} ${path}${body ? ` ${JSON.stringify(body)}` : ''}`, async () => {
-      const [a, b] = await Promise.all(
-        [d1, lake].map(async (app) => {
-          const res = await app.call(method, path, body === undefined ? {} : { body });
-          const text = await res.text();
-          assert.equal(res.status, 200, `${app === d1 ? 'D1' : 'lake'}: ${text.slice(0, 600)}`);
-          return JSON.parse(text) as unknown;
-        }),
-      );
-      assert.deepEqual(normalise(b), normalise(a));
-    });
-  }
-});
+conformance('lake conformance', false);
+conformance('lake conformance across schema versions', true);

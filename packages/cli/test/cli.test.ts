@@ -488,6 +488,59 @@ describe('dataflare upgrade', () => {
     }
   };
 
+  it('moves a lake deployment to a new schema version with new tables', async () => {
+    const root = tempProject();
+    const fake = fakeWrangler(worker);
+    await init(
+      { token: 'cf-token', lake: true, json: true },
+      {
+        root,
+        wrangler: () => fake.wrangler,
+        fetcher: fetcherFor(worker, fake.state),
+        bundleDir: BUNDLE,
+        pollMs: 1,
+      },
+    );
+    fake.commands.length = 0;
+    await quiet(() =>
+      upgrade(
+        { json: true, ci: true },
+        {
+          root,
+          wrangler: () => fake.wrangler,
+          fetcher: fetcherFor(worker, fake.state),
+          bundleDir: BUNDLE,
+          env: { CLOUDFLARE_API_TOKEN: 'cf-token', CI: 'true' },
+          lakeVersion: 2,
+          lakeChanges: [
+            {
+              version: 2,
+              table: 'events',
+              add: [{ name: 'locale', type: 'string', required: false }],
+            },
+          ],
+        },
+      ),
+    );
+    const config = JSON.parse(readFileSync(join(root, '.glass', 'config.json'), 'utf8'));
+    const v2 = lakeResourceNames(config.name, 'events', 2);
+    assert.match(v2.stream, /_events_v2$/);
+    assert.equal(config.lake.version, 2);
+    assert.deepEqual(config.lake.versions, [1, 2]);
+    assert.equal(config.lake.streams.events, `streams-${v2.stream}`);
+    const sink = fake.commands.find(
+      (c) => c[1] === 'sinks' && c[2] === 'create' && c[3] === v2.sink,
+    )!;
+    assert.equal(sink[sink.indexOf('--table') + 1], 'events_v2');
+    const schema = JSON.parse(
+      readFileSync(join(root, '.glass', 'schemas', 'events_v2.json'), 'utf8'),
+    );
+    assert.equal(schema.fields.at(-1).name, 'locale');
+    const wranglerConfig = readFileSync(join(root, '.glass', 'wrangler.jsonc'), 'utf8');
+    assert.match(wranglerConfig, /"LAKE_VERSIONS": "1,2"/);
+    assert.match(wranglerConfig, new RegExp(`"stream": "streams-${v2.stream}"`));
+  });
+
   it('only stages .glass/ on a laptop when the CI workflow exists', async () => {
     const { root, fake } = await installed();
     setVersion(root, '0.0.1');
@@ -666,6 +719,9 @@ describe('lake maintenance', () => {
           bucket: 'glass-acme-data',
           namespace: 'glass',
           streams: { events: 's1', identities: 's2' },
+          // After a schema change: events_v2 exists, identities_v2 has no table yet.
+          version: 2,
+          versions: [1, 2],
         },
         route: null,
         retentionDays: 365,
@@ -700,8 +756,14 @@ describe('lake maintenance', () => {
     );
     const left = JSON.parse(python([fixture, 'dump', warehouse])) as {
       events: { project: string; distinct_id: string; ts_ms: number }[];
+      events_v2: { distinct_id: string }[];
       identities: { distinct_id: string }[];
     };
+    assert.deepEqual(
+      left.events_v2.map((e) => e.distinct_id),
+      ['dev-carol'],
+      'erasure reaches every schema version',
+    );
     // Alice's events in acme are gone (by device and by user id); the same device in another
     // project stays; Bob's old event is past the 365-day retention.
     assert.deepEqual(left.events.map((e) => `${e.project}:${e.distinct_id}`).sort(), [

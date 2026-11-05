@@ -62,7 +62,7 @@ export const DOCS: { slug: string; file: string; title: string; summary: string 
   {
     slug: 'lake',
     file: 'lake.md',
-    title: 'The lake store (beta)',
+    title: 'The lake store',
     summary: 'Iceberg tables on R2 for high volume.',
   },
   {
@@ -311,7 +311,7 @@ export function pricingPage(checked: string): string {
     ],
     [
       'What about very high traffic?',
-      'Above tens of millions of events a month, D1’s 10 GB database limit matters more than price. Keep a rolling window with GLASS_RETENTION_DAYS, or use the lake store (--lake, beta), which streams events into Iceberg tables in R2 instead of D1.',
+      'Above tens of millions of events a month, D1’s 10 GB database limit matters more than price. Keep a rolling window with GLASS_RETENTION_DAYS, or use the lake store (--lake), which streams events into Iceberg tables in R2 instead of D1.',
     ],
   ];
   return layout({

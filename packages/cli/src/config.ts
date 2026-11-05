@@ -29,6 +29,10 @@ export interface GlassConfig {
     bucket: string;
     namespace: string;
     streams: { events: string; identities: string };
+    /** Schema version the Worker writes (absent: 1). The streams above are this version's. */
+    version?: number;
+    /** Table versions that hold data, which queries read together (absent: [1]). */
+    versions?: number[];
   } | null;
   /** Optional route on your own domain, e.g. "acme.com/_glass/*". */
   route: string | null;

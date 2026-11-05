@@ -331,8 +331,8 @@ CLOUDFLARE_API_TOKEN=… npx dataflare-cli init
 
 ## Limits to know about
 
-- D1 databases hold up to 10 GB on Workers Paid (500 MB on Free). The [cost calculator](/pricing/) shows when you'd reach that at your volume. Set \`GLASS_RETENTION_DAYS\` to keep a rolling window, or use the lake store (\`--lake\`, beta), which streams events to Apache Iceberg tables in R2.
-- Dataflare is new (0.x). The D1 store, SDK, dashboard, MCP server and CLI are covered by unit, integration and browser tests; the lake store depends on Cloudflare products in beta.
+- D1 databases hold up to 10 GB on Workers Paid (500 MB on Free). The [cost calculator](/pricing/) shows when you'd reach that at your volume. Set \`GLASS_RETENTION_DAYS\` to keep a rolling window, or use the lake store (\`--lake\`), which streams events to Apache Iceberg tables in R2.
+- Dataflare is new (0.x). The D1 store, SDK, dashboard, MCP server and CLI are covered by unit, integration and browser tests; the lake store is load-tested at 30 million events.
 
 ## Read and change everything
 

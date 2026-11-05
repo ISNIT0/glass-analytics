@@ -118,7 +118,7 @@ Every query (web, trends, funnels, retention, experiments) compiles to SQL that 
 
 ## Status
 
-Dataflare is new. The D1 store, SDK, dashboard, MCP server and CLI are covered by unit, integration and browser end-to-end tests. Two parts depend on Cloudflare products in beta and are marked **beta**: the lake store (Pipelines + Basin SQL) and anything that relies on their response formats. See [ROADMAP.md](ROADMAP.md).
+Dataflare is new. The D1 store, SDK, dashboard, MCP server and CLI are covered by unit, integration and browser end-to-end tests. The lake store is checked against DataFusion in CI and has been load-tested on production Basin SQL at 30 million events; it relies on Cloudflare Pipelines, which is still in beta. See [ROADMAP.md](ROADMAP.md).
 
 ## Contributing
 

@@ -46,7 +46,7 @@ export const FAQ: [string, string][] = [
   ],
   [
     'What happens when I outgrow D1?',
-    'A D1 database holds up to 10 GB on Workers Paid, which is tens of millions of events. Set <code>GLASS_RETENTION_DAYS</code> to keep a rolling window, or install with <code>--lake</code> (beta) to stream events into Apache Iceberg tables in R2, which have no size limit.',
+    'A D1 database holds up to 10 GB on Workers Paid, which is tens of millions of events. Set <code>GLASS_RETENTION_DAYS</code> to keep a rolling window, or install with <code>--lake</code> to stream events into Apache Iceberg tables in R2, which have no size limit.',
   ],
   [
     'Can my coding agent use it?',
@@ -62,7 +62,7 @@ export const FAQ: [string, string][] = [
   ],
   [
     'Is it ready for production?',
-    'Dataflare is new (0.x) and used in production by its authors. The D1 store, SDK, dashboard, MCP server and CLI are covered by unit, integration and browser end-to-end tests. The lake store is marked beta because it depends on Cloudflare products that are themselves in beta.',
+    'Dataflare is new (0.x) and used in production by its authors. The D1 store, SDK, dashboard, MCP server and CLI are covered by unit, integration and browser end-to-end tests. The lake store is load-tested at 30 million events on Cloudflare Basin SQL.',
   ],
 ];
 

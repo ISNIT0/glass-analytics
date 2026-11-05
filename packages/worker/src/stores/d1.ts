@@ -31,6 +31,13 @@ export class D1Store implements EventStore {
     // The identities table lives in D1 already; nothing to mirror.
   }
 
+  readonly userTables =
+    'events, identities, persons, cohorts, insights, flags, experiments, replays, event_definitions';
+
+  userSql(sql: string): string {
+    return sql;
+  }
+
   async query(sql: string): Promise<Row[]> {
     const { results } = await this.db.prepare(sql).all<Row>();
     return results;

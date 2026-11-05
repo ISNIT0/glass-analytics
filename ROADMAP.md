@@ -10,11 +10,12 @@ What Dataflare does today, and what's next. Items marked _good first issue_ are 
 - Session replay with sampling, error-triggered buffering, console and network capture, frustration signals (rage, dead and error clicks), search, cross-session patterns, notes and text transcripts with what-was-on-screen snapshots
 - Feature flags with targeting; experiments with Bayesian readout and SRM checks
 - MCP server (41 tools), CLI, HTTP API, `llms.txt`
-- D1 event store (default) and the lake store (beta)
+- D1 event store (default) and the lake store
 
 ## Next
 
-- **Lake mode out of beta.** Verified against production Basin SQL (Nov 2026): every query kind runs and the response format is recorded in the tests. Erasure and retention run as a daily PyIceberg job, and every read API is checked against DataFusion in CI. Still needed: a load test at tens of millions of events (`COUNT(DISTINCT)` is budget-gated in Basin SQL and may need `approx_distinct`); and EU support once Basin Catalog allows jurisdiction buckets.
+- **Lake store in the EU jurisdiction**, once Basin Catalog supports jurisdiction buckets (`--lake --eu` is refused today).
+- **Lake backfill:** copy older schema versions' rows into the newest table and drop the old ones, so queries stop needing the UNION.
 - **Paths, stickiness and lifecycle insights.** Each is one file in `packages/core/src/insights/`. _good first issue_
 - **Cohorts:** saved person filters on the People tab (counts + retention link). Next: apply a cohort as a filter on every insight in one click.
 - **Alerts:** threshold and anomaly alerts on any insight, via email or webhook, run from the Worker's cron.
@@ -22,8 +23,7 @@ What Dataflare does today, and what's next. Items marked _good first issue_ are 
 - **URL goals:** mark a URL (not just an event) as a conversion. _good first issue_
 - **Timezone support** beyond fixed UTC offsets (DST-aware bucketing).
 - **Cloudflare Access** support for the dashboard, as an alternative to API keys.
-- **Lake schema migrations:** versioned streams (`<name>_events_v2`) and queries across old and new tables, for when built-in columns change.
-- **Materialised property columns** for frequently filtered lake properties (needs versioned streams).
+- **Materialised property columns** for frequently filtered lake properties (a lake schema change; see docs/lake.md).
 - **Analytics Engine accelerator** for real-time tiles at high volume.
 - **`glass cost`:** estimate monthly Cloudflare spend from current volume. _good first issue_
 - **Opt-in install telemetry** for the landing page's conversion funnel (off by default).

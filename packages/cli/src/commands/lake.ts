@@ -13,6 +13,7 @@ import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { lakeTableName } from '@dataflare/core/lake';
 import { CI_WORKFLOW_PATH, inCi } from '../ci.ts';
 import { createWrangler, must, parseJsonOutput, type Wrangler } from '../cloudflare/wrangler.ts';
 import { glassDir, loadConfig, projectRoot, UsageError } from '../config.ts';
@@ -162,6 +163,12 @@ export async function lakeMaintain(
       token,
     },
     namespace,
+    tables: Object.fromEntries(
+      (['events', 'identities'] as const).map((table) => [
+        table,
+        (config.lake?.versions ?? [1]).map((v) => lakeTableName(table, v)),
+      ]),
+    ),
     deletions: pending.map((p) => ({
       id: p.id,
       project: p.project,

@@ -553,7 +553,7 @@ export class GlassService {
   async sql(input: unknown) {
     const spec = sqlSpec.parse(input);
     const ctx = await this.context(spec.project);
-    const safe = assertReadOnlySql(spec.query);
+    const safe = this.store.userSql(assertReadOnlySql(spec.query));
     const limit = spec.limit ?? 1000;
     const wrapped = `SELECT * FROM (${safe}) glass_q LIMIT ${limit}`;
     const rows = await this.store.query(wrapped);
@@ -564,10 +564,7 @@ export class GlassService {
       rows,
       sql: [wrapped],
       summary: `${rows.length} row${rows.length === 1 ? '' : 's'}${rows.length === limit ? ` (limit ${limit} reached)` : ''}.`,
-      tables:
-        this.store.kind === 'lake'
-          ? `${this.store.dialect.table('events')}, ${this.store.dialect.table('identities')}`
-          : 'events, identities, persons, cohorts, insights, flags, experiments, replays, event_definitions',
+      tables: this.store.userTables,
       dashboard: this.link('sql', { project: ctx.project, query: spec.query }),
     };
   }

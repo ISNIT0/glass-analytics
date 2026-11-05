@@ -7,6 +7,7 @@ lake maintain` runs this script and passes a JSON job on stdin:
   {
     "catalog": {"type": "rest", "uri": "...", "warehouse": "...", "token": "..."},
     "namespace": "glass",
+    "tables": {"events": ["events", "events_v2"], "identities": ["identities"]},
     "deletions": [{"id": 1, "project": "acme", "ids": ["alice", "device-1"]}],
     "retention_cutoff_ms": 1790000000000   # or null: keep events forever
   }
@@ -59,7 +60,10 @@ def main():
     job = json.load(sys.stdin)
     catalog = load_catalog("dataflare", **job["catalog"])
     ns = job.get("namespace") or "glass"
-    events, identities = f"{ns}.events", f"{ns}.identities"
+    # Every schema version's table (events, events_v2, ...): rows live in all of them.
+    tables = job.get("tables") or {}
+    events = [f"{ns}.{t}" for t in tables.get("events") or ["events"]]
+    identities = [f"{ns}.{t}" for t in tables.get("identities") or ["identities"]]
 
     # Queued ids are merged per project, so a long queue still costs a few commits.
     by_project = defaultdict(set)
@@ -70,24 +74,27 @@ def main():
         # One delete per column, never an OR across columns: PyIceberg's copy-on-write delete keeps
         # rows where the filter is NULL, and user_id is NULL on anonymous events, so
         # `distinct_id IN ids OR user_id IN ids` would leave a matching device's anonymous rows.
-        for column in ("distinct_id", "person_id", "user_id"):
-            delete(
-                catalog,
-                events,
-                And(EqualTo("project", project), In(column, ids)),
-                f"events of {len(ids)} ids in {project} by {column}",
-            )
-        for column in ("distinct_id", "person_id"):
-            delete(
-                catalog,
-                identities,
-                And(EqualTo("project", project), In(column, ids)),
-                f"identity links of {len(ids)} ids in {project} by {column}",
-            )
+        for name in events:
+            for column in ("distinct_id", "person_id", "user_id"):
+                delete(
+                    catalog,
+                    name,
+                    And(EqualTo("project", project), In(column, ids)),
+                    f"events of {len(ids)} ids in {project} by {column}",
+                )
+        for name in identities:
+            for column in ("distinct_id", "person_id"):
+                delete(
+                    catalog,
+                    name,
+                    And(EqualTo("project", project), In(column, ids)),
+                    f"identity links of {len(ids)} ids in {project} by {column}",
+                )
 
     cutoff = job.get("retention_cutoff_ms")
     if cutoff:
-        delete(catalog, events, LessThan("ts_ms", int(cutoff)), f"events before {cutoff}")
+        for name in events:
+            delete(catalog, name, LessThan("ts_ms", int(cutoff)), f"events before {cutoff}")
 
     json.dump(
         {

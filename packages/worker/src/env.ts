@@ -81,6 +81,8 @@ export interface Env {
   /** Lake mode settings. */
   LAKE_BUCKET?: string;
   LAKE_NAMESPACE?: string;
+  /** Lake table versions queries read, e.g. "1,2" after a schema change (default "1"). */
+  LAKE_VERSIONS?: string;
   CF_ACCOUNT_ID?: string;
   /** API token with Basin SQL Read (+ catalog read) for queries. */
   CF_API_TOKEN?: string;
