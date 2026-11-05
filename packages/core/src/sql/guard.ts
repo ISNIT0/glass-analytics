@@ -35,13 +35,46 @@ export class UnsafeSqlError extends Error {
   override readonly name = 'UnsafeSqlError';
 }
 
+/**
+ * Blanks out comments and quoted strings in one left-to-right pass. Doing them
+ * in separate passes lets one hide the other: a `/*` or `--` inside a string
+ * literal would otherwise be read as a comment that swallows the closing quote
+ * and whatever statement follows it.
+ */
 function stripLiteralsAndComments(sql: string): string {
-  return sql
-    .replace(/--[^\n]*/g, ' ')
-    .replace(/\/\*[\s\S]*?\*\//g, ' ')
-    .replace(/'(?:[^']|'')*'/g, "''")
-    .replace(/"(?:[^"]|"")*"/g, '""')
-    .replace(/`[^`]*`/g, '``');
+  let out = '';
+  let i = 0;
+  while (i < sql.length) {
+    const c = sql[i];
+    if (c === '-' && sql[i + 1] === '-') {
+      const end = sql.indexOf('\n', i);
+      i = end === -1 ? sql.length : end;
+      out += ' ';
+    } else if (c === '/' && sql[i + 1] === '*') {
+      const end = sql.indexOf('*/', i + 2);
+      if (end === -1) throw new UnsafeSqlError('Unterminated comment.');
+      i = end + 2;
+      out += ' ';
+    } else if (c === "'" || c === '"' || c === '`') {
+      // A doubled quote is an escaped quote inside the literal.
+      let j = i + 1;
+      for (;;) {
+        const k = sql.indexOf(c, j);
+        if (k === -1) throw new UnsafeSqlError('Unterminated quoted string.');
+        if (sql[k + 1] === c) {
+          j = k + 2;
+          continue;
+        }
+        i = k + 1;
+        break;
+      }
+      out += c + c;
+    } else {
+      out += c;
+      i++;
+    }
+  }
+  return out;
 }
 
 /** Throws {@link UnsafeSqlError} unless `sql` is a single read-only query. Returns the trimmed SQL. */

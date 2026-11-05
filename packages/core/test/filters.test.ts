@@ -115,6 +115,20 @@ describe('read-only SQL guard', () => {
       ),
     );
     assert.ok(assertReadOnlySql("SELECT 'delete from events' AS harmless"));
+    assert.ok(assertReadOnlySql("SELECT '-- not a comment; nor this /*' AS s FROM events"));
+    assert.ok(assertReadOnlySql('SELECT /* note */ count(*) FROM events -- trailing'));
+    assert.ok(assertReadOnlySql("SELECT 'it''s' AS s"));
+  });
+
+  it('rejects statements hidden by mixing comments and literals', () => {
+    for (const sql of [
+      "select '/*'; delete from flags; select '*/'",
+      "select '/*') q; delete from flags; select * from (select '*/'",
+      "select '--'\n; delete from flags",
+      "select 'unterminated",
+    ]) {
+      assert.throws(() => assertReadOnlySql(sql), UnsafeSqlError, sql);
+    }
   });
 
   it('rejects writes, including writes hidden behind WITH', () => {
