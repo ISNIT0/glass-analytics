@@ -56,9 +56,17 @@ jobs:
         # Fails if main moved since checkout; re-run the workflow and it versions on top of the new main.
         run: git push origin HEAD:main
 
-      # Publishes package versions that aren't on npm yet and tags them; does nothing when everything is published.
+      # Publishes package versions that aren't on npm yet and tags them. A version that is
+      # already tagged was published by an earlier run; npm can take a minute to list it,
+      # so a push right after a release would otherwise try (and fail) to publish it again.
       - name: Publish
-        run: pnpm release
+        run: |
+          version=$(node -p "require('./packages/cli/package.json').version")
+          if [ -z "${{ steps.version.outputs.version }}" ] && git ls-remote --exit-code --tags origin "refs/tags/@glassanalytics/cli@$version" >/dev/null; then
+            echo "$version is already tagged: published by an earlier run."
+            exit 0
+          fi
+          pnpm release
         env:
           # setup-node's registry-url writes an .npmrc that reads NODE_AUTH_TOKEN; without it npm publishes anonymously (E404).
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
