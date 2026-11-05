@@ -8,6 +8,8 @@
  * Every command accepts --json for machine-readable output.
  */
 
+import { realpathSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { GLASS_VERSION } from '@dataflare/core/version';
 import { events, person, projects, query, replays, sql } from './commands/data.ts';
@@ -246,8 +248,14 @@ function str(v: string | boolean | undefined): string | undefined {
 }
 
 // Run when executed directly (the published bin, or `node packages/cli/src/index.ts`).
-const invoked = process.argv[1] ?? '';
-if (/glass(\.js)?$|cli[\\/]src[\\/]index\.ts$/.test(invoked)) {
+// npm links the bin under its own name (`dataflare`), so compare real paths, not names.
+let invoked = process.argv[1] ?? '';
+try {
+  invoked = realpathSync(invoked);
+} catch {
+  // Not a file (e.g. `node -e`): leave it as is.
+}
+if (invoked === realpathSync(fileURLToPath(import.meta.url))) {
   main(process.argv.slice(2)).catch((err: unknown) => {
     if (err instanceof UsageError) {
       fail(err.message);

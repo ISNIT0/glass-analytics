@@ -6,6 +6,7 @@
  */
 
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import {
   cpSync,
   existsSync,
@@ -13,6 +14,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -507,6 +509,17 @@ describe('dataflare upgrade', () => {
     const workflow = readFileSync(path, 'utf8');
     assert.match(workflow, /npx -y "dataflare-cli@\$\{version\}" upgrade --ci/);
     assert.doesNotMatch(workflow, /@glassanalytics/);
+  });
+});
+
+describe('the bin', () => {
+  it('runs when npm links it under another name', () => {
+    // npm links the bin as `dataflare`; the entry must still run through the symlink.
+    const dir = mkdtempSync(join(tmpdir(), 'glass-bin-'));
+    const link = join(dir, 'dataflare');
+    symlinkSync(fileURLToPath(new URL('../src/index.ts', import.meta.url)), link);
+    const out = execFileSync(process.execPath, [link, '--help'], { encoding: 'utf8' });
+    assert.match(out, /^dataflare \d+\.\d+\.\d+/);
   });
 });
 
