@@ -1333,6 +1333,37 @@ describe('lake store', () => {
     assert.doesNotMatch(trendsSql, /json_extract|strftime/);
   });
 
+  it('queues a person erasure for the lake maintenance job', async () => {
+    const { LakeStore } = await import('../src/stores/lake.ts');
+    const env = {
+      GLASS_STORE: 'lake',
+      EVENTS_STREAM: new ArrayStream(),
+      IDENTITIES_STREAM: new ArrayStream(),
+      CF_ACCOUNT_ID: 'acct',
+      LAKE_BUCKET: 'glass-data',
+      CF_API_TOKEN: 'tok',
+    };
+    t = testApp(env, {
+      createStore: (e) => new LakeStore(e, (async () => Response.json([])) as never),
+    });
+    await t.json('POST', '/api/projects', { body: { id: 'acme' } });
+    await t.ingest([wire('$identify', { user_id: 'erin' })]);
+    const res = await t.json<{ eventsDeleted: boolean; eventsQueued: boolean; summary: string }>(
+      'DELETE',
+      '/api/persons/erin',
+    );
+    assert.equal(res.eventsDeleted, false);
+    assert.equal(res.eventsQueued, true);
+    assert.match(res.summary, /queued for deletion/);
+    const queued = t.db.sqlite
+      .prepare('SELECT project, ids, done_at FROM lake_deletions')
+      .all() as { project: string; ids: string; done_at: number | null }[];
+    assert.equal(queued.length, 1);
+    assert.equal(queued[0]!.project, 'acme');
+    assert.deepEqual(JSON.parse(queued[0]!.ids).sort(), ['device-1', 'erin']);
+    assert.equal(queued[0]!.done_at, null);
+  });
+
   it('calls fetch as a plain function, as Workers require', async () => {
     const { LakeStore } = await import('../src/stores/lake.ts');
     const realFetch = globalThis.fetch;

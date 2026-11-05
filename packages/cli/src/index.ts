@@ -15,6 +15,7 @@ import { GLASS_VERSION } from '@dataflare/core/version';
 import { events, person, projects, query, replays, sql } from './commands/data.ts';
 import { experiments, flags as flagCommands } from './commands/flags.ts';
 import { init } from './commands/init.ts';
+import { lakeMaintain } from './commands/lake.ts';
 import { mcpBridge } from './commands/mcp.ts';
 import { ci, key, status, upgrade } from './commands/upgrade.ts';
 import { UsageError } from './config.ts';
@@ -48,6 +49,7 @@ ${color.bold('Set up')}
   dataflare ci [--branch main]   Write the workflow that deploys Dataflare from CI
     --secret <name>                Repo secret with the Cloudflare token (default CLOUDFLARE_API_TOKEN)
   dataflare status               Check the deployment end to end
+  dataflare lake maintain        Lake mode: erase queued people, apply retention (CI runs it daily)
   dataflare key [--read]         Print the dashboard URL and API key
 
 ${color.bold('Ask questions')}
@@ -233,6 +235,14 @@ export async function main(argv: string[]): Promise<void> {
       return flagCommands(sub, arg, flags);
     case 'experiments':
       return experiments(sub, arg, rest, flags);
+    case 'lake':
+      if (sub !== 'maintain')
+        throw new UsageError('Unknown lake command.', 'Run `dataflare lake maintain`.');
+      return lakeMaintain({
+        token: str(flags.token),
+        json: Boolean(flags.json),
+        dryRun: Boolean(flags['dry-run']),
+      });
     case 'mcp':
       return mcpBridge();
     default:

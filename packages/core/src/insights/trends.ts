@@ -85,7 +85,7 @@ LIMIT 50000`;
 SELECT bd, ${aggregate(series)} AS agg
 FROM (${inner}) t
 GROUP BY bd
-ORDER BY agg DESC
+ORDER BY agg DESC, bd ASC
 LIMIT 1000`;
   return { perBucket, totals };
 }

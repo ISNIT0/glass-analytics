@@ -36,8 +36,8 @@ export class D1Store implements EventStore {
     return results;
   }
 
-  async deletePersonEvents(project: string, ids: string[]): Promise<boolean> {
-    if (ids.length === 0) return true;
+  async deletePersonEvents(project: string, ids: string[]): Promise<'deleted'> {
+    if (ids.length === 0) return 'deleted';
     const marks = ids.map(() => '?').join(', ');
     await this.db
       .prepare(
@@ -45,6 +45,6 @@ export class D1Store implements EventStore {
       )
       .bind(project, ...ids, ...ids, ...ids)
       .run();
-    return true;
+    return 'deleted';
   }
 }

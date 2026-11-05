@@ -585,7 +585,7 @@ export class GlassService {
   SUM(CASE WHEN ts_ms < ${range.from} THEN 1 ELSE 0 END) AS prev
 FROM ${d.table('events')}
 WHERE project = ${d.str(ctx.project)} AND ts_ms >= ${range.from - length} AND ts_ms < ${range.to}
-GROUP BY event ORDER BY cur DESC LIMIT 50`;
+GROUP BY event ORDER BY cur DESC, event ASC LIMIT 50`;
     const rows = await this.store.query(sql);
     const events = rows.map((r) => {
       const cur = num(r.cur);
@@ -778,7 +778,7 @@ GROUP BY event ORDER BY cur DESC LIMIT 50`;
         this.store.query(`SELECT project, COUNT(*) AS n, SUM(CASE WHEN event = ${PV} THEN 1 ELSE 0 END) AS pv, COUNT(DISTINCT session_id) AS sessions
 FROM ${d.table('events')} WHERE ts_ms >= ${since} GROUP BY project`),
         this.store.query(
-          `SELECT event, COUNT(*) AS n FROM ${d.table('events')} WHERE ts_ms >= ${since} GROUP BY event ORDER BY n DESC LIMIT 10`,
+          `SELECT event, COUNT(*) AS n FROM ${d.table('events')} WHERE ts_ms >= ${since} GROUP BY event ORDER BY n DESC, event ASC LIMIT 10`,
         ),
         replaysEnabled(this.env)
           ? this.env.DB.prepare(
@@ -840,7 +840,7 @@ FROM ${d.table('events')} WHERE ts_ms >= ${since} GROUP BY project`),
     const d = this.store.dialect;
     const sql = `SELECT event, COUNT(*) AS n, MAX(ts_ms) AS last_seen FROM ${d.table('events')}
 WHERE project = ${d.str(ctx.project)} AND ts_ms >= ${since}
-GROUP BY event ORDER BY n DESC LIMIT 500`;
+GROUP BY event ORDER BY n DESC, event ASC LIMIT 500`;
     const [rows, defs] = await Promise.all([
       this.store.query(sql),
       this.env.DB.prepare(
@@ -968,7 +968,7 @@ ORDER BY ts_ms DESC LIMIT 500`;
     const sql = `WITH ${eventsCte(d, { project: ctx.project, from: now - (spec.days ?? 30) * DAY_MS, to: now + 60_000, events: spec.event ? [spec.event] : undefined })}
 SELECT v, COUNT(*) AS n, COUNT(DISTINCT pid) AS people FROM (SELECT ${expr} AS v, pid FROM ev) pv
 WHERE v IS NOT NULL AND v <> ''${q ? ` AND ${d.containsIgnoreCase('v', q)}` : ''}
-GROUP BY v ORDER BY n DESC LIMIT ${d.num(limit)}`;
+GROUP BY v ORDER BY n DESC, v ASC LIMIT ${d.num(limit)}`;
     const values = (await this.store.query(sql)).map((r) => ({
       value: text(r.v),
       label: text(r.v),
@@ -1248,7 +1248,7 @@ ORDER BY ts_ms DESC LIMIT 100`;
         .all<{ distinct_id: string }>()
     ).results.map((r) => r.distinct_id);
     const ids = [spec.person_id, ...devices];
-    const eventsDeleted = await this.store.deletePersonEvents(ctx.project, ids);
+    const events = await this.store.deletePersonEvents(ctx.project, ids);
     const marks = ids.map(() => '?').join(', ');
     const replays = await deleteReplays(
       this.env,
@@ -1270,11 +1270,13 @@ ORDER BY ts_ms DESC LIMIT 100`;
       project: ctx.project,
       id: spec.person_id,
       devices,
-      eventsDeleted,
+      eventsDeleted: events === 'deleted',
+      eventsQueued: events === 'queued',
       replaysDeleted: replays,
-      summary: eventsDeleted
-        ? `Deleted person "${spec.person_id}", ${devices.length} device links, their events and ${replays} replays.`
-        : `Deleted person "${spec.person_id}", device links and ${replays} replays. Events in the lake must be removed separately (see docs/privacy.md).`,
+      summary:
+        events === 'deleted'
+          ? `Deleted person "${spec.person_id}", ${devices.length} device links, their events and ${replays} replays.`
+          : `Deleted person "${spec.person_id}", ${devices.length} device links and ${replays} replays. Their events in the lake are queued for deletion: the daily lake maintenance job removes them (see docs/lake.md).`,
     };
   }
 

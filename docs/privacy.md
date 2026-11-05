@@ -12,7 +12,7 @@ Dataflare runs entirely in your Cloudflare account. There is no Dataflare servic
 | Device links | D1 `identities`           | Anonymous device id → your user id                                                                                                                               |
 | Replays      | R2, gzipped               | rrweb recordings; deleted after 30 days by default (`GLASS_REPLAY_RETENTION_DAYS`)                                                                               |
 
-Set `GLASS_RETENTION_DAYS` (a Worker variable) to delete events older than that many days.
+Set `GLASS_RETENTION_DAYS` (a Worker variable, or `--retention-days` on `init`/`upgrade`) to delete events older than that many days. In lake mode the daily maintenance job applies it.
 
 ## Cookieless mode
 
@@ -36,7 +36,7 @@ This is enough for web analytics. It is not enough for funnels across days, rete
 npx dataflare-cli person <user-id> --delete
 ```
 
-This deletes the person, their device links, their replays and (in D1 mode) every event from their user id and devices. In lake mode, Iceberg tables are append-only to Dataflare, so events must be removed with a separate delete job against the table; this is on the [roadmap](../ROADMAP.md).
+This deletes the person, their device links, their replays and every event from their user id and devices. In D1 mode the events go at once. In lake mode they are queued and removed by the daily maintenance job (`dataflare lake maintain`, run by the deploy workflow), and the old data files leave R2 when their snapshots expire, within about a week; see [lake.md](lake.md#erasure-and-retention).
 
 ## EU data
 

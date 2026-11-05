@@ -325,7 +325,7 @@ SELECT touch.val AS val, COUNT(*) AS visitors, SUM(visits.sessions) AS sessions,
 FROM touch
 JOIN visits ON visits.distinct_id = touch.distinct_id
 LEFT JOIN conv ON conv.distinct_id = touch.distinct_id
-GROUP BY touch.val ORDER BY visitors DESC LIMIT ${Math.min(spec.limit ?? 20, 100)}`;
+GROUP BY touch.val ORDER BY visitors DESC, touch.val ASC LIMIT ${Math.min(spec.limit ?? 20, 100)}`;
   const rows = (await ctx.execute(sql)).map((r) => {
     const visitors = num(r.visitors);
     return {
@@ -387,13 +387,13 @@ SELECT COUNT(*) AS errors FROM ev`,
 SELECT ${bucket} AS bucket, COUNT(*) AS n FROM ev GROUP BY ${bucket} ORDER BY bucket LIMIT 5000`,
     pages: `WITH ${cte(range, [ERR])}
 SELECT COALESCE(NULLIF(path, ''), '(none)') AS path, COUNT(*) AS n, COUNT(DISTINCT distinct_id) AS visitors
-FROM ev GROUP BY COALESCE(NULLIF(path, ''), '(none)') ORDER BY n DESC LIMIT 10`,
+FROM ev GROUP BY COALESCE(NULLIF(path, ''), '(none)') ORDER BY n DESC, path ASC LIMIT 10`,
     notFound: `WITH ${cte(range, [PV])}
 SELECT path, MIN(title) AS title, COUNT(*) AS views, COUNT(DISTINCT distinct_id) AS visitors,
   MIN(COALESCE(NULLIF(referrer_host, ''), 'Direct / None')) AS referrer
 FROM ev
 WHERE ${title} LIKE '%404%' OR ${title} LIKE '%not found%' OR ${title} LIKE '%page not found%' OR ${lower('path')} LIKE '%/404%'
-GROUP BY path ORDER BY views DESC LIMIT 10`,
+GROUP BY path ORDER BY views DESC, path ASC LIMIT 10`,
     vitals: `WITH ${eventsCte(d, { project: ctx.project, ...range, events: [SYSTEM_EVENTS.webVitals], filters: spec.filters })}
 SELECT COALESCE(NULLIF(path, ''), '(none)') AS path, ${d.jsonNumber('props', ['value'])} AS val
 FROM ev WHERE ${d.jsonText('props', ['metric'])} = 'LCP'

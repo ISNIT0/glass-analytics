@@ -47,9 +47,13 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       # Don't publish a version the checks would reject. (CI runs on the same push, but not on this version commit.)
+      - uses: astral-sh/setup-uv@v6
+        if: steps.version.outputs.version
       - name: Check
         if: steps.version.outputs.version
         run: pnpm build && pnpm typecheck && pnpm test
+        env:
+          DATAFLARE_REQUIRE_PYTHON: "1"
 
       - name: Push version commit
         if: steps.version.outputs.version

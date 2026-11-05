@@ -150,6 +150,8 @@ await bundle({
   banner: { js: '#!/usr/bin/env node' },
 });
 cpSync(workerDist, join(cliDist, 'worker'), { recursive: true });
+// The lake maintenance job (PyIceberg), run by `dataflare lake maintain`.
+cpSync(pkg('cli', 'lake'), join(cliDist, 'lake'), { recursive: true });
 
 // Report ───────────────────────────────────────────────────────────────────
 const width = Math.max(...sizes.map(([f]) => f.length));

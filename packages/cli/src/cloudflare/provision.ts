@@ -173,6 +173,32 @@ export async function ensureLake(
     );
   report('ok', `Data catalog on "${options.bucket}"`);
 
+  // Deletes (erasure, retention) are copy-on-write commits: the old files stay until their
+  // snapshots expire. Expire after 7 days so erased rows leave R2 within a week; compaction keeps
+  // Pipelines' small files (one per minute) from slowing queries.
+  const maintenance: [string, string[]][] = [
+    [
+      'Snapshot expiration (7 days)',
+      [
+        'snapshot-expiration',
+        'enable',
+        options.bucket,
+        '--older-than-days',
+        '7',
+        '--retain-last',
+        '5',
+        '--token',
+        options.token,
+      ],
+    ],
+    ['Compaction', ['compaction', 'enable', options.bucket, '--token', options.token]],
+  ];
+  for (const [label, args] of maintenance) {
+    const r = await wrangler.run(['basin', 'catalog', ...args]);
+    if (r.code === 0 || /already enabled/i.test(r.stdout + r.stderr)) report('ok', label);
+    else report('skipped', label, 'enable it in the R2 dashboard (Basin Catalog settings)');
+  }
+
   const streams = {} as Record<LakeTable, string>;
   for (const table of Object.keys(LAKE_TABLES) as LakeTable[]) {
     const {

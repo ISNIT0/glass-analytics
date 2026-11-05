@@ -125,7 +125,7 @@ function breakdownsSql(
     `SELECT * FROM (
   SELECT ${d.str(name)} AS dim, val, COUNT(DISTINCT distinct_id) AS visitors, COUNT(*) AS n
   FROM (SELECT ${expr} AS val, distinct_id FROM ev WHERE event = ${d.str(event)}) t
-  GROUP BY val ORDER BY visitors DESC, n DESC LIMIT 10
+  GROUP BY val ORDER BY visitors DESC, n DESC, val ASC LIMIT 10
 ) ${name}_t`;
   // Per-session value taken from the first (entry) or last (exit) pageview. Sources are
   // attributed this way too: a visit from a campaign counts once for that campaign, not
@@ -139,7 +139,7 @@ function breakdownsSql(
     JOIN ev ON ev.session_id = x.session_id AND ev.ts_ms = x.t AND ev.event = ${d.str(PV)}
     GROUP BY ev.session_id
   ) t
-  GROUP BY val ORDER BY visitors DESC, n DESC LIMIT 10
+  GROUP BY val ORDER BY visitors DESC, n DESC, val ASC LIMIT 10
 ) ${name}_t`;
   const parts = [
     simple('pages', none('path')),

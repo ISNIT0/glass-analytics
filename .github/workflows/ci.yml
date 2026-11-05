@@ -22,9 +22,14 @@ jobs:
           cache: pnpm
       # Switch to --frozen-lockfile once pnpm-lock.yaml is committed.
       - run: pnpm install --no-frozen-lockfile
+      # uv runs the Python half of the lake tests (DataFusion, PyIceberg); required here, so
+      # they fail rather than skip if it goes missing.
+      - uses: astral-sh/setup-uv@v6
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm test
+        env:
+          DATAFLARE_REQUIRE_PYTHON: "1"
       - run: pnpm build
       - run: node site/build.ts
 

@@ -36,6 +36,9 @@ export interface EventStore {
   writeIdentity(link: IdentityLink): Promise<void>;
   /** Run one read-only statement. */
   query(sql: string): Promise<Row[]>;
-  /** Delete every event of these persons/devices. Returns false when the store can't delete. */
-  deletePersonEvents(project: string, ids: string[]): Promise<boolean>;
+  /**
+   * Delete every event of these persons/devices: 'deleted' when they are gone now, 'queued' when
+   * a later job removes them (the lake: see `dataflare lake maintain`).
+   */
+  deletePersonEvents(project: string, ids: string[]): Promise<'deleted' | 'queued'>;
 }

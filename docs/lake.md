@@ -22,16 +22,28 @@ D1 still holds projects, people, identity links, flags, experiments and the repl
 
 ## Differences from D1 mode
 
-|                            | D1                                     | Lake                                                                   |
-| -------------------------- | -------------------------------------- | ---------------------------------------------------------------------- |
-| Freshness                  | Immediate                              | About 1–2 minutes (file roll interval)                                 |
-| Query time                 | Milliseconds                           | About 1–5 seconds per query                                            |
-| EU jurisdiction (`--eu`)   | Yes                                    | Not yet (Basin Catalog limitation)                                     |
-| History                    | Until D1's size limit                  | Unbounded                                                              |
-| Cost                       | Included in Workers plans up to limits | R2 storage, Pipelines and Basin SQL scans                              |
-| Person properties          | At event time, or current via SQL join | At event time                                                          |
-| Deleting a person's events | Yes                                    | Not yet (roadmap)                                                      |
-| Other engines              |                                        | Any Iceberg reader (DuckDB, Spark, Snowflake) can read the same tables |
+|                                | D1                                     | Lake                                                                   |
+| ------------------------------ | -------------------------------------- | ---------------------------------------------------------------------- |
+| Freshness                      | Immediate                              | About 1–2 minutes (file roll interval)                                 |
+| Query time                     | Milliseconds                           | About 1–5 seconds per query                                            |
+| EU jurisdiction (`--eu`)       | Yes                                    | Not yet (Basin Catalog limitation)                                     |
+| History                        | Until D1's size limit                  | Unbounded                                                              |
+| Cost                           | Included in Workers plans up to limits | R2 storage, Pipelines and Basin SQL scans                              |
+| Person properties              | At event time, or current via SQL join | At event time                                                          |
+| Deleting a person's events     | Immediately                            | Within a day (queued; the daily maintenance job deletes them)          |
+| Retention (`--retention-days`) | Worker cron, daily                     | Maintenance job, daily                                                 |
+| Other engines                  |                                        | Any Iceberg reader (DuckDB, Spark, Snowflake) can read the same tables |
+
+## Erasure and retention
+
+Basin SQL is read-only, so the Worker can't delete lake rows. Instead:
+
+- `dataflare person <id> --delete` deletes the person, their device links and replays at once, and queues their ids in D1 (`lake_deletions`).
+- `dataflare lake maintain` reads the queue and deletes those people's events and identity links with [PyIceberg](https://py.iceberg.apache.org/) through Basin Catalog, then deletes events older than `--retention-days` if set. The rows disappear from queries at once.
+- The deploy workflow (`.github/workflows/glass.yml`) runs it daily at 03:17 UTC. Run it by hand from a laptop with `CLOUDFLARE_API_TOKEN` set; it needs [uv](https://docs.astral.sh/uv/).
+- Deletes rewrite data files and leave the old ones in earlier snapshots. `init --lake` turns on Basin Catalog's snapshot expiration (7 days) and compaction, so erased rows leave R2 within about a week.
+
+Each person is removed by device, person and user id in separate passes: PyIceberg keeps a row when a delete filter evaluates to NULL, so one `OR` across columns would miss anonymous rows (whose `user_id` is NULL).
 
 ## Using a narrower token
 

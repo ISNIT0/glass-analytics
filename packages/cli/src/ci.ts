@@ -15,6 +15,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { loadConfig } from './config.ts';
 
 export const CI_WORKFLOW_PATH = '.github/workflows/glass.yml';
 export const CI_SECRET = 'CLOUDFLARE_API_TOKEN';
@@ -58,7 +59,31 @@ export function defaultBranch(root: string): string {
   return head || git(['branch', '--show-current']) || 'main';
 }
 
-export function ciWorkflow(o: Required<CiOptions>): string {
+/** Lake mode: the daily job that erases queued people and applies retention (`dataflare lake maintain`). */
+function lakeJob(secret: string): string {
+  return `
+  # Lake mode: Basin SQL can't delete, so erasure requests and retention run here daily.
+  lake-maintenance:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: astral-sh/setup-uv@v6
+      - name: Erase queued people and apply retention in the lake
+        run: |
+          version="$(node -p "require('./.glass/config.json').version")"
+          npx -y "dataflare-cli@\${version}" lake maintain
+        env:
+          CLOUDFLARE_API_TOKEN: \${{ secrets.${secret} }}
+`;
+}
+
+export function ciWorkflow(o: Required<CiOptions> & { lake?: boolean }): string {
   return `${MARKER} Deploys the Dataflare analytics Worker from .glass/.
 #
 # The version is pinned in .glass/config.json. To upgrade:
@@ -75,14 +100,14 @@ on:
   push:
     branches: [${o.branch}]
     paths: ['.glass/**', '${CI_WORKFLOW_PATH}']
-  workflow_dispatch:
+  workflow_dispatch:${o.lake ? "\n  schedule:\n    - cron: '17 3 * * *'" : ''}
 
 concurrency:
   group: glass-deploy
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  deploy:${o.lake ? "\n    if: github.event_name != 'schedule'" : ''}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -97,7 +122,7 @@ jobs:
           npx -y "dataflare-cli@\${version}" upgrade --ci
         env:
           CLOUDFLARE_API_TOKEN: \${{ secrets.${o.secret} }}
-`;
+${o.lake ? lakeJob(o.secret) : ''}`;
 }
 
 /**
@@ -111,7 +136,7 @@ export function writeCiWorkflow(
   const branch = options.branch ?? defaultBranch(root);
   const secret = options.secret ?? CI_SECRET;
   const path = join(root, CI_WORKFLOW_PATH);
-  const next = ciWorkflow({ branch, secret });
+  const next = ciWorkflow({ branch, secret, lake: loadConfig(root)?.store === 'lake' });
   if (existsSync(path)) {
     const current = readFileSync(path, 'utf8');
     if (!current.startsWith(MARKER) && !current.startsWith(OLD_MARKER))

@@ -83,9 +83,15 @@ export class LakeStore implements EventStore {
     throw new HttpError(502, `Basin SQL endpoint not found (HTTP ${last?.status ?? '?'})`);
   }
 
-  async deletePersonEvents(): Promise<boolean> {
-    // Basin SQL is read-only; Iceberg row deletes need an external job (see docs/privacy.md).
-    return false;
+  async deletePersonEvents(project: string, ids: string[]): Promise<'queued'> {
+    // Basin SQL is read-only, so an Iceberg engine deletes the rows: queue the ids for the lake
+    // maintenance job (`dataflare lake maintain`, run daily from CI). See docs/lake.md.
+    await this.env.DB.prepare(
+      'INSERT INTO lake_deletions (project, ids, requested_at) VALUES (?, ?, ?)',
+    )
+      .bind(project, JSON.stringify(ids), Date.now())
+      .run();
+    return 'queued';
   }
 }
 

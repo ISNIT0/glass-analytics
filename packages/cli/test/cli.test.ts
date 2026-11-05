@@ -28,6 +28,7 @@ import { agentsSection, importsAgentsMd, upsertSection } from '../src/agent-file
 import { lakeResourceNames } from '../src/cloudflare/provision.ts';
 import { type RunResult, type Wrangler, WranglerError } from '../src/cloudflare/wrangler.ts';
 import { init, normaliseRoute } from '../src/commands/init.ts';
+import { lakeMaintain, PYICEBERG } from '../src/commands/lake.ts';
 import { mcpBridge } from '../src/commands/mcp.ts';
 import { ci, upgrade } from '../src/commands/upgrade.ts';
 
@@ -66,6 +67,7 @@ function fakeWrangler(worker: ReturnType<typeof testApp>, options: FakeOptions =
           : ok();
       }
       if (cmd.startsWith('r2 bucket catalog enable')) return ok('Warehouse: acct_glass-data');
+      if (cmd.startsWith('basin catalog ')) return ok('Successfully enabled');
       for (const kind of ['streams', 'sinks'] as const) {
         if (cmd.startsWith(`pipelines ${kind} create`)) {
           state[kind].push({ id: `${kind}-${args[3]}`, name: args[3]! });
@@ -316,6 +318,14 @@ describe('dataflare init', () => {
     const wranglerConfig = readFileSync(join(root, '.glass', 'wrangler.jsonc'), 'utf8');
     assert.match(wranglerConfig, /"GLASS_STORE": "lake"/);
     assert.match(wranglerConfig, new RegExp(`"stream": "streams-${events.stream}"`));
+    assert.ok(
+      fake.commands.some((c) => c.join(' ').startsWith('basin catalog snapshot-expiration enable')),
+      'snapshot expiration removes deleted rows from R2',
+    );
+    const workflow = readFileSync(join(root, '.github', 'workflows', 'glass.yml'), 'utf8');
+    assert.match(workflow, /schedule:/);
+    assert.match(workflow, /lake maintain/);
+    assert.match(workflow, /astral-sh\/setup-uv/);
     assert.equal(worker.env.CF_API_TOKEN, 'cf-token', 'the query token is stored as a secret');
   });
 
@@ -602,5 +612,116 @@ describe('onboarding details', () => {
     });
     assert.match(err.message, /route not permitted/);
     assert.doesNotMatch(err.message, /binding line 29/);
+  });
+});
+
+describe('lake maintenance', () => {
+  // Runs the real PyIceberg job against a local Iceberg catalog (SQLite + files). Needs uv;
+  // CI sets DATAFLARE_REQUIRE_PYTHON=1 so a missing uv fails rather than skips.
+  const uv = (() => {
+    try {
+      execFileSync('uv', ['--version'], { stdio: 'ignore' });
+      return true;
+    } catch {
+      return false;
+    }
+  })();
+  const required = process.env.DATAFLARE_REQUIRE_PYTHON === '1';
+  const fixture = fileURLToPath(new URL('./lake_fixture.py', import.meta.url));
+  const uvArgs = [
+    'run',
+    '--no-project',
+    '--quiet',
+    '--python',
+    '3.13',
+    '--with',
+    `${PYICEBERG}`,
+    '--with',
+    'pyiceberg[sql-sqlite]==0.12.0',
+  ];
+  const python = (args: string[], input?: string) =>
+    execFileSync('uv', [...uvArgs, 'python', ...args], { input, encoding: 'utf8' });
+
+  it('erases queued people and applies retention', {
+    skip: !uv && !required && 'uv is not installed',
+  }, async () => {
+    const root = mkdtempSync(join(tmpdir(), 'glass-lake-'));
+    const warehouse = join(root, 'lake');
+    mkdirSync(warehouse);
+    python([fixture, 'seed', warehouse]);
+    mkdirSync(join(root, '.glass'));
+    const now = 1_790_000_000_000;
+    writeFileSync(
+      join(root, '.glass', 'config.json'),
+      JSON.stringify({
+        name: 'glass-acme',
+        accountId: 'acct-1',
+        host: HOST,
+        project: 'acme',
+        store: 'lake',
+        d1: { name: 'glass-acme', id: 'db-1' },
+        replay: null,
+        lake: {
+          bucket: 'glass-acme-data',
+          namespace: 'glass',
+          streams: { events: 's1', identities: 's2' },
+        },
+        route: null,
+        retentionDays: 365,
+        eu: false,
+        version: GLASS_VERSION,
+      }),
+    );
+    const sql: string[] = [];
+    const wrangler: Wrangler = {
+      async run(args) {
+        const command = args[args.indexOf('--command') + 1]!;
+        sql.push(command);
+        const results = command.startsWith('SELECT')
+          ? [{ id: 7, project: 'acme', ids: JSON.stringify(['alice', 'dev-alice']) }]
+          : [];
+        return { code: 0, stdout: JSON.stringify([{ results, success: true }]), stderr: '' };
+      },
+    };
+    await lakeMaintain(
+      { token: 'cf-token', json: true },
+      {
+        root,
+        now,
+        wrangler: () => wrangler,
+        catalog: {
+          type: 'sql',
+          uri: `sqlite:///${warehouse}/catalog.db`,
+          warehouse: `file://${warehouse}/warehouse`,
+        },
+        run: async (script, stdin) => python([script], stdin),
+      },
+    );
+    const left = JSON.parse(python([fixture, 'dump', warehouse])) as {
+      events: { project: string; distinct_id: string; ts_ms: number }[];
+      identities: { distinct_id: string }[];
+    };
+    // Alice's events in acme are gone (by device and by user id); the same device in another
+    // project stays; Bob's old event is past the 365-day retention.
+    assert.deepEqual(left.events.map((e) => `${e.project}:${e.distinct_id}`).sort(), [
+      'acme:dev-bob',
+      'other:dev-alice',
+    ]);
+    assert.ok(left.events.every((e) => e.ts_ms > now - 365 * 86_400_000));
+    assert.deepEqual(
+      left.identities.map((i) => i.distinct_id),
+      ['dev-bob'],
+    );
+    assert.match(
+      sql.at(-1)!,
+      /^UPDATE lake_deletions SET done_at = 1790000000000 WHERE id IN \(7\)$/,
+    );
+  });
+
+  it('refuses a D1 deployment', async () => {
+    const root = tempProject();
+    mkdirSync(join(root, '.glass'));
+    writeFileSync(join(root, '.glass', 'config.json'), JSON.stringify({ store: 'd1', lake: null }));
+    await assert.rejects(lakeMaintain({ token: 't' }, { root }), /keeps events in D1/);
   });
 });
