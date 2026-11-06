@@ -25,6 +25,7 @@ import {
   SOURCE_DIMENSIONS,
   type SourceDimension,
 } from '@dataflare/core/insights/report';
+import { runSites } from '@dataflare/core/insights/sites';
 import type { QueryContext, ResultBase } from '@dataflare/core/insights/types';
 import { runWeb } from '@dataflare/core/insights/web';
 import {
@@ -192,6 +193,13 @@ export const inputs = {
   overview: z.object({
     project,
     from: z.union([z.string(), z.number()]).optional(),
+    to: z.union([z.string(), z.number()]).optional(),
+  }),
+  sites: z.object({
+    from: z
+      .union([z.string(), z.number()])
+      .optional()
+      .describe('Start, e.g. "-30d". Default -30d.'),
     to: z.union([z.string(), z.number()]).optional(),
   }),
   markEvent: z.object({
@@ -648,6 +656,24 @@ GROUP BY event ORDER BY cur DESC, event ASC LIMIT 50`;
       summary: `${conversions ? `${baseSummary} Key events: ${conversions.summary}` : baseSummary}${health.upgradeAvailable && health.latest ? ` ${upgradeMessage(health.version, health.latest)}` : ''}`,
       sql: [...web.sql, sql],
       dashboard: this.link('reports', { project: ctx.project, from: spec.from, to: spec.to }),
+    };
+  }
+
+  /** Every project side by side for one range, with each one's change vs the previous period. */
+  async sites(input: unknown) {
+    const spec = inputs.sites.parse(input);
+    const projects = (await listProjects(this.env.DB)).map((p) => p.id);
+    const result = await runSites({ from: spec.from ?? '-30d', to: spec.to }, projects, {
+      dialect: this.store.dialect,
+      execute: (sql) => this.store.query(sql),
+    });
+    return {
+      ...result,
+      sites: result.sites.map((site) => ({
+        ...site,
+        dashboard: this.link('reports', { project: site.project, from: spec.from, to: spec.to }),
+      })),
+      dashboard: this.link('sites', { from: spec.from, to: spec.to }),
     };
   }
 
