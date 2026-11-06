@@ -1,5 +1,15 @@
 # dataflare-web
 
+## 0.8.2
+
+### Patch Changes
+
+- 01072c6: All sites: deployments with more than one project get an "All sites" entry at the top of the project switcher and open on it, showing each project's visitors and pageviews against the previous period, a sparkline, the last pageview and a trend (gaining, losing, steady, new, stopped). Also `GET /api/sites` and the `compare_sites` MCP tool. One-project deployments are unchanged (#8, thanks @robertdoneill).
+- 629737c: Since 0.8.1, the CLI runs the wrangler installed with it instead of downloading the newest wrangler 4.x through `npx` on every deploy. The lookup always failed because wrangler's `exports` don't include `bin/wrangler.js` (#5, thanks @robertdoneill).
+- 629737c: Your own SQL (`POST /api/sql`, the MCP `sql` tool, `dataflare sql`) can no longer hide a second, writing statement from the read-only guard, which accepts the read key. The guard now tokenizes the query in one pass the way SQLite does, so a `/*` or `--` inside a string, a quote inside a `[bracketed]` identifier, or a `$name(...)` parameter can't make it misread where a string ends (#3, thanks @robertdoneill; the one-pass scan shipped in 0.8.1, the bracket and parameter cases are new). As a backstop, a read-only query that changes the D1 database now fails with an error instead of returning normally.
+- 01072c6: An install made with `init --no-replay` keeps session replay off: `dataflare upgrade` no longer creates its R2 bucket, which also stopped upgrades failing on tokens without R2 permission. Installs from before this release can record the choice once with `dataflare upgrade --no-replay`; on an install that already has a replay bucket it refuses rather than strand the replays (#9, thanks @robertdoneill).
+- 629737c: Since 0.8.1, a Worker deployed on your own domain with `init --route` is no longer also reachable at its workers.dev address, which let traffic to `/e`, `/r` and `/f` skip the zone's WAF and rate limits (#4, thanks @robertdoneill). **If anything still sends to your workers.dev host** (a server-side SDK, a hard-coded snippet), point it at your route before upgrading to 0.8.1 or later: the upgrade turns workers.dev off and those requests will get a 404.
+
 ## 0.8.1
 
 ### Patch Changes
