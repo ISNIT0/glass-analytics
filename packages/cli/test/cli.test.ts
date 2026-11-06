@@ -613,6 +613,54 @@ describe('dataflare upgrade', () => {
     assert.equal(version(root), '99.0.0');
   });
 
+  it('keeps session replay off through upgrades after --no-replay', async () => {
+    const root = tempProject();
+    const fake = fakeWrangler(worker);
+    const deps = {
+      root,
+      wrangler: () => fake.wrangler,
+      fetcher: fetcherFor(worker),
+      bundleDir: BUNDLE,
+      pollMs: 1,
+    };
+    await init({ token: 'cf-token', replay: false, json: true }, deps);
+    const config = () => JSON.parse(readFileSync(join(root, '.glass', 'config.json'), 'utf8'));
+    assert.equal(config().replay, false);
+    fake.commands.length = 0;
+    setVersion(root, '0.0.1');
+    await quiet(() =>
+      upgrade({ json: true }, { ...deps, env: { CI: 'true', CLOUDFLARE_API_TOKEN: 'cf-token' } }),
+    );
+    assert.ok(!fake.commands.some((c) => c[0] === 'r2'), 'no replay bucket is created');
+    assert.equal(config().replay, false);
+    assert.doesNotMatch(readFileSync(join(root, '.glass', 'wrangler.jsonc'), 'utf8'), /REPLAYS/);
+  });
+
+  it('upgrade --no-replay stops retrying the replay bucket on an older install', async () => {
+    const root = tempProject();
+    const fake = fakeWrangler(worker, { r2Enabled: false });
+    const deps = {
+      root,
+      wrangler: () => fake.wrangler,
+      fetcher: fetcherFor(worker),
+      bundleDir: BUNDLE,
+      pollMs: 1,
+    };
+    await init({ token: 'cf-token', json: true }, deps);
+    const config = () => JSON.parse(readFileSync(join(root, '.glass', 'config.json'), 'utf8'));
+    assert.equal(config().replay, null, 'R2 was off, so replay is pending');
+    fake.commands.length = 0;
+    setVersion(root, '0.0.1');
+    await quiet(() =>
+      upgrade(
+        { json: true, replay: false },
+        { ...deps, env: { CI: 'true', CLOUDFLARE_API_TOKEN: 'cf-token' } },
+      ),
+    );
+    assert.ok(!fake.commands.some((c) => c[0] === 'r2'), 'no replay bucket is attempted');
+    assert.equal(config().replay, false);
+  });
+
   it('dataflare ci keeps a hand-written workflow', async () => {
     const { root } = await installed();
     writeFileSync(join(root, '.github', 'workflows', 'glass.yml'), 'name: mine\n');

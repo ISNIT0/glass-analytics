@@ -71,6 +71,8 @@ export interface UpgradeOptions {
   allowDowngrade?: boolean;
   /** Delete events older than this many days (0 keeps them forever). Saved in .glass/config.json. */
   retentionDays?: number;
+  /** `false` turns session replay off and stops upgrades from creating its R2 bucket. Saved. */
+  replay?: boolean;
 }
 
 export interface UpgradeDeps {
@@ -189,9 +191,11 @@ export async function upgrade(options: UpgradeOptions, deps: UpgradeDeps = {}): 
     (status === 'skipped' ? skip : ok)(`${label}${detail ? color.dim(` (${detail})`) : ''}`);
   };
 
-  // Replay may have been skipped because R2 wasn't enabled; try again.
+  // `--no-replay` turns replay off for good; an install from before that was recorded passes it once.
+  if (options.replay === false) config.replay = false;
+  // Replay may have been skipped because R2 wasn't enabled; try again, unless it was turned off.
   if (
-    !config.replay &&
+    config.replay === null &&
     (await ensureBucket(wrangler, `${config.name}-replays`, config.eu, report, 'session replay'))
   ) {
     config.replay = replayBucketConfig(`${config.name}-replays`, config.eu, null);
