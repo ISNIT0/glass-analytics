@@ -296,8 +296,8 @@ export async function ensureLake(
 export function replayBucketConfig(
   bucket: string,
   eu: boolean,
-  previous: GlassConfig['replay'],
-): NonNullable<GlassConfig['replay']> {
+  previous: Exclude<GlassConfig['replay'], false>,
+): Exclude<GlassConfig['replay'], null | false> {
   if (!eu)
     return { bucket, ...(previous?.legacyBucket ? { legacyBucket: previous.legacyBucket } : {}) };
   const legacyBucket =

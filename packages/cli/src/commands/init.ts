@@ -266,7 +266,7 @@ export async function init(options: InitOptions, deps: InitDeps = {}): Promise<v
     if (wantReplay) {
       const bucket = `${name}-replays`;
       if (await ensureBucket(wrangler, bucket, eu, report, 'session replay'))
-        replay = replayBucketConfig(bucket, eu, existing?.replay ?? null);
+        replay = replayBucketConfig(bucket, eu, existing?.replay || null);
       else
         report(
           'skipped',

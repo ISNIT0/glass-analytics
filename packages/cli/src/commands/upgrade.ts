@@ -139,6 +139,13 @@ export async function upgrade(options: UpgradeOptions, deps: UpgradeDeps = {}): 
     );
   }
   const from = config.version;
+  // `--no-replay` records an opt-out on an install without replay storage. With a bucket, dropping
+  // the binding would strand its replays (and, mid EU move, the legacy bucket's), so refuse.
+  if (options.replay === false && config.replay)
+    throw new UsageError(
+      `Session replay is set up with bucket "${config.replay.bucket}". Nothing was changed.`,
+      '--no-replay only records the choice on installs without replay storage. To turn replay off here, delete the replays first, then set "replay": false in .glass/config.json.',
+    );
   // An EU deployment from before 0.8.1 switches to its EU replay bucket (see replayBucketConfig).
   if (config.replay)
     config.replay = replayBucketConfig(config.replay.bucket, config.eu, config.replay);

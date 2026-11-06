@@ -661,6 +661,33 @@ describe('dataflare upgrade', () => {
     assert.equal(config().replay, false);
   });
 
+  it('upgrade --no-replay refuses on an install with a replay bucket', async () => {
+    const root = tempProject();
+    const fake = fakeWrangler(worker);
+    const deps = {
+      root,
+      wrangler: () => fake.wrangler,
+      fetcher: fetcherFor(worker),
+      bundleDir: BUNDLE,
+      pollMs: 1,
+    };
+    await init({ token: 'cf-token', json: true }, deps);
+    const config = () => JSON.parse(readFileSync(join(root, '.glass', 'config.json'), 'utf8'));
+    const before = config().replay;
+    assert.ok(before?.bucket, 'replay is set up');
+    fake.commands.length = 0;
+    setVersion(root, '0.0.1');
+    await assert.rejects(
+      upgrade(
+        { json: true, replay: false },
+        { ...deps, env: { CI: 'true', CLOUDFLARE_API_TOKEN: 'cf-token' } },
+      ),
+      /Session replay is set up with bucket/,
+    );
+    assert.deepEqual(fake.commands, []);
+    assert.deepEqual(config().replay, before);
+  });
+
   it('dataflare ci keeps a hand-written workflow', async () => {
     const { root } = await installed();
     writeFileSync(join(root, '.github', 'workflows', 'glass.yml'), 'name: mine\n');
