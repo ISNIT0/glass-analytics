@@ -29,6 +29,7 @@ import {
   pipelinesLister,
   putSecrets,
   renderWranglerConfig,
+  replayBucketConfig,
 } from '../cloudflare/provision.ts';
 import { createWrangler, type Wrangler } from '../cloudflare/wrangler.ts';
 import {
@@ -136,6 +137,9 @@ export async function upgrade(options: UpgradeOptions, deps: UpgradeDeps = {}): 
     );
   }
   const from = config.version;
+  // An EU deployment from before 0.8.1 switches to its EU replay bucket (see replayBucketConfig).
+  if (config.replay)
+    config.replay = replayBucketConfig(config.replay.bucket, config.eu, config.replay);
 
   // With a CI workflow, a laptop upgrade only stages files; the workflow deploys them.
   if (hasCiWorkflow(root) && !ci && !options.local) {
@@ -190,7 +194,7 @@ export async function upgrade(options: UpgradeOptions, deps: UpgradeDeps = {}): 
     !config.replay &&
     (await ensureBucket(wrangler, `${config.name}-replays`, config.eu, report, 'session replay'))
   ) {
-    config.replay = { bucket: `${config.name}-replays` };
+    config.replay = replayBucketConfig(`${config.name}-replays`, config.eu, null);
   }
   // Lake schema change: a new version gets its own streams, sinks and tables (a stream's schema is
   // fixed and a sink can't write to an existing table). The Worker switches to writing the new
