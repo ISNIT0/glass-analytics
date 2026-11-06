@@ -24,7 +24,11 @@ export interface GlassConfig {
   project: string;
   store: 'd1' | 'lake';
   d1: { name: string; id: string };
-  replay: { bucket: string } | null;
+  /**
+   * Session replay storage. `null`: not set up yet (for example R2 was not enabled), and
+   * `dataflare upgrade` tries again. `false`: turned off with `--no-replay`, so it stays off.
+   */
+  replay: { bucket: string } | null | false;
   lake: {
     bucket: string;
     namespace: string;
