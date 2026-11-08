@@ -93,6 +93,11 @@ const AI = [
   '%copilot.microsoft.%',
   '%you.com',
 ];
+/**
+ * AI assistants often strip the referrer and tag the link instead
+ * (ChatGPT search appends `utm_source=chatgpt.com`), so the UTM source is matched too.
+ */
+const AI_SOURCES = [...AI, 'chatgpt', 'openai', 'perplexity', 'claude', 'gemini', 'copilot'];
 
 /** The marketing channel of a pageview, from its UTM tags and referrer. Columns may be prefixed with `alias.`. */
 export function channelExpr(alias = ''): string {
@@ -104,7 +109,7 @@ export function channelExpr(alias = ''): string {
     WHEN ${lower(medium)} IN ('cpc', 'ppc', 'paid', 'paidsearch', 'paid_search', 'paid-search', 'paidsocial', 'paid_social', 'paid-social', 'display', 'cpm', 'banner', 'ads') THEN 'Paid'
     WHEN ${lower(medium)} IN ('email', 'e-mail', 'newsletter') OR ${lower(source)} IN ('email', 'newsletter') THEN 'Email'
     WHEN ${lower(medium)} IN ('social', 'social-media', 'social_media', 'sm', 'organic_social') THEN 'Social'
-    WHEN ${anyLike(ref, AI)} THEN 'AI assistants'
+    WHEN ${anyLike(ref, AI)} OR ${anyLike(source, AI_SOURCES)} THEN 'AI assistants'
     WHEN ${anyLike(ref, SEARCH)} THEN 'Organic search'
     WHEN ${anyLike(ref, SOCIAL)} THEN 'Social'
     WHEN ${lower(source)} <> '' OR ${lower(c('utm_campaign'))} <> '' THEN 'Other campaigns'

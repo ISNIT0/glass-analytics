@@ -50,6 +50,8 @@ describe('report queries', () => {
       { distinct_id: 'n1', utm_source: 'newsletter' },
       { distinct_id: 'r1', referrer_host: 'blog.example.org' },
       { distinct_id: 'ai', referrer_host: 'chatgpt.com' },
+      { distinct_id: 'ai2', utm_source: 'chatgpt.com' },
+      { distinct_id: 'ai3', utm_source: 'perplexity' },
       { distinct_id: 'd1' },
     ]);
     const channels = await runSources(
@@ -62,7 +64,7 @@ describe('report queries', () => {
     assert.equal(by['Organic search']!.rate, 0.5);
     assert.deepEqual(
       ['Paid', 'Email', 'Referral', 'AI assistants', 'Direct'].map((c) => by[c]?.visitors),
-      [1, 1, 1, 1, 1],
+      [1, 1, 1, 3, 1],
     );
     assert.equal(by.Social, undefined, 'g1 came from Google first');
     const campaigns = await runSources(
