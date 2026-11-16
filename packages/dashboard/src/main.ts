@@ -20,7 +20,7 @@ import { keyScreen, settingsPage } from './pages/settings.ts';
 import { sitesPage } from './pages/sites.ts';
 import { usagePage } from './pages/usage.ts';
 import { webPage } from './pages/web.ts';
-import { config, currentRoute, go, href, prefs, type Route } from './state.ts';
+import { config, currentRoute, go, href, prefs, type Route, takeKeyFromLink } from './state.ts';
 
 interface PageDef {
   label: string;
@@ -538,6 +538,7 @@ async function start(): Promise<void> {
   prefs.showSql = prefs.showSql;
   // biome-ignore lint/correctness/noSelfAssign: the setters have side effects
   prefs.theme = prefs.theme;
+  takeKeyFromLink();
   if (!prefs.key) {
     mount(
       root,
