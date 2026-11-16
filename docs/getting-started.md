@@ -106,7 +106,7 @@ Prefer the MCP `define_event` tool so you can set property meanings in the same 
 
 ## 5. Look at the data
 
-- **Dashboard:** `https://glass.<you>.workers.dev/app`. Sign in with the key from `npx dataflare-cli key`. Share a view-only dashboard with `npx dataflare-cli key --read`.
+- **Dashboard:** `https://glass.<you>.workers.dev/app`. Sign in with the key from `npx dataflare-cli key`. Share a view-only dashboard with `npx dataflare-cli key --read`. To sign in on a phone, open `https://glass.<you>.workers.dev/app#key=<key>` (or a QR code of it): the dashboard saves the key and removes it from the address bar. Treat that link like the key itself.
 - **Your agent:** with `.mcp.json` in place, ask "what were our top traffic sources this week?". See [agents.md](agents.md).
 - **Terminal:** `npx dataflare-cli query web --from -7d`, `npx dataflare-cli events`, `npx dataflare-cli --help`.
 

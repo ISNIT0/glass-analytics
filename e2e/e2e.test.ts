@@ -270,6 +270,16 @@ describe('Dataflare end to end', { timeout: 120_000 }, () => {
     await page.close();
   });
 
+  it('signs in from a #key= link and wipes the key from the URL', async () => {
+    const fresh = await browser.newContext({ userAgent: UA });
+    const page = await fresh.newPage();
+    await page.goto(`${server.glassUrl}/app#key=dev-admin-key`);
+    await page.waitForSelector('.kpis');
+    assert.doesNotMatch(page.url(), /dev-admin-key/);
+    assert.equal(await page.evaluate(() => localStorage.getItem('glass:key')), 'dev-admin-key');
+    await fresh.close();
+  });
+
   it('records a short visit to a page bigger than a beacon', async () => {
     // Most real pages' DOM snapshots are bigger than the 64 KB a page can send as it closes.
     const visitor = await browser.newContext({ userAgent: UA });
