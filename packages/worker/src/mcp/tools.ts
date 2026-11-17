@@ -354,6 +354,41 @@ export const TOOLS: ToolDefinition[] = [
     run: (s, a) => s.updateExperiment(a),
   },
   {
+    name: 'list_actors',
+    title: 'Who is behind a number',
+    description:
+      'List the people (or sessions, or groups when the spec has aggregateBy) behind one number of a trends, funnel or retention result: a trends point (selection {series, bucket, breakdown}), a funnel step ({step, status: "converted"|"dropped"}), or a retention cell ({cohort, period}). Pass the same spec you queried. Each has properties and a link; format "csv" exports the list.',
+    input: inputs.actors,
+    scope: 'read',
+    run: (s, a) => s.actors(a),
+  },
+  {
+    name: 'list_annotations',
+    title: 'List annotations',
+    description:
+      'Notes pinned to moments on time charts (launches, outages, campaigns), so a spike or dip can be explained. Trends and web results include those in their range.',
+    input: inputs.listAnnotations,
+    scope: 'read',
+    run: (s, a) => s.listAnnotations(a),
+  },
+  {
+    name: 'create_annotation',
+    title: 'Annotate a moment',
+    description:
+      'Pin a note to a moment ("2026-11-03": "Launched pricing v2"). It shows on every time chart of the project, or only on one saved insight.',
+    input: inputs.createAnnotation,
+    scope: 'admin',
+    run: (s, a) => s.createAnnotation(a),
+  },
+  {
+    name: 'delete_annotation',
+    title: 'Delete an annotation',
+    description: 'Remove an annotation by id (list_annotations shows ids).',
+    input: inputs.deleteAnnotation,
+    scope: 'admin',
+    run: (s, a) => s.deleteAnnotation(a),
+  },
+  {
     name: 'get_settings',
     title: 'Project settings',
     description:

@@ -175,6 +175,31 @@ export async function apiRouter(
     return json(await handleImport(request, env, service.store, now));
   });
 
+  r.post('/api/actors', async ({ url }) => {
+    const result = await service.actors({ ...params(url), ...(await body()) });
+    if ('csv' in result && result.csv !== undefined) {
+      return new Response(result.csv, {
+        headers: {
+          'Content-Type': 'text/csv; charset=utf-8',
+          'Content-Disposition': `attachment; filename="${result.kind}-actors.csv"`,
+        },
+      });
+    }
+    return json(result);
+  });
+
+  r.get('/api/annotations', async ({ url }) => json(await service.listAnnotations(params(url))));
+  r.post('/api/annotations', async ({ url }) => {
+    admin();
+    return json(await service.createAnnotation({ ...params(url), ...(await body()) }), {
+      status: 201,
+    });
+  });
+  r.delete('/api/annotations/:id', async ({ url, params: p }) => {
+    admin();
+    return json(await service.deleteAnnotation({ ...params(url), id: p.id }));
+  });
+
   r.get('/api/settings', async ({ url }) => json(await service.getSettings(params(url))));
   r.patch('/api/settings', async ({ url }) => {
     admin();

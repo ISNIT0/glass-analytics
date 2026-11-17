@@ -68,44 +68,154 @@ const stepSchema = z.object({
   label: z.string().optional().describe('Display name for this step.'),
 });
 
+/** Every way a trends series can aggregate its events. */
+export const TRENDS_MATHS = [
+  'total',
+  'dau',
+  'unique_persons',
+  'unique_sessions',
+  'unique_groups',
+  'wau',
+  'mau',
+  'first_time',
+  'sum',
+  'avg',
+  'min',
+  'max',
+  'median',
+  'p75',
+  'p90',
+  'p95',
+  'p99',
+  'revenue',
+  'avg_count_per_actor',
+  'min_count_per_actor',
+  'max_count_per_actor',
+  'median_count_per_actor',
+  'p75_count_per_actor',
+  'p90_count_per_actor',
+  'p95_count_per_actor',
+  'p99_count_per_actor',
+] as const;
+
+export type TrendsMath = (typeof TRENDS_MATHS)[number];
+
+const aggregateBy = z
+  .string()
+  .optional()
+  .describe(
+    'What unique counts and per-actor maths count: "person" (default), "session", or a group type such as "company" (from glass.group("company", id)).',
+  );
+
+const breakdownSpec = z
+  .union([z.string(), z.array(z.string()).min(1).max(4)])
+  .optional()
+  .describe(
+    'Split by one or more properties, e.g. "browser", "person.plan", "group.company.plan" or ["browser","utm_source"] (joined with " · "). "cohort" splits by the saved cohorts in breakdownCohorts.',
+  );
+
+const breakdownExtras = {
+  breakdownLimit: z
+    .number()
+    .int()
+    .min(1)
+    .max(50)
+    .optional()
+    .describe('Top N breakdown values to keep. Default 10.'),
+  breakdownCohorts: z
+    .array(z.string())
+    .max(10)
+    .optional()
+    .describe('With breakdown "cohort": the saved cohort keys to compare (list_cohorts).'),
+  breakdownBins: z
+    .number()
+    .int()
+    .min(2)
+    .max(50)
+    .optional()
+    .describe(
+      'For a numeric breakdown property: group its values into this many equal-width ranges instead of one line per value.',
+    ),
+};
+
 export const trendsSpec = z
   .object({
     ...common,
     series: z
       .array(
         z.object({
-          event: z.string().describe('Event name, or "*" for all events.'),
+          event: z
+            .union([z.string(), z.array(z.string()).min(1).max(20)])
+            .describe('Event name, a list of names (any of them), or "*" for all events.'),
           math: z
-            .enum(['total', 'unique_persons', 'unique_sessions', 'sum', 'avg'])
+            .enum(TRENDS_MATHS)
             .optional()
             .describe(
-              'How to aggregate. "total" counts events (default); sum/avg need a numeric "property".',
+              'How to aggregate. total: events (default). dau/unique_persons: unique actors per interval. wau/mau: unique actors in the 7/30 days up to each point. unique_sessions. unique_groups: distinct groups of groupType. first_time: actors doing it for the first time ever. sum/avg/min/max/median/p75/p90/p95/p99 of a numeric "property". revenue: sum of revenue in the base currency. avg|min|max|median|p75|p90|p95|p99_count_per_actor: how many times each actor did it.',
             ),
-          property: z.string().optional().describe('Numeric property for sum/avg, e.g. "amount".'),
+          property: z
+            .string()
+            .optional()
+            .describe(
+              'Numeric property for sum, avg, min, max and the percentiles, e.g. "amount".',
+            ),
+          groupType: z
+            .string()
+            .optional()
+            .describe('For unique_groups: the group type to count, e.g. "company".'),
           filters: z.array(filterSchema).optional(),
           label: z.string().optional(),
         }),
       )
       .min(1)
-      .max(10)
-      .describe('One line per series.'),
+      .max(20)
+      .describe('One line per series; formulas refer to them as A, B, C… in order.'),
     interval: z
-      .enum(['hour', 'day', 'week', 'month'])
+      .enum(['minute', 'hour', 'day', 'week', 'month'])
       .optional()
-      .describe('Bucket size. Defaults to "day".'),
-    breakdown: z
-      .union([z.string(), z.array(z.string()).min(1).max(4)])
+      .describe('Bucket size. Defaults to "day". "minute" works for ranges up to two days.'),
+    aggregateBy,
+    breakdown: breakdownSpec,
+    ...breakdownExtras,
+    formulas: z
+      .array(
+        z.object({
+          expr: z
+            .string()
+            .min(1)
+            .describe(
+              'Arithmetic over series letters, e.g. "B / A * 100" (A is the first series).',
+            ),
+          label: z.string().optional(),
+        }),
+      )
+      .max(5)
       .optional()
-      .describe(
-        'Split each series by one or more properties, e.g. "browser", "person.plan", or ["browser","utm_source"]. Multiple properties are joined with " · ".',
-      ),
-    breakdownLimit: z
+      .describe('Lines computed from the series, per interval and breakdown value.'),
+    formulaOnly: z
+      .boolean()
+      .optional()
+      .describe('Show only the formula lines (the series still run, as inputs).'),
+    compare: z
+      .boolean()
+      .optional()
+      .describe('Also return the previous period of the same length, aligned bucket by bucket.'),
+    cumulative: z.boolean().optional().describe('Running totals instead of per-interval values.'),
+    smoothing: z
       .number()
       .int()
-      .min(1)
-      .max(50)
+      .min(2)
+      .max(90)
       .optional()
-      .describe('Top N breakdown values to keep. Default 10.'),
+      .describe('Moving average over this many intervals, e.g. 7 on a daily chart.'),
+    trendLine: z.boolean().optional().describe('Add a least-squares trend line to each series.'),
+    display: z
+      .enum(['line', 'area', 'bar', 'bar_value', 'table', 'pie', 'number', 'world_map'])
+      .optional()
+      .describe('How the dashboard draws it. world_map expects breakdown "country".'),
+    logScale: z.boolean().optional().describe('Dashboard: logarithmic y axis.'),
+    percentStack: z.boolean().optional().describe('Dashboard: stack breakdowns as shares of 100%.'),
+    showValues: z.boolean().optional().describe('Dashboard: label points with their values.'),
   })
   .describe('Event counts or aggregates over time.');
 

@@ -15,6 +15,12 @@ import {
   sqlSpec,
   webSpec,
 } from '@dataflare/core/insights';
+import {
+  ACTOR_COMPILERS,
+  type ActorSelection,
+  actorSelection,
+  aggregationOf,
+} from '@dataflare/core/insights/actors';
 import { runExperiment } from '@dataflare/core/insights/experiment';
 import {
   type EventRole,
@@ -44,15 +50,15 @@ import {
   summariseReplay,
   type TimelineItem,
 } from '@dataflare/core/replay-summary';
-import { propertyText } from '@dataflare/core/sql/filters';
-import { assertReadOnlySql } from '@dataflare/core/sql/guard';
-import { eventsCte, num, text } from '@dataflare/core/sql/source';
-import { DAY_MS, resolveRange } from '@dataflare/core/time';
 import {
   excludeInternal,
   type ProjectSettings,
   projectSettingsSchema,
 } from '@dataflare/core/settings';
+import { propertyText } from '@dataflare/core/sql/filters';
+import { assertReadOnlySql } from '@dataflare/core/sql/guard';
+import { eventsCte, num, text } from '@dataflare/core/sql/source';
+import { DAY_MS, parseTime, resolveRange } from '@dataflare/core/time';
 import { estimateUsage } from '@dataflare/core/usage';
 import {
   GLASS_VERSION,
@@ -489,6 +495,38 @@ export const inputs = {
       .optional()
       .describe('Restrict browser ingest to these origins.'),
   }),
+  actors: z.object({
+    project,
+    kind: z.enum(['trends', 'funnel', 'retention']).describe('The insight the number comes from.'),
+    spec: z
+      .record(z.string(), z.unknown())
+      .describe(
+        'The same query spec you ran (without kind), e.g. from the result’s dashboard link.',
+      ),
+    selection: actorSelection,
+    limit: z.number().int().min(1).max(1000).optional().describe('Default 100.'),
+    offset: z.number().int().min(0).optional(),
+    format: z.enum(['json', 'csv']).optional().describe('"csv" returns the list as CSV text.'),
+  }),
+  listAnnotations: z.object({
+    project,
+    from: z.union([z.string(), z.number()]).optional().describe('Default: all.'),
+    to: z.union([z.string(), z.number()]).optional(),
+    insight: z.string().optional().describe('Also include notes pinned to this saved insight.'),
+  }),
+  createAnnotation: z.object({
+    project,
+    at: z
+      .union([z.string(), z.number()])
+      .describe('When it happened: ISO date or time ("2026-11-03T09:00"), epoch ms, or "-2d".'),
+    text: z.string().min(1).max(500).describe('What happened, e.g. "Launched pricing v2".'),
+    insight: z
+      .string()
+      .optional()
+      .describe('Pin it to one saved insight only. Default: every time chart of the project.'),
+    author: z.string().max(60).optional(),
+  }),
+  deleteAnnotation: z.object({ project, id: z.string() }),
   getSettings: z.object({ project }),
   updateSettings: z.object({
     project,
@@ -577,7 +615,8 @@ export class GlassService {
 
   // ── Queries ──────────────────────────────────────────────────────────────
 
-  async runInsight(kind: string, input: unknown) {
+  /** Parse a spec, apply project options (internal traffic) and resolve cohort references. */
+  private async prepareSpec(kind: string, input: unknown) {
     if (!isInsightKind(kind)) {
       throw new HttpError(
         400,
@@ -588,16 +627,210 @@ export class GlassService {
     const def = INSIGHTS[kind as InsightKind];
     const spec = def.schema.parse(input) as { project?: string } & Record<string, unknown>;
     const ctx = await this.context(spec.project);
+    const effective: Record<string, unknown> = this.withProjectOptions(spec, ctx.settings);
+    const breakdown = effective.breakdown;
+    if (breakdown === 'cohort' || (Array.isArray(breakdown) && breakdown[0] === 'cohort')) {
+      const keys = (effective.breakdownCohorts as string[] | undefined) ?? [];
+      const names = await this.cohortNames(ctx.project);
+      effective.cohortBreakdown = keys.map((key) => ({
+        key,
+        label: names.get(key) ?? key,
+        filter: { property: COHORT_PROPERTY, value: key },
+      }));
+    }
+    const resolved = await this.resolveCohorts(ctx.project, effective);
+    return { def, spec, resolved, ctx };
+  }
+
+  async runInsight(kind: string, input: unknown) {
+    const { def, spec, resolved, ctx } = await this.prepareSpec(kind, input);
     const run = def.run as unknown as (s: unknown, c: QueryContext) => Promise<ResultBase>;
-    const effective = this.withProjectOptions(spec, ctx.settings);
-    const result = await run(await this.resolveCohorts(ctx.project, effective), ctx);
+    const result = await run(resolved, ctx);
     // Web lives under Reports; trends/funnel/retention stay as ephemeral Insights links.
     const route = kind === 'web' ? 'reports' : `insights/${kind}`;
+    const annotations =
+      kind === 'trends' || kind === 'web'
+        ? await this.annotationsBetween(ctx.project, result.range.from, result.range.to)
+        : undefined;
     return {
       ...result,
+      ...(annotations?.length ? { annotations } : {}),
       project: ctx.project,
       dashboard: this.link(route, { project: ctx.project, spec: { ...spec, project: undefined } }),
     };
+  }
+
+  // ── Actors ───────────────────────────────────────────────────────────────
+
+  /** The people, sessions or groups behind one number of a trends, funnel or retention result. */
+  async actors(input: unknown) {
+    const args = inputs.actors.parse(input);
+    const compile = ACTOR_COMPILERS[args.kind];
+    if (!compile) throw new HttpError(400, `Listing actors is not available for ${args.kind}`);
+    const { resolved, ctx } = await this.prepareSpec(args.kind, {
+      ...args.spec,
+      ...(args.project ? { project: args.project } : {}),
+    });
+    const limit = args.limit ?? 100;
+    const offset = args.offset ?? 0;
+    const sql = compile(resolved, ctx, args.selection as ActorSelection, {
+      limit: limit + 1,
+      offset,
+    });
+    const rows = await this.store.query(sql);
+    const hasMore = rows.length > limit;
+    const page = rows.slice(0, limit).map((r) => ({ id: text(r.actor), n: num(r.n) }));
+    const aggregation = aggregationOf(resolved as { aggregateBy?: string });
+    const type =
+      aggregation === 'person' ? 'person' : aggregation === 'session' ? 'session' : 'group';
+    const details = await this.actorDetails(
+      ctx.project,
+      aggregation,
+      page.map((a) => a.id),
+    );
+    const actors = page.map((a) => ({
+      id: a.id,
+      type,
+      ...(typeof aggregation === 'object' ? { groupType: aggregation.group } : {}),
+      events: a.n,
+      properties: details.get(a.id) ?? {},
+      dashboard:
+        type === 'person'
+          ? this.link(`users/${encodeURIComponent(a.id)}`, { project: ctx.project })
+          : type === 'group'
+            ? this.link(
+                `groups/${encodeURIComponent((aggregation as { group: string }).group)}/${encodeURIComponent(a.id)}`,
+                { project: ctx.project },
+              )
+            : this.replayLink(ctx.project, a.id),
+    }));
+    const noun =
+      type === 'person'
+        ? 'people'
+        : type === 'session'
+          ? 'sessions'
+          : `${(aggregation as { group: string }).group} groups`;
+    const result = {
+      project: ctx.project,
+      kind: args.kind,
+      selection: args.selection,
+      actors,
+      offset,
+      hasMore,
+      sql: [sql],
+      summary: actors.length
+        ? `${actors.length}${hasMore ? '+' : ''} ${noun}${offset ? ` from #${offset + 1}` : ''}. Most active: ${actors
+            .slice(0, 5)
+            .map((a) => (a.properties.email as string) ?? (a.properties.name as string) ?? a.id)
+            .join(', ')}.`
+        : `No ${noun} for that selection.`,
+    };
+    if (args.format === 'csv') return { ...result, csv: actorsCsv(actors) };
+    return result;
+  }
+
+  private async actorDetails(
+    project: string,
+    aggregation: ReturnType<typeof aggregationOf>,
+    ids: string[],
+  ): Promise<Map<string, Record<string, unknown>>> {
+    const out = new Map<string, Record<string, unknown>>();
+    if (ids.length === 0 || aggregation === 'session') return out;
+    const json = JSON.stringify(ids);
+    if (aggregation === 'person') {
+      const { results } = await this.env.DB.prepare(
+        'SELECT person_id AS id, props FROM persons WHERE project = ?1 AND person_id IN (SELECT value FROM json_each(?2))',
+      )
+        .bind(project, json)
+        .all<{ id: string; props: string }>();
+      for (const r of results) out.set(r.id, safeParse(r.props));
+    } else {
+      const { results } = await this.env.DB.prepare(
+        'SELECT key AS id, props FROM groups WHERE project = ?1 AND type = ?2 AND key IN (SELECT value FROM json_each(?3))',
+      )
+        .bind(project, aggregation.group, json)
+        .all<{ id: string; props: string }>();
+      for (const r of results) out.set(r.id, safeParse(r.props));
+    }
+    return out;
+  }
+
+  private async cohortNames(project: string): Promise<Map<string, string>> {
+    const { results } = await this.env.DB.prepare('SELECT key, name FROM cohorts WHERE project = ?')
+      .bind(project)
+      .all<{ key: string; name: string }>();
+    return new Map(results.map((r) => [r.key, r.name]));
+  }
+
+  // ── Annotations ──────────────────────────────────────────────────────────
+
+  private async annotationsBetween(project: string, from: string, to: string, insight = '') {
+    const { results } = await this.env.DB.prepare(
+      `SELECT id, ts_ms, text, insight, author FROM annotations
+       WHERE project = ? AND ts_ms >= ? AND ts_ms < ? AND (insight = '' OR insight = ?)
+       ORDER BY ts_ms LIMIT 200`,
+    )
+      .bind(project, Date.parse(from), Date.parse(to), insight)
+      .all<{ id: string; ts_ms: number; text: string; insight: string; author: string }>();
+    return results.map((r) => ({
+      id: r.id,
+      at: new Date(r.ts_ms).toISOString(),
+      text: r.text,
+      ...(r.insight ? { insight: r.insight } : {}),
+      ...(r.author ? { author: r.author } : {}),
+    }));
+  }
+
+  async listAnnotations(input: unknown) {
+    const spec = inputs.listAnnotations.parse(input);
+    const ctx = await this.context(spec.project);
+    const from = spec.from === undefined ? 0 : parseTime(spec.from);
+    const to = spec.to === undefined ? Date.now() + 365 * DAY_MS : parseTime(spec.to);
+    const annotations = await this.annotationsBetween(
+      ctx.project,
+      new Date(from).toISOString(),
+      new Date(to).toISOString(),
+      spec.insight ?? '',
+    );
+    return {
+      project: ctx.project,
+      annotations,
+      summary: annotations.length
+        ? `${annotations.length} annotation${annotations.length === 1 ? '' : 's'}: ${annotations
+            .slice(-5)
+            .map((a) => `${a.at.slice(0, 10)} ${a.text}`)
+            .join('; ')}.`
+        : 'No annotations in that range.',
+    };
+  }
+
+  async createAnnotation(input: unknown) {
+    const spec = inputs.createAnnotation.parse(input);
+    const ctx = await this.context(spec.project);
+    const ts = parseTime(spec.at);
+    const id = crypto.randomUUID().slice(0, 12);
+    await this.env.DB.prepare(
+      'INSERT INTO annotations (project, id, ts_ms, text, insight, author, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    )
+      .bind(ctx.project, id, ts, spec.text, spec.insight ?? '', spec.author ?? '', Date.now())
+      .run();
+    return {
+      project: ctx.project,
+      id,
+      at: new Date(ts).toISOString(),
+      text: spec.text,
+      summary: `Annotated ${new Date(ts).toISOString().slice(0, 16).replace('T', ' ')} UTC: "${spec.text}".`,
+    };
+  }
+
+  async deleteAnnotation(input: unknown) {
+    const spec = inputs.deleteAnnotation.parse(input);
+    const ctx = await this.context(spec.project);
+    const res = await this.env.DB.prepare('DELETE FROM annotations WHERE project = ? AND id = ?')
+      .bind(ctx.project, spec.id)
+      .run();
+    if (!res.meta.changes) throw new HttpError(404, `No annotation "${spec.id}"`);
+    return { project: ctx.project, deleted: spec.id, summary: 'Annotation deleted.' };
   }
 
   async sql(input: unknown) {
@@ -2322,6 +2555,23 @@ function safeParse(value: string): Record<string, unknown> {
   } catch {
     return {};
   }
+}
+
+/** Actors as CSV: id, type, events, then each property that appears. */
+function actorsCsv(
+  actors: { id: string; type: string; events: number; properties: Record<string, unknown> }[],
+): string {
+  const keys = [...new Set(actors.flatMap((a) => Object.keys(a.properties)))].slice(0, 50);
+  const cell = (v: unknown) => {
+    const s =
+      v === undefined || v === null ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v);
+    return /[",\n]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s;
+  };
+  const header = ['id', 'type', 'events', ...keys].map(cell).join(',');
+  const lines = actors.map((a) =>
+    [a.id, a.type, a.events, ...keys.map((k) => a.properties[k])].map(cell).join(','),
+  );
+  return [header, ...lines].join('\n');
 }
 
 function slugKey(name: string): string {

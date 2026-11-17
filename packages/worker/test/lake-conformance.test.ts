@@ -229,6 +229,63 @@ const READS: [string, string, unknown?][] = [
     'POST',
     '/api/query',
     {
+      kind: 'trends',
+      from: '-7d',
+      series: [
+        { event: '$pageview', math: 'dau' },
+        { event: '$pageview', math: 'wau' },
+        { event: '$pageview', math: 'mau' },
+        { event: 'signup_completed', math: 'first_time' },
+      ],
+    },
+  ],
+  [
+    'POST',
+    '/api/query',
+    {
+      kind: 'trends',
+      from: '-7d',
+      series: [
+        { event: 'signup_completed', math: 'median', property: 'seats' },
+        { event: 'signup_completed', math: 'p90', property: 'seats' },
+        { event: 'signup_completed', math: 'min', property: 'seats' },
+        { event: 'signup_completed', math: 'max', property: 'seats' },
+        { event: '$pageview', math: 'avg_count_per_actor' },
+        { event: '$pageview', math: 'median_count_per_actor' },
+        { event: '$pageview', math: 'max_count_per_actor' },
+      ],
+      breakdown: 'device',
+    },
+  ],
+  [
+    'POST',
+    '/api/query',
+    {
+      kind: 'trends',
+      from: '-7d',
+      series: [{ event: ['signup_completed', 'purchase'] }, { event: '$pageview' }],
+      formulas: [{ expr: 'A / B * 100' }],
+      cumulative: true,
+      compare: true,
+      timezone: 'Europe/London',
+    },
+  ],
+  [
+    'POST',
+    '/api/query',
+    {
+      kind: 'trends',
+      from: '-7d',
+      series: [{ event: 'signup_completed' }],
+      breakdown: 'seats',
+      breakdownBins: 3,
+      aggregateBy: 'session',
+    },
+  ],
+  [
+    'POST',
+    '/api/query',
+    {
       kind: 'funnel',
       from: '-7d',
       steps: [{ event: '$pageview' }, { event: 'signup_completed' }, { event: 'purchase' }],
