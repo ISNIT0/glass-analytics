@@ -18,7 +18,7 @@ import type { Filter } from '../filters.ts';
 import type { Dialect } from '../sql/dialect.ts';
 import { bucketExpr, eventsCte, num, text } from '../sql/source.ts';
 import { bucketsBetween, DAY_MS, type Interval, resolveRange, type TimeRange } from '../time.ts';
-import type { QueryContext } from './types.ts';
+import { type QueryContext, zoneOf } from './types.ts';
 import { percentile } from './web.ts';
 
 const PV = SYSTEM_EVENTS.pageview;
@@ -38,6 +38,7 @@ export interface ReportRange {
   filters?: Filter[];
   interval?: Interval;
   utcOffsetMinutes?: number;
+  timezone?: string;
 }
 
 function intervalFor(range: TimeRange): Interval {
@@ -179,7 +180,7 @@ export async function runConversions(
   const range = resolveRange(spec.from ?? '-30d', spec.to, ctx.now);
   const previous = { from: range.from - (range.to - range.from), to: range.from };
   const interval = spec.interval ?? intervalFor(range);
-  const buckets = bucketsBetween(range, interval, spec.utcOffsetMinutes);
+  const buckets = bucketsBetween(range, interval, zoneOf(spec, ctx, range));
   const events = spec.goals.map((g) => g.event);
   const conversions = spec.goals.filter((g) => g.role === 'conversion').map((g) => g.event);
   if (events.length === 0) {
@@ -197,8 +198,8 @@ export async function runConversions(
     now: totalsSql(d, ctx.project, range, spec.filters, events),
     before: totalsSql(d, ctx.project, previous, spec.filters, events),
     series: `WITH ${eventsCte(d, { project: ctx.project, ...range, events, filters: spec.filters })}
-SELECT event AS ev_name, ${bucketExpr(d, 'ts_ms', interval, spec.utcOffsetMinutes)} AS bucket, COUNT(DISTINCT distinct_id) AS visitors
-FROM ev GROUP BY event, ${bucketExpr(d, 'ts_ms', interval, spec.utcOffsetMinutes)} ORDER BY bucket LIMIT 20000`,
+SELECT event AS ev_name, ${bucketExpr(d, 'ts_ms', interval, zoneOf(spec, ctx, range))} AS bucket, COUNT(DISTINCT distinct_id) AS visitors
+FROM ev GROUP BY event, ${bucketExpr(d, 'ts_ms', interval, zoneOf(spec, ctx, range))} ORDER BY bucket LIMIT 20000`,
     converted: conversions.length
       ? convertedSql(d, ctx.project, range, spec.filters, conversions)
       : null,
@@ -374,8 +375,8 @@ export async function runHealth(spec: ReportRange, ctx: QueryContext): Promise<H
   const range = resolveRange(spec.from ?? '-30d', spec.to, ctx.now);
   const previous = { from: range.from - (range.to - range.from), to: range.from };
   const interval = spec.interval ?? intervalFor(range);
-  const buckets = bucketsBetween(range, interval, spec.utcOffsetMinutes);
-  const bucket = bucketExpr(d, 'ts_ms', interval, spec.utcOffsetMinutes);
+  const buckets = bucketsBetween(range, interval, zoneOf(spec, ctx, range));
+  const bucket = bucketExpr(d, 'ts_ms', interval, zoneOf(spec, ctx, range));
   const cte = (r: TimeRange, events: string[]) =>
     eventsCte(d, { project: ctx.project, ...r, events, filters: spec.filters });
   const title = lower('title');

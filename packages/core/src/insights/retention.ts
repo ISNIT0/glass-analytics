@@ -9,10 +9,10 @@
  */
 
 import { filtersSql } from '../sql/filters.ts';
-import { bucketExpr, eventsCte, fixedIntervalMs, num } from '../sql/source.ts';
-import { addMonths, DAY_MS, iso, resolveRange } from '../time.ts';
+import { bucketExpr, eventsCte, fixedIntervalMs, localTimeSql, num } from '../sql/source.ts';
+import { addMonths, DAY_MS, iso, localToUtc, resolveRange } from '../time.ts';
 import type { RetentionSpec } from './schemas.ts';
-import { fmt, type QueryContext, type ResultBase } from './types.ts';
+import { fmt, type QueryContext, type ResultBase, zoneOf } from './types.ts';
 
 export interface RetentionCohort {
   /** Cohort period start, epoch ms. */
@@ -52,12 +52,10 @@ export function compileRetention(
     events: [spec.cohortEvent.event, spec.returnEvent.event],
     filters: spec.filters,
   });
-  const off = spec.utcOffsetMinutes ?? 0;
+  const zone = zoneOf(spec, ctx, { from: range.from, to: horizon });
   // Month buckets are compared by month index (year*12+month), others by bucket start ms.
   const key = (ts: string) =>
-    period === 'month'
-      ? d.monthIndex(off ? `(${ts} + ${off * 60_000})` : ts)
-      : bucketExpr(d, ts, period, off);
+    period === 'month' ? d.monthIndex(localTimeSql(d, ts, zone)) : bucketExpr(d, ts, period, zone);
   const step = period === 'month' ? 1 : fixedIntervalMs(period);
   const diff = `(a.abucket - c.cbucket) / ${step}`;
   return `WITH ${cte},
@@ -89,12 +87,18 @@ export async function runRetention(
   const period = spec.period ?? 'week';
   const periods = spec.periods ?? 8;
   const now = ctx.now ?? Date.now();
-  const off = (spec.utcOffsetMinutes ?? 0) * 60_000;
+  const horizon =
+    period === 'month'
+      ? addMonths(range.to, periods + 1)
+      : range.to + (periods + 1) * fixedIntervalMs(period);
+  const zone = zoneOf(spec, ctx, { from: range.from, to: horizon });
   const sql = compileRetention(spec, ctx, range);
   const rows = await ctx.execute(sql);
 
   const toStart = (cohort: number) =>
-    period === 'month' ? Date.UTC(Math.floor(cohort / 12), cohort % 12, 1) - off : cohort;
+    period === 'month'
+      ? localToUtc(zone, Date.UTC(Math.floor(cohort / 12), cohort % 12, 1))
+      : cohort;
   const byCohort = new Map<number, number[]>();
   for (const row of rows) {
     const cohort = num(row.cohort);

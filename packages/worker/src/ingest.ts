@@ -1,38 +1,50 @@
 /**
- * Event ingest: `POST /e`.
+ * Event ingest: `POST /e` (browsers and servers) and `POST /api/import` (history, with a key).
  *
  * The pipeline, in order:
  *
  *   1. parse      — accept a WireBatch (text/plain JSON, no CORS preflight)
- *   2. admit      — known project, allowed origin, not a bot
+ *   2. admit      — known project, allowed origin, not a bot (public ingest only)
  *   3. validate   — drop malformed events individually, never the whole batch
- *   4. identity   — apply identify() links and person property updates
- *   5. resolve    — person_id for every event + a snapshot of person properties
+ *   4. identity   — apply identify() links, person and group property updates
+ *   5. resolve    — person_id for every event + snapshots of person and group properties
  *   6. enrich     — clock-skew correction, URL/UTM parsing, referrer, geo, user agent
- *   7. write      — hand the rows to the event store
+ *   7. extend     — the enrichers registered in `ENRICHERS` (error issues, revenue, …)
+ *   8. write      — hand the rows to the event store
  *
  * Steps 4–6 are separate functions so they can be tested and extended
  * independently (see docs/extending.md, "Enriching events").
+ *
+ * Public ingest corrects timestamps for the sender's clock and accepts events up to 7 days
+ * old (a browser that was offline). Imports are trusted: they keep their timestamps however
+ * old, so a history from another tool lands on the right days.
  */
 
 import {
   isValidEventName,
+  MAX_GROUP_TYPES,
   type StoredEvent,
+  SYSTEM_EVENTS,
   type WireBatch,
   type WireEvent,
 } from '@dataflare/core/events';
 import { sha256Hex } from '@dataflare/core/hash';
+import type { ProjectSettings } from '@dataflare/core/settings';
 import { isBot, parseUserAgent } from '@dataflare/core/ua';
 import { parsePage, referrerHost } from '@dataflare/core/url';
 import type { D1Database, Env } from './env.ts';
 import { HttpError, readJson } from './http.ts';
-import { getProject } from './projects.ts';
+import { getProject, type Project } from './projects.ts';
 import type { EventStore } from './stores/types.ts';
 
 const MAX_EVENTS = 200;
+const MAX_IMPORT_EVENTS = 1000;
 const MAX_PROPS_BYTES = 8_000;
+const MAX_GROUP_PROPS_BYTES = 4_000;
 const MAX_PAST_MS = 7 * 86_400_000;
 const SESSION_BUCKET_MS = 30 * 60_000;
+/** Group types and keys: printable, no quotes or backslashes (they become JSON paths in SQL). */
+const GROUP_TYPE = /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,49}$/;
 
 /** What we know about the sender from the request itself. */
 export interface RequestInfo {
@@ -64,6 +76,25 @@ export interface IngestResult {
   dropped: number;
 }
 
+/** Hooks that run on rows after enrichment and before the write. Later features register here. */
+export type Enricher = (rows: StoredEvent[], ctx: EnrichContext) => Promise<StoredEvent[]>;
+
+export interface EnrichContext {
+  project: Project;
+  env: Env;
+  store: EventStore;
+  now: number;
+  /** An import or a server SDK with a key, rather than public ingest. */
+  trusted: boolean;
+}
+
+/** Registered enrichers, in order. Each may change, drop or add rows. */
+export const ENRICHERS: Enricher[] = [];
+
+/** Hooks that run after the write (destinations), with the rows exactly as stored. */
+export type AfterWrite = (rows: StoredEvent[], ctx: EnrichContext) => Promise<void>;
+export const AFTER_WRITE: AfterWrite[] = [];
+
 export async function handleIngest(
   request: Request,
   env: Env,
@@ -72,6 +103,52 @@ export async function handleIngest(
 ): Promise<IngestResult> {
   const info = requestInfo(request);
   const batch = await readJson<Partial<WireBatch>>(request, 1_000_000);
+  const project = await admitBatch(env, batch);
+  if (
+    project.allowedOrigins.length > 0 &&
+    info.origin &&
+    !project.allowedOrigins.includes(info.origin)
+  ) {
+    throw new HttpError(403, `Origin ${info.origin} is not allowed for project "${project.id}"`);
+  }
+  // Server-side senders often have no user agent; only browsers that look like bots are dropped.
+  if (info.userAgent && isBot(info.userAgent))
+    return { accepted: 0, dropped: batch.events!.length };
+  return ingestBatch(batch as WireBatch, project, info, env, store, now, { trusted: false });
+}
+
+/**
+ * `POST /api/import` (server or admin key): events with their own timestamps, for a history
+ * from another tool or a backfill. Up to 1,000 events per request; ids de-duplicate retries.
+ */
+export async function handleImport(
+  request: Request,
+  env: Env,
+  store: EventStore,
+  now = Date.now(),
+  options: { skipDestinations?: boolean } = {},
+): Promise<IngestResult & { project: string }> {
+  const info = requestInfo(request);
+  const batch = await readJson<Partial<WireBatch> & { skip_destinations?: boolean }>(
+    request,
+    5_000_000,
+  );
+  const project = await admitBatch(env, batch);
+  if (batch.events!.length > MAX_IMPORT_EVENTS) {
+    throw new HttpError(
+      413,
+      `At most ${MAX_IMPORT_EVENTS} events per import request`,
+      'Send the history in chunks; `dataflare import` does this for you.',
+    );
+  }
+  const result = await ingestBatch(batch as WireBatch, project, info, env, store, now, {
+    trusted: true,
+    skipDestinations: options.skipDestinations ?? batch.skip_destinations !== false,
+  });
+  return { ...result, project: project.id };
+}
+
+async function admitBatch(env: Env, batch: Partial<WireBatch>): Promise<Project> {
   if (typeof batch.project !== 'string' || !Array.isArray(batch.events)) {
     throw new HttpError(400, 'Expected { project, events: [...] }');
   }
@@ -83,28 +160,39 @@ export async function handleIngest(
       'Create it with `dataflare projects add <id>` or check data-project.',
     );
   }
-  if (
-    project.allowedOrigins.length > 0 &&
-    info.origin &&
-    !project.allowedOrigins.includes(info.origin)
-  ) {
-    throw new HttpError(403, `Origin ${info.origin} is not allowed for project "${project.id}"`);
-  }
-  // Server-side senders often have no user agent; only browsers that look like bots are dropped.
-  if (info.userAgent && isBot(info.userAgent)) return { accepted: 0, dropped: batch.events.length };
+  return project;
+}
 
-  const events = batch.events.slice(0, MAX_EVENTS).filter(isWellFormed);
+export async function ingestBatch(
+  batch: WireBatch,
+  project: Project,
+  info: RequestInfo,
+  env: Env,
+  store: EventStore,
+  now: number,
+  options: { trusted: boolean; skipDestinations?: boolean },
+): Promise<IngestResult> {
+  const limit = options.trusted ? MAX_IMPORT_EVENTS : MAX_EVENTS;
+  const events = batch.events.slice(0, limit).filter(isWellFormed);
   const skew = typeof batch.sent_at === 'number' ? now - batch.sent_at : 0;
-  const rows = await toRows(events, {
+  const ctx: RowContext = {
     project: project.id,
+    settings: project.settings,
     info,
     now,
-    skew,
+    skew: options.trusted ? 0 : skew,
+    trusted: options.trusted,
     lib: String(batch.lib ?? '').slice(0, 50),
     env,
     store,
-  });
+  };
+  let rows = await toRows(events, ctx);
+  const enrich: EnrichContext = { project, env, store, now, trusted: options.trusted };
+  for (const enricher of ENRICHERS) rows = await enricher(rows, enrich);
   await store.write(rows);
+  if (!options.skipDestinations) {
+    for (const hook of AFTER_WRITE) await hook(rows, enrich);
+  }
   return { accepted: rows.length, dropped: batch.events.length - rows.length };
 }
 
@@ -122,9 +210,11 @@ function isWellFormed(e: unknown): e is WireEvent {
 
 interface RowContext {
   project: string;
+  settings: ProjectSettings;
   info: RequestInfo;
   now: number;
   skew: number;
+  trusted: boolean;
   lib: string;
   env: Env;
   store: EventStore;
@@ -138,23 +228,32 @@ async function toRows(events: WireEvent[], ctx: RowContext): Promise<StoredEvent
   if (events.length === 0) return [];
   const anonymous = await deriveCookielessIds(ctx);
   const withIds = events.map((e) => {
-    const ts = Math.min(
-      ctx.now + 60_000,
-      Math.max(ctx.now - MAX_PAST_MS, Math.round(e.ts + ctx.skew)),
-    );
-    const distinct = str(e.distinct_id, 200) || anonymous.distinctId;
+    const corrected = Math.round(e.ts + ctx.skew);
+    // A browser that was offline can send a week's backlog; older timestamps are clock errors.
+    // Imports keep theirs: that is what an import is for.
+    const ts = ctx.trusted
+      ? Math.min(ctx.now + 60_000, corrected)
+      : Math.min(ctx.now + 60_000, Math.max(ctx.now - MAX_PAST_MS, corrected));
+    const user = str(e.user_id, 200) || null;
+    // A server event with only a user id belongs to that user (no device to derive one from).
+    const distinct = str(e.distinct_id, 200) || (ctx.trusted && user ? user : anonymous.distinctId);
     const session = str(e.session_id, 100) || anonymous.sessionId(ts);
-    return { e, ts, distinct, user: str(e.user_id, 200) || null, session };
+    return { e, ts, distinct, user, session, groups: groupsOf(e) };
   });
 
   await applyIdentity(ctx, withIds);
+  const types = await registerGroupTypes(ctx, withIds);
+  await applyGroupIdentify(ctx, withIds, types);
   const personOf = await resolvePersons(ctx, withIds);
   const propsOf = await personProperties(ctx, [...new Set(personOf.values())]);
+  const groupPropsOf = await groupProperties(ctx, withIds, types);
   const ua = parseUserAgent(ctx.info.userAgent);
 
-  return withIds.map(({ e, ts, distinct, user, session }) => {
+  return withIds.map(({ e, ts, distinct, user, session, groups }) => {
     const page = parsePage(e.url);
     const person = personOf.get(distinct + '\u0000' + (user ?? ''))!;
+    const known = Object.fromEntries(Object.entries(groups).filter(([type]) => types.has(type)));
+    const c = ctx.trusted && e.context && typeof e.context === 'object' ? e.context : {};
     return {
       id: str(e.id, 64),
       project: ctx.project,
@@ -175,14 +274,14 @@ async function toRows(events: WireEvent[], ctx: RowContext): Promise<StoredEvent
       utm_campaign: page.utm_campaign,
       utm_term: page.utm_term,
       utm_content: page.utm_content,
-      country: ctx.info.country,
-      region: ctx.info.region,
-      city: ctx.info.city,
-      device: ua.device === 'unknown' ? '' : ua.device,
-      browser: ua.browser,
-      os: ua.os,
+      country: str(c.country, 2) || ctx.info.country,
+      region: str(c.region, 100) || ctx.info.region,
+      city: str(c.city, 100) || ctx.info.city,
+      device: str(c.device, 20) || (ua.device === 'unknown' ? '' : ua.device),
+      browser: str(c.browser, 50) || ua.browser,
+      os: str(c.os, 50) || ua.os,
       flags: JSON.stringify(e.flags && typeof e.flags === 'object' ? e.flags : {}),
-      props: boundedJson(e.props),
+      props: boundedProps(e.props, known, groupPropsOf),
       person_props: propsOf.get(person) ?? '{}',
       lib: ctx.lib,
       received_ms: ctx.now,
@@ -190,10 +289,78 @@ async function toRows(events: WireEvent[], ctx: RowContext): Promise<StoredEvent
   });
 }
 
-function boundedJson(value: unknown): string {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return '{}';
-  const text = JSON.stringify(value);
-  return text.length > MAX_PROPS_BYTES ? JSON.stringify({ $truncated: true }) : text;
+/**
+ * Event properties as stored: at most 8 KB of your properties (the largest are dropped first and
+ * listed in `$truncated_keys`), plus the event's groups and a snapshot of their properties.
+ */
+export function boundedProps(
+  value: unknown,
+  groups: Record<string, string> = {},
+  groupProps: Map<string, Record<string, unknown>> = new Map(),
+): string {
+  const props: Record<string, unknown> =
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? { ...(value as Record<string, unknown>) }
+      : {};
+  // Group fields are rebuilt below from what was validated.
+  delete props.$groups;
+  delete props.$group_props;
+  let text = JSON.stringify(props);
+  if (text.length > MAX_PROPS_BYTES) {
+    const sizes = Object.entries(props)
+      .map(([k, v]) => [k, JSON.stringify(v)?.length ?? 0] as const)
+      .sort((a, b) => b[1] - a[1]);
+    const dropped: string[] = [];
+    for (const [k] of sizes) {
+      if (text.length <= MAX_PROPS_BYTES - 200) break;
+      delete props[k];
+      dropped.push(k);
+      text = JSON.stringify(props);
+    }
+    props.$truncated_keys = dropped.slice(0, 20);
+  }
+  if (Object.keys(groups).length > 0) {
+    props.$groups = groups;
+    const snapshot: Record<string, unknown> = {};
+    for (const [type, key] of Object.entries(groups)) {
+      const p = groupProps.get(`${type}\u0000${key}`);
+      if (p && Object.keys(p).length) snapshot[type] = p;
+    }
+    if (Object.keys(snapshot).length && JSON.stringify(snapshot).length <= MAX_GROUP_PROPS_BYTES) {
+      props.$group_props = snapshot;
+    }
+  }
+  return JSON.stringify(props);
+}
+
+/** The groups an event names (`props.$groups`), validated. A `$groupidentify` names its own group. */
+function groupsOf(e: WireEvent): Record<string, string> {
+  const out: Record<string, string> = {};
+  const props = (e.props ?? {}) as Record<string, unknown>;
+  const raw = props.$groups;
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    for (const [type, key] of Object.entries(raw as Record<string, unknown>)) {
+      const k = typeof key === 'number' ? String(key) : key;
+      if (GROUP_TYPE.test(type) && typeof k === 'string' && validGroupKey(k)) out[type] = k;
+    }
+  }
+  if (e.event === SYSTEM_EVENTS.groupIdentify) {
+    const type = props.$group_type;
+    const key = typeof props.$group_key === 'number' ? String(props.$group_key) : props.$group_key;
+    if (
+      typeof type === 'string' &&
+      GROUP_TYPE.test(type) &&
+      typeof key === 'string' &&
+      validGroupKey(key)
+    )
+      out[type] = key;
+  }
+  return out;
+}
+
+function validGroupKey(key: string): boolean {
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: rejecting control characters is the point
+  return key.length > 0 && key.length <= 200 && !/[\u0000-\u001f]/.test(key);
 }
 
 /**
@@ -220,7 +387,14 @@ export async function cookielessIds(env: Env, project: string, info: RequestInfo
   };
 }
 
-type WithIds = { e: WireEvent; ts: number; distinct: string; user: string | null; session: string };
+type WithIds = {
+  e: WireEvent;
+  ts: number;
+  distinct: string;
+  user: string | null;
+  session: string;
+  groups: Record<string, string>;
+};
 
 /** Step 4: identify() links and $set / $set_once person updates. */
 async function applyIdentity(ctx: RowContext, events: WithIds[]): Promise<void> {
@@ -291,6 +465,142 @@ export async function upsertPerson(
     .bind(project, personId, JSON.stringify(set), JSON.stringify(setOnce), ts)
     .run();
 }
+
+// ── Groups ─────────────────────────────────────────────────────────────────
+
+const typeCache = new Map<string, { types: Set<string>; until: number }>();
+
+/** Group types the project already has, cached briefly per isolate. */
+export async function groupTypes(db: D1Database, project: string, fresh = false) {
+  const hit = typeCache.get(project);
+  if (!fresh && hit && hit.until > Date.now()) return hit.types;
+  const { results } = await db
+    .prepare('SELECT type FROM group_types WHERE project = ? ORDER BY idx')
+    .bind(project)
+    .all<{ type: string }>();
+  const types = new Set(results.map((r) => r.type));
+  typeCache.set(project, { types, until: Date.now() + 10_000 });
+  return types;
+}
+
+export function clearGroupTypeCache(): void {
+  typeCache.clear();
+}
+
+/** Register new group types (up to five per project). Returns the types events may use. */
+async function registerGroupTypes(ctx: RowContext, events: WithIds[]): Promise<Set<string>> {
+  const seen = new Set(events.flatMap((e) => Object.keys(e.groups)));
+  if (seen.size === 0) return new Set();
+  let types = await groupTypes(ctx.env.DB, ctx.project);
+  const fresh = [...seen].filter((t) => !types.has(t));
+  if (fresh.length > 0 && types.size < MAX_GROUP_TYPES) {
+    const db = ctx.env.DB;
+    await db.batch(
+      fresh.slice(0, MAX_GROUP_TYPES - types.size).map((type) =>
+        db
+          .prepare(
+            `INSERT INTO group_types (project, type, idx, created_at)
+             SELECT ?1, ?2, (SELECT COALESCE(MAX(idx) + 1, 0) FROM group_types WHERE project = ?1), ?3
+             WHERE (SELECT COUNT(*) FROM group_types WHERE project = ?1) < ${MAX_GROUP_TYPES}
+             ON CONFLICT (project, type) DO NOTHING`,
+          )
+          .bind(ctx.project, type, ctx.now),
+      ),
+    );
+    types = await groupTypes(db, ctx.project, true);
+  }
+  return types;
+}
+
+/** `$groupidentify` (glass.group(type, key, props)): set the group's properties. Every seen group gets a row. */
+async function applyGroupIdentify(
+  ctx: RowContext,
+  events: WithIds[],
+  types: Set<string>,
+): Promise<void> {
+  if (types.size === 0) return;
+  const db = ctx.env.DB;
+  const touched = new Map<string, { type: string; key: string; ts: number }>();
+  const statements = [];
+  for (const { e, ts, groups } of events) {
+    for (const [type, key] of Object.entries(groups)) {
+      if (!types.has(type)) continue;
+      const id = `${type}\u0000${key}`;
+      const prev = touched.get(id);
+      if (!prev || prev.ts < ts) touched.set(id, { type, key, ts });
+    }
+    if (e.event !== SYSTEM_EVENTS.groupIdentify) continue;
+    const props = (e.props ?? {}) as Record<string, unknown>;
+    const type = String(props.$group_type ?? '');
+    const key = groups[type];
+    if (!key || !types.has(type)) continue;
+    const set = isObject(props.$group_set) ? props.$group_set : {};
+    const once = isObject(props.$group_set_once) ? props.$group_set_once : {};
+    statements.push(
+      db
+        .prepare(
+          `INSERT INTO groups (project, type, key, props, first_seen, last_seen)
+           VALUES (?1, ?2, ?3, json_patch(json(?5), json(?4)), ?6, ?6)
+           ON CONFLICT (project, type, key) DO UPDATE SET
+             props = json_patch(json_patch(json(?5), groups.props), json(?4)),
+             last_seen = MAX(groups.last_seen, ?6),
+             first_seen = MIN(groups.first_seen, ?6)`,
+        )
+        .bind(ctx.project, type, key, JSON.stringify(set), JSON.stringify(once), ts),
+    );
+  }
+  if (touched.size > 0) {
+    statements.push(
+      db
+        .prepare(
+          `INSERT INTO groups (project, type, key, props, first_seen, last_seen)
+           SELECT ?1, json_extract(value, '$.type'), json_extract(value, '$.key'), '{}',
+             json_extract(value, '$.ts'), json_extract(value, '$.ts')
+           FROM json_each(?2) WHERE true
+           ON CONFLICT (project, type, key) DO UPDATE SET
+             last_seen = MAX(groups.last_seen, excluded.last_seen),
+             first_seen = MIN(groups.first_seen, excluded.first_seen)`,
+        )
+        .bind(ctx.project, JSON.stringify([...touched.values()])),
+    );
+  }
+  if (statements.length) await db.batch(statements);
+}
+
+/** Current properties of every group the batch names, keyed by "type\0key". */
+async function groupProperties(
+  ctx: RowContext,
+  events: WithIds[],
+  types: Set<string>,
+): Promise<Map<string, Record<string, unknown>>> {
+  const out = new Map<string, Record<string, unknown>>();
+  const ids = [
+    ...new Set(
+      events.flatMap((e) =>
+        Object.entries(e.groups)
+          .filter(([type]) => types.has(type))
+          .map(([type, key]) => `${type}\u0000${key}`),
+      ),
+    ),
+  ];
+  if (ids.length === 0) return out;
+  const { results } = await ctx.env.DB.prepare(
+    `SELECT type, key, props FROM groups
+     WHERE project = ?1 AND (type || char(0) || key) IN (SELECT value FROM json_each(?2))`,
+  )
+    .bind(ctx.project, JSON.stringify(ids))
+    .all<{ type: string; key: string; props: string }>();
+  for (const r of results) {
+    try {
+      out.set(`${r.type}\u0000${r.key}`, JSON.parse(r.props) as Record<string, unknown>);
+    } catch {
+      // A malformed row shouldn't stop ingest.
+    }
+  }
+  return out;
+}
+
+// ── People ─────────────────────────────────────────────────────────────────
 
 /** Step 5a: person_id for each (distinct_id, user_id) pair. */
 async function resolvePersons(ctx: RowContext, events: WithIds[]): Promise<Map<string, string>> {

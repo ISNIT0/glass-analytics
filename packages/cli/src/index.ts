@@ -51,7 +51,7 @@ ${color.bold('Set up')}
     --secret <name>                Repo secret with the Cloudflare token (default CLOUDFLARE_API_TOKEN)
   dataflare status               Check the deployment end to end
   dataflare lake maintain        Lake mode: erase queued people, apply retention (CI runs it daily)
-  dataflare key [--read]         Print the dashboard URL and API key
+  dataflare key [--read|--server] Print the dashboard URL and an API key (admin, read-only, or for servers)
 
 ${color.bold('Ask questions')}
   dataflare query web [--from -7d]
@@ -139,6 +139,7 @@ const BOOLEAN_OPTIONS = [
   'allow-downgrade',
   'dry-run',
   'read',
+  'server',
   'sql',
   'errors',
   'enable',
@@ -219,7 +220,11 @@ export async function main(argv: string[]): Promise<void> {
     case 'doctor':
       return status({ json: Boolean(flags.json) });
     case 'key':
-      return key({ read: Boolean(flags.read), json: Boolean(flags.json) });
+      return key({
+        read: Boolean(flags.read),
+        server: Boolean(flags.server),
+        json: Boolean(flags.json),
+      });
     case 'query':
       return query(sub, flags);
     case 'sql':

@@ -332,7 +332,8 @@ export function renderWranglerConfig(config: GlassConfig): string {
       },
     ],
     vars,
-    triggers: { crons: ['17 * * * *'] },
+    // Every five minutes: scheduled flag changes, alerts and exports; hourly housekeeping runs on one tick an hour.
+    triggers: { crons: ['*/5 * * * *'] },
     observability: { enabled: true },
   };
   if (config.replay) {

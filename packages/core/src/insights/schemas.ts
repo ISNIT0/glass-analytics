@@ -45,7 +45,21 @@ const common = {
     .min(-840)
     .max(840)
     .optional()
-    .describe('Shift day/week/month boundaries from UTC, e.g. 60 for UTC+1. Defaults to 0.'),
+    .describe(
+      'Shift day/week/month boundaries by a fixed offset from UTC, e.g. 60 for UTC+1. Prefer timezone, which follows daylight saving.',
+    ),
+  timezone: z
+    .string()
+    .optional()
+    .describe(
+      'IANA time zone for day/week/month boundaries, e.g. "Europe/London" (follows daylight saving). Defaults to the project time zone, else UTC.',
+    ),
+  filterTestAccounts: z
+    .boolean()
+    .optional()
+    .describe(
+      "Leave out internal and test traffic, using the project's internalFilters setting (see get_settings).",
+    ),
 };
 
 const stepSchema = z.object({

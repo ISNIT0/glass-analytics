@@ -6,7 +6,7 @@ import { breakdownExpr, breakdownProperties, filtersSql, propertyNumber } from '
 import { bucketExpr, eventsCte, num, text } from '../sql/source.ts';
 import { bucketsBetween, type Interval, iso, resolveRange } from '../time.ts';
 import type { TrendsSpec } from './schemas.ts';
-import { fmt, type QueryContext, type ResultBase } from './types.ts';
+import { fmt, type QueryContext, type ResultBase, zoneOf } from './types.ts';
 
 export interface TrendsSeries {
   label: string;
@@ -73,7 +73,8 @@ export function compileTrendsSeries(
   const breakdowns = breakdownProperties(spec.breakdown);
   const bd = breakdowns.length ? breakdownExpr(breakdowns, d) : "''";
   const val = series.property ? propertyNumber(series.property, d) : 'NULL';
-  const inner = `SELECT ${bucketExpr(d, 'ts_ms', interval, spec.utcOffsetMinutes)} AS bucket, ${bd} AS bd, pid, session_id, ${val} AS val
+  const zone = zoneOf(spec, ctx, range);
+  const inner = `SELECT ${bucketExpr(d, 'ts_ms', interval, zone)} AS bucket, ${bd} AS bd, pid, session_id, ${val} AS val
     FROM ev WHERE ${filtersSql(series.filters, d)}`;
   const perBucket = `WITH ${cte}
 SELECT bucket, bd, ${aggregate(series)} AS agg
@@ -93,7 +94,7 @@ LIMIT 1000`;
 export async function runTrends(spec: TrendsSpec, ctx: QueryContext): Promise<TrendsResult> {
   const range = resolveRange(spec.from, spec.to, ctx.now);
   const interval = spec.interval ?? 'day';
-  const buckets = bucketsBetween(range, interval, spec.utcOffsetMinutes);
+  const buckets = bucketsBetween(range, interval, zoneOf(spec, ctx, range));
   const index = new Map(buckets.map((b, i) => [b, i]));
   const limit = spec.breakdownLimit ?? 10;
   const sql: string[] = [];

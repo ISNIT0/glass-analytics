@@ -15,7 +15,7 @@
 
 import { apiRouter } from './api.ts';
 import { requireScope } from './auth.ts';
-import { runMaintenance } from './cron.ts';
+import { isHourlyTick, runMaintenance } from './cron.ts';
 import type { Assets, Env } from './env.ts';
 import { handleFlagEvaluation } from './flags.ts';
 import { CORS_HEADERS, errorResponse, HttpError, json } from './http.ts';
@@ -139,12 +139,13 @@ export function createApp(options: AppOptions) {
             headers: { 'Content-Type': 'text/css; charset=utf-8', 'Cache-Control': 'no-cache' },
           });
         case '/mcp': {
-          const scope = requireScope(request, env, 'read');
+          const scope = await requireScope(request, env, 'read');
           return withCors(await handleMcp(request, service, scope));
         }
       }
       if (path === '/api' || path.startsWith('/api/')) {
-        const response = await apiRouter(service, env, request).handle(request, url, path);
+        const router = await apiRouter(service, env, request, now);
+        const response = await router.handle(request, url, path);
         if (response) return withCors(response);
       }
       throw new HttpError(404, `Nothing at ${path}`, `See ${base}/api or ${base}/llms.txt`);
@@ -153,8 +154,11 @@ export function createApp(options: AppOptions) {
     }
   }
 
-  async function scheduled(_controller: unknown, env: Env): Promise<void> {
-    const result = await runMaintenance(env, makeStore(env));
+  async function scheduled(controller: { cron?: string } | undefined, env: Env): Promise<void> {
+    const now = options.now?.() ?? Date.now();
+    const result = await runMaintenance(env, makeStore(env), now, {
+      hourly: isHourlyTick(controller?.cron, now),
+    });
     console.log('[glass] maintenance', JSON.stringify(result));
   }
 

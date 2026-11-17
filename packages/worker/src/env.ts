@@ -74,6 +74,10 @@ export interface Env {
   GLASS_ADMIN_KEY?: string;
   /** Read-only key for agents and shared dashboards. */
   GLASS_READ_KEY?: string;
+  /** Key for backends (import, flag definitions, source maps). Derived from the admin key when unset. */
+  GLASS_SERVER_KEY?: string;
+  /** Key for secrets stored in D1 (destination credentials). Derived from the salt secret when unset. */
+  GLASS_ENCRYPTION_KEY?: string;
   /** Secret used to derive daily-rotating ids in cookieless mode. */
   GLASS_SALT_SECRET?: string;
   /** Public URL of this Worker (for links in agent responses). Inferred from requests when unset. */

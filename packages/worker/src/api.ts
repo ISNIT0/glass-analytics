@@ -6,9 +6,10 @@
 import { experimentSpec, filterSchema, INSIGHTS, sqlSpec } from '@dataflare/core/insights';
 import { GLASS_VERSION } from '@dataflare/core/version';
 import { z } from 'zod/v4';
-import { requireScope, type Scope } from './auth.ts';
+import { authenticate, type Scope } from './auth.ts';
 import type { Env } from './env.ts';
 import { HttpError, json, Router, readJson } from './http.ts';
+import { handleImport } from './ingest.ts';
 import { TOOLS } from './mcp/tools.ts';
 import type { GlassService } from './service.ts';
 
@@ -24,10 +25,54 @@ function params(url: URL): Record<string, unknown> {
   return out;
 }
 
-export function apiRouter(service: GlassService, env: Env, request: Request): Router {
-  const scope: Scope = requireScope(request, env, 'read');
+/** Paths the server key may call (its whole job: imports, flag definitions, source maps). */
+const SERVER_PATHS = [
+  /^\/api\/import\/?$/,
+  /^\/api\/flags\/definitions\/?$/,
+  /^\/api\/sourcemaps(\/|$)/,
+];
+
+export async function apiRouter(
+  service: GlassService,
+  env: Env,
+  request: Request,
+  now = Date.now(),
+): Promise<Router> {
+  if (!env.GLASS_ADMIN_KEY) {
+    throw new HttpError(
+      503,
+      'GLASS_ADMIN_KEY is not set on this Worker',
+      'Run `dataflare upgrade` or set it with `wrangler secret put GLASS_ADMIN_KEY`.',
+    );
+  }
+  const found = await authenticate(request, env);
+  if (!found) {
+    throw new HttpError(
+      401,
+      'Missing or invalid API key',
+      'Send "Authorization: Bearer <key>". Keys are in .glass/credentials.json; run `dataflare key`.',
+    );
+  }
+  const scope: Scope = found;
+  const path = new URL(request.url).pathname.replace(/^\/_glass/, '');
+  if (scope === 'server' && !SERVER_PATHS.some((re) => re.test(path))) {
+    throw new HttpError(
+      403,
+      'The server key only imports events, reads flag definitions and uploads source maps',
+      'Use the read key (`dataflare key --read`) to query, or the admin key to change things.',
+    );
+  }
   const admin = () => {
     if (scope !== 'admin') throw new HttpError(403, 'This action needs the admin key');
+  };
+  /** Server-side writes: the server key or the admin key. */
+  const server = () => {
+    if (scope !== 'admin' && scope !== 'server')
+      throw new HttpError(
+        403,
+        'This action needs the server or admin key',
+        'Run `dataflare key --server`.',
+      );
   };
   const body = () => readJson<Record<string, unknown>>(request);
   const r = new Router();
@@ -98,6 +143,11 @@ export function apiRouter(service: GlassService, env: Env, request: Request): Ro
         'POST /api/experiments': 'Create an experiment (admin)',
         'GET /api/experiments/:key': 'Experiment with results',
         'POST /api/experiments/:key/start|stop|ship': 'Change experiment state (admin)',
+        'POST /api/import':
+          'Import events with their own timestamps (server or admin key): { project, events: [...] }, up to 1,000 per request',
+        'GET /api/settings':
+          'Project settings: time zone, internal-traffic filters, currency, revenue events',
+        'PATCH /api/settings': 'Change project settings (admin)',
         'GET /api/projects': 'Projects',
         'POST /api/projects': 'Create a project (admin)',
         'GET /api/instrument?event=&framework=': 'Tracking code for an event',
@@ -119,6 +169,17 @@ export function apiRouter(service: GlassService, env: Env, request: Request): Ro
       ),
     }),
   );
+
+  r.post('/api/import', async () => {
+    server();
+    return json(await handleImport(request, env, service.store, now));
+  });
+
+  r.get('/api/settings', async ({ url }) => json(await service.getSettings(params(url))));
+  r.patch('/api/settings', async ({ url }) => {
+    admin();
+    return json(await service.updateSettings({ ...params(url), ...(await body()) }));
+  });
 
   r.get('/api/projects', async () => json(await service.listProjects()));
   r.post('/api/projects', async () => {

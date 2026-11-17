@@ -48,6 +48,11 @@ import { propertyText } from '@dataflare/core/sql/filters';
 import { assertReadOnlySql } from '@dataflare/core/sql/guard';
 import { eventsCte, num, text } from '@dataflare/core/sql/source';
 import { DAY_MS, resolveRange } from '@dataflare/core/time';
+import {
+  excludeInternal,
+  type ProjectSettings,
+  projectSettingsSchema,
+} from '@dataflare/core/settings';
 import { estimateUsage } from '@dataflare/core/usage';
 import {
   GLASS_VERSION,
@@ -70,7 +75,14 @@ import { HttpError } from './http.ts';
 import { upsertPerson } from './ingest.ts';
 import { DEFAULT_INSIGHTS } from './insight-defaults.ts';
 import { fetchLatestVersion } from './latest.ts';
-import { createProject, listProjects, resolveProject } from './projects.ts';
+import {
+  createProject,
+  getProject,
+  listProjects,
+  type Project,
+  resolveProject,
+  saveSettings,
+} from './projects.ts';
 import {
   addNote,
   deleteNote,
@@ -477,6 +489,15 @@ export const inputs = {
       .optional()
       .describe('Restrict browser ingest to these origins.'),
   }),
+  getSettings: z.object({ project }),
+  updateSettings: z.object({
+    project,
+    settings: projectSettingsSchema
+      .partial()
+      .describe(
+        'Settings to change; others keep their values. Pass null for a field (e.g. "timezone": null) to clear it.',
+      ),
+  }),
   listInsights: z.object({ project }),
   getInsight: z.object({ project, key: z.string() }),
   saveInsight: z.object({
@@ -503,9 +524,29 @@ export class GlassService {
     this.baseUrl = baseUrl;
   }
 
-  private async context(requested?: string): Promise<QueryContext> {
+  private async context(requested?: string): Promise<QueryContext & { settings: ProjectSettings }> {
     const project = await resolveProject(this.env.DB, requested);
-    return { dialect: this.store.dialect, project, execute: (sql) => this.store.query(sql) };
+    const settings = (await getProject(this.env.DB, project))?.settings ?? {};
+    return {
+      dialect: this.store.dialect,
+      project,
+      execute: (sql) => this.store.query(sql),
+      timezone: settings.timezone,
+      settings,
+    };
+  }
+
+  /**
+   * Apply project-level options to a spec: with `filterTestAccounts`, add filters that leave out
+   * the project's internal traffic (every `filters` list at the top level of the spec).
+   */
+  private withProjectOptions<T extends Record<string, unknown>>(
+    spec: T,
+    settings: ProjectSettings,
+  ): T {
+    if (!spec.filterTestAccounts || !settings.internalFilters?.length) return spec;
+    const exclusions = excludeInternal(settings.internalFilters);
+    return { ...spec, filters: [...((spec.filters as unknown[]) ?? []), ...exclusions] };
   }
 
   /** A link to the same view in the dashboard, included in every response. */
@@ -545,10 +586,11 @@ export class GlassService {
       );
     }
     const def = INSIGHTS[kind as InsightKind];
-    const spec = def.schema.parse(input) as { project?: string };
+    const spec = def.schema.parse(input) as { project?: string } & Record<string, unknown>;
     const ctx = await this.context(spec.project);
     const run = def.run as unknown as (s: unknown, c: QueryContext) => Promise<ResultBase>;
-    const result = await run(await this.resolveCohorts(ctx.project, spec), ctx);
+    const effective = this.withProjectOptions(spec, ctx.settings);
+    const result = await run(await this.resolveCohorts(ctx.project, effective), ctx);
     // Web lives under Reports; trends/funnel/retention stay as ephemeral Insights links.
     const route = kind === 'web' ? 'reports' : `insights/${kind}`;
     return {
@@ -2066,6 +2108,59 @@ WHERE project = ${d.str(project)} AND session_id = ${d.str(row.session_id)} AND 
       project: created,
       summary: `Project "${created.id}" is ready. Use data-project="${created.id}" in the snippet.`,
     };
+  }
+
+  // ── Settings ─────────────────────────────────────────────────────────────
+
+  private settingsView(p: Project) {
+    const s = p.settings;
+    return {
+      project: p.id,
+      settings: s,
+      summary:
+        [
+          `Time zone ${s.timezone ?? 'UTC (default)'}`,
+          s.internalFilters?.length
+            ? `${s.internalFilters.length} internal-traffic filter${s.internalFilters.length === 1 ? '' : 's'} (applied with filterTestAccounts: true)`
+            : 'no internal-traffic filters',
+          `base currency ${s.baseCurrency ?? 'USD (default)'}`,
+          s.revenueEvents?.length
+            ? `revenue from ${s.revenueEvents.map((r) => r.event).join(', ')}`
+            : 'no revenue events',
+        ].join('; ') + '.',
+      dashboard: this.link('settings', { project: p.id }),
+    };
+  }
+
+  async getSettings(input: unknown) {
+    const spec = inputs.getSettings.parse(input);
+    const id = await resolveProject(this.env.DB, spec.project);
+    return this.settingsView((await getProject(this.env.DB, id))!);
+  }
+
+  async updateSettings(input: unknown) {
+    const raw = (input ?? {}) as Record<string, unknown>;
+    // Accept { settings: {...} } or the fields at the top level, and null as "clear".
+    const fields = (raw.settings ??
+      Object.fromEntries(Object.entries(raw).filter(([k]) => k !== 'project'))) as Record<
+      string,
+      unknown
+    >;
+    const cleared = Object.entries(fields)
+      .filter(([, v]) => v === null)
+      .map(([k]) => k);
+    const spec = inputs.updateSettings.parse({
+      project: raw.project,
+      settings: Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== null)),
+    });
+    const id = await resolveProject(this.env.DB, spec.project);
+    const current = (await getProject(this.env.DB, id))!.settings;
+    const next: Record<string, unknown> = { ...current, ...spec.settings };
+    for (const key of cleared) delete next[key];
+    if (typeof next.baseCurrency === 'string') next.baseCurrency = next.baseCurrency.toUpperCase();
+    const saved = await saveSettings(this.env.DB, id, projectSettingsSchema.parse(next));
+    const view = this.settingsView(saved);
+    return { ...view, summary: `Saved. ${view.summary}` };
   }
 
   // ── Saved insights ───────────────────────────────────────────────────────

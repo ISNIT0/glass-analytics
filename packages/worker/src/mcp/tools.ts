@@ -354,6 +354,24 @@ export const TOOLS: ToolDefinition[] = [
     run: (s, a) => s.updateExperiment(a),
   },
   {
+    name: 'get_settings',
+    title: 'Project settings',
+    description:
+      "The project's settings: IANA time zone for reports, internal-traffic filters (used when a query sets filterTestAccounts: true), base currency and revenue events, error tracking options.",
+    input: inputs.getSettings,
+    scope: 'read',
+    run: (s, a) => s.getSettings(a),
+  },
+  {
+    name: 'update_settings',
+    title: 'Change project settings',
+    description:
+      'Change some project settings; the rest keep their values (null clears one). E.g. {"settings":{"timezone":"Europe/London","internalFilters":[{"property":"person.email","op":"contains","value":"@acme.com"}]}}.',
+    input: inputs.updateSettings,
+    scope: 'admin',
+    run: (s, a) => s.updateSettings(a),
+  },
+  {
     name: 'list_projects',
     title: 'List projects',
     description: 'Projects (sites or apps) in this Dataflare install.',

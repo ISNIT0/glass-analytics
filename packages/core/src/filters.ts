@@ -10,6 +10,8 @@
  * | `plan`, `props.plan` | the event property `plan`                        |
  * | `person.plan`      | the person property `plan` at the time of the event |
  * | `props.address.city` | a nested event property                          |
+ * | `group.company`    | the event's group key of type `company`             |
+ * | `group.company.plan` | that group's `plan` property at the time of the event |
  * | `cohort`           | membership of a saved cohort (value: cohort key)    |
  *
  * `cohort` filters use `eq`/`in` ("in any of these cohorts") or `neq`/`not_in`.
@@ -23,7 +25,12 @@ import { FILTERABLE_COLUMNS } from './events.ts';
 export type PropertyRef =
   | { kind: 'column'; column: string }
   | { kind: 'event'; path: string[] }
-  | { kind: 'person'; path: string[] };
+  | { kind: 'person'; path: string[] }
+  /** `group.<type>` (path empty: the group key) or `group.<type>.<prop>`. */
+  | { kind: 'group'; type: string; path: string[] };
+
+/** Prefix for group references: `group.company` (the key) or `group.company.plan`. */
+export const GROUP_PREFIX = 'group.';
 
 export const FILTER_OPS = [
   'eq',
@@ -77,6 +84,10 @@ export function parseProperty(input: string): PropertyRef {
   const raw = input.trim();
   if (!raw) throw new TypeError('Property name cannot be empty');
   if (raw.startsWith('person.')) return { kind: 'person', path: splitPath(raw.slice(7)) };
+  if (raw.startsWith(GROUP_PREFIX)) {
+    const [type, ...path] = splitPath(raw.slice(GROUP_PREFIX.length));
+    return { kind: 'group', type: type!, path };
+  }
   if (raw.startsWith('props.')) return { kind: 'event', path: splitPath(raw.slice(6)) };
   if (FILTERABLE_COLUMNS.has(raw)) return { kind: 'column', column: raw };
   return { kind: 'event', path: splitPath(raw) };
@@ -93,6 +104,12 @@ export interface EvaluationContext {
   distinct_id: string;
   user_id?: string | null;
   person?: Record<string, unknown>;
+  /** Group type → key, as sent with `glass.group()`. */
+  groups?: Record<string, string>;
+  /** Group type → that group's properties. */
+  groupProps?: Record<string, Record<string, unknown>>;
+  /** Saved cohorts the person belongs to (keys), for cohort conditions. */
+  cohorts?: readonly string[];
   country?: string;
   device?: string;
   browser?: string;
@@ -105,6 +122,15 @@ export interface EvaluationContext {
 
 function lookup(ctx: EvaluationContext, ref: PropertyRef): unknown {
   if (ref.kind === 'column') return ctx[ref.column];
+  if (ref.kind === 'group') {
+    if (ref.path.length === 0) return ctx.groups?.[ref.type];
+    let value: unknown = ctx.groupProps?.[ref.type];
+    for (const key of ref.path) {
+      if (value === null || typeof value !== 'object') return undefined;
+      value = (value as Record<string, unknown>)[key];
+    }
+    return value;
+  }
   // Flags have no event properties; `plan` and `person.plan` both mean the person property.
   let value: unknown = ctx.person;
   for (const key of ref.path) {
@@ -124,6 +150,10 @@ const asText = (v: unknown): string | null =>
 /** Evaluate a filter in JavaScript. Mirrors the SQL semantics in `sql/filters.ts`. */
 export function matchFilter(filter: Filter, ctx: EvaluationContext): boolean {
   const op = filter.op ?? 'eq';
+  if (filter.property === COHORT_PROPERTY) {
+    const member = toList(filter.value).some((key) => ctx.cohorts?.includes(key) ?? false);
+    return op === 'neq' || op === 'not_in' ? !member : member;
+  }
   const actual = lookup(ctx, parseProperty(filter.property));
   const text = asText(actual);
   const value = filter.value;

@@ -1,7 +1,13 @@
 /**
- * Hourly housekeeping (Cron Trigger): data retention for events and replays,
- * and summaries of sessions that have finished (for replay search and
- * analysis; see `GlassService.summariseSettled`).
+ * Scheduled work (one Cron Trigger, every five minutes).
+ *
+ * Every tick runs the registered `FREQUENT_TASKS` (scheduled flag changes, error alerts,
+ * batch exports, delivery retries…). Once an hour it also does housekeeping: data
+ * retention for events and replays, erasures, and summaries of sessions that have
+ * finished (for replay search and analysis; see `GlassService.summariseSettled`).
+ *
+ * Deployments from before the five-minute trigger run once an hour ("17 * * * *"); every
+ * tick of theirs is an hourly tick.
  */
 
 import { DAY_MS } from '@dataflare/core/time';
@@ -25,17 +31,50 @@ const RETENTION_SLICES_PER_RUN = 4;
 const LEGACY_MOVES_PER_RUN = 50;
 const SETTLED_MS = 30 * 60_000;
 
-export async function runMaintenance(
-  env: Env,
-  store: EventStore,
-  now = Date.now(),
-): Promise<{
+/** The Cron Trigger every deployment gets (see renderWranglerConfig in the CLI). */
+export const CRON_SCHEDULE = '*/5 * * * *';
+
+/** Whether this tick should also run the hourly housekeeping. */
+export function isHourlyTick(cron: string | undefined, now: number): boolean {
+  // Unknown or legacy hourly schedules: every tick is the hourly one.
+  if (cron !== CRON_SCHEDULE) return true;
+  const minute = new Date(now).getUTCMinutes();
+  return minute >= 15 && minute < 20;
+}
+
+/** Work that runs on every tick. Later features register here; each returns a count for the log. */
+export type FrequentTask = (env: Env, store: EventStore, now: number) => Promise<number>;
+export const FREQUENT_TASKS: { name: string; run: FrequentTask }[] = [];
+
+export interface MaintenanceResult {
   events: number;
   replays: number;
   summarised: number;
   erased: number;
   legacyMoved: number;
-}> {
+  hourly: boolean;
+  tasks: Record<string, number | string>;
+}
+
+export async function runMaintenance(
+  env: Env,
+  store: EventStore,
+  now = Date.now(),
+  options: { hourly?: boolean } = {},
+): Promise<MaintenanceResult> {
+  const hourly = options.hourly ?? true;
+  const tasks: Record<string, number | string> = {};
+  for (const task of FREQUENT_TASKS) {
+    // One failing task must not stop the others (or the hourly housekeeping).
+    try {
+      tasks[task.name] = await task.run(env, store, now);
+    } catch (err) {
+      tasks[task.name] = `error: ${err instanceof Error ? err.message : String(err)}`;
+    }
+  }
+  if (!hourly) {
+    return { events: 0, replays: 0, summarised: 0, erased: 0, legacyMoved: 0, hourly, tasks };
+  }
   let events = 0;
   let replays = 0;
   // Erasures someone asked for come before routine retention.
@@ -84,5 +123,7 @@ export async function runMaintenance(
     summarised,
     erased: erasures.completed,
     legacyMoved: legacy.moved,
+    hourly,
+    tasks,
   };
 }
