@@ -4,3 +4,8 @@ packages:
 
 ignoredBuiltDependencies:
   - esbuild
+
+# minimatch < 11.0.1 has a ReDoS advisory (GHSA-g3hv-75wg-m249); only @stryker-mutator/core
+# (dev) pulls it in. Drop this once Stryker depends on a patched version.
+overrides:
+  minimatch@<11.0.1: 11.0.1
