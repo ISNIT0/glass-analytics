@@ -30,7 +30,7 @@ import {
   actorSelection,
   aggregationOf,
 } from '@dataflare/core/insights/actors';
-import { runExperiment } from '@dataflare/core/insights/experiment';
+import { planExperiment, runExperiment } from '@dataflare/core/insights/experiment';
 import {
   type EventRole,
   type KeyEvent,
@@ -40,6 +40,7 @@ import {
   SOURCE_DIMENSIONS,
   type SourceDimension,
 } from '@dataflare/core/insights/report';
+import { experimentOptions, metricSchema } from '@dataflare/core/insights/schemas';
 import { runSites } from '@dataflare/core/insights/sites';
 import type { QueryContext, ResultBase } from '@dataflare/core/insights/types';
 import { runWeb } from '@dataflare/core/insights/web';
@@ -88,9 +89,17 @@ import { continueErasure, ERASURE_SLICES_PER_REQUEST, startErasure } from './era
 import {
   type CreateExperimentInput,
   createExperiment,
+  deleteHoldout,
+  duplicateExperiment,
+  type Experiment,
+  experimentsUsingHoldout,
   getExperiment,
+  getHoldout,
   listExperiments,
+  listHoldouts,
+  saveHoldout,
   transitionExperiment,
+  updateExperimentDefinition,
 } from './experiments.ts';
 import {
   cancelFlagSchedule,
@@ -613,23 +622,141 @@ export const inputs = {
       .describe(
         'Existing multivariate flag to use. Default: a new flag named after the experiment with control/test 50/50.',
       ),
-    goal: z.object({
-      event: z.string(),
-      filters: z.array(filterSchema).optional(),
-      value: z.string().optional(),
-    }),
+    goal: z
+      .object({
+        event: z.string(),
+        filters: z.array(filterSchema).optional(),
+        value: z.string().optional(),
+      })
+      .optional()
+      .describe('Simple form: a conversion event (and optional value property, e.g. revenue).'),
+    metrics: z
+      .array(metricSchema)
+      .max(10)
+      .optional()
+      .describe(
+        'Primary metrics (the first decides): conversion, mean (count or sum per person, winsorised), ratio, funnel, retention.',
+      ),
     secondary: z
-      .array(z.object({ event: z.string(), filters: z.array(filterSchema).optional() }))
-      .optional(),
+      .array(
+        z.union([
+          metricSchema,
+          z.object({ event: z.string(), filters: z.array(filterSchema).optional() }),
+        ]),
+      )
+      .optional()
+      .describe(
+        'Secondary metrics, reported but not deciding (guardrails such as errors or refunds).',
+      ),
     hypothesis: z.string().optional(),
     variants: z.array(z.object({ key: z.string(), weight: z.number().min(0) })).optional(),
+    holdout: z
+      .string()
+      .optional()
+      .describe('A holdout (save_holdout) to keep people out of this experiment.'),
+    transforms: z
+      .record(
+        z.string(),
+        z.array(
+          z.object({
+            selector: z.string().describe('CSS selector, e.g. "#hero h1".'),
+            text: z.string().optional(),
+            html: z.string().optional(),
+            css: z.string().optional().describe('Inline style to add, e.g. "background:#e00".'),
+            attributes: z.record(z.string(), z.string()).optional(),
+            hide: z.boolean().optional(),
+          }),
+        ),
+      )
+      .optional()
+      .describe(
+        'Web experiment: page changes per variant key, applied by the browser SDK with no code change, e.g. {"test":[{"selector":"#hero h1","text":"Ship faster"}]}.',
+      ),
+    ...experimentOptions,
+    filterTestAccounts: z
+      .boolean()
+      .optional()
+      .describe('Leave internal traffic out of the results.'),
+  }),
+  editExperiment: z.object({
+    project,
+    key: z.string(),
+    metrics: z.array(metricSchema).max(10).optional(),
+    secondary: z.array(metricSchema).max(20).optional(),
+    hypothesis: z.string().optional(),
+    holdout: z.string().nullable().optional(),
+    ...experimentOptions,
+    filterTestAccounts: z.boolean().optional(),
   }),
   experimentKey: z.object({ project, key: z.string() }),
+  listExperiments: z.object({
+    project,
+    include_archived: z.boolean().optional().describe('Also list archived experiments.'),
+  }),
   updateExperiment: z.object({
     project,
     key: z.string(),
-    action: z.enum(['start', 'stop', 'ship']),
+    action: z
+      .enum(['start', 'pause', 'resume', 'stop', 'ship', 'reset', 'archive', 'unarchive'])
+      .describe(
+        '"start" enables the flag; "pause" switches it off for everyone (results kept), "resume" switches it back on; "stop" freezes results; "ship" gives everyone the chosen variant; "reset" goes back to draft and starts counting afresh at the next start; "archive" hides it.',
+      ),
     variant: z.string().optional().describe('Required for "ship": the variant everyone gets.'),
+  }),
+  duplicateExperiment: z.object({
+    project,
+    key: z.string(),
+    newKey: z.string().describe('Key of the copy (also its new flag).'),
+  }),
+  saveHoldout: z.object({
+    project,
+    key: z.string().describe('e.g. "q1-holdout".'),
+    name: z.string().optional(),
+    description: z.string().optional(),
+    percentage: z
+      .number()
+      .min(0)
+      .max(50)
+      .describe('Share of people kept out of every experiment using it, e.g. 10.'),
+  }),
+  holdoutKey: z.object({ project, key: z.string() }),
+  holdoutResults: z.object({
+    project,
+    key: z.string(),
+    metrics: z
+      .array(metricSchema)
+      .max(10)
+      .optional()
+      .describe('Default: the first metric of each experiment using it.'),
+    from: z
+      .union([z.string(), z.number()])
+      .optional()
+      .describe('Default: when the holdout was created.'),
+  }),
+  planExperiment: z.object({
+    project,
+    metric: metricSchema.describe('The metric to detect a change in.'),
+    traffic: z
+      .object({ event: z.string(), filters: z.array(filterSchema).optional() })
+      .optional()
+      .describe('Who could be in the experiment: people doing this event. Default $pageview.'),
+    variants: z.number().int().min(2).max(10).optional(),
+    mde: z
+      .number()
+      .min(0.001)
+      .max(10)
+      .optional()
+      .describe('Smallest relative change worth detecting. Default 0.1.'),
+    confidence: z.union([z.literal(0.9), z.literal(0.95), z.literal(0.99)]).optional(),
+    exposurePercentage: z
+      .number()
+      .min(1)
+      .max(100)
+      .optional()
+      .describe('Share of that traffic in the experiment. Default 100.'),
+    lookback: z.string().optional().describe('History to base it on. Default "-14d".'),
+    minimumDays: z.number().min(0).optional(),
+    aggregateBy: z.string().optional(),
   }),
   createProject: z.object({
     id: z.string().describe('Lowercase id, e.g. "acme-web".'),
@@ -2782,8 +2909,9 @@ WHERE project = ${d.str(project)} AND session_id = ${d.str(row.session_id)} AND 
   // ── Experiments ──────────────────────────────────────────────────────────
 
   async listExperiments(input: unknown) {
-    const ctx = await this.context(z.object({ project }).parse(input).project);
-    const experiments = await listExperiments(this.env.DB, ctx.project);
+    const spec = inputs.listExperiments.parse(input);
+    const ctx = await this.context(spec.project);
+    const experiments = await listExperiments(this.env.DB, ctx.project, spec.include_archived);
     return {
       project: ctx.project,
       experiments,
@@ -2795,43 +2923,88 @@ WHERE project = ${d.str(project)} AND session_id = ${d.str(row.session_id)} AND 
   async createExperiment(input: unknown) {
     const spec = inputs.createExperiment.parse(input);
     const ctx = await this.context(spec.project);
+    const { project: _, ...rest } = spec;
     const experiment = await createExperiment(
       this.env.DB,
       ctx.project,
-      spec as CreateExperimentInput,
+      rest as CreateExperimentInput,
+      this.actor,
     );
     return {
       project: ctx.project,
       experiment,
-      summary: `Created experiment "${experiment.key}" on flag "${experiment.flag}" (draft). In code, branch on glass.flag("${experiment.flag}") — it records exposures — then start it with update_experiment.`,
+      summary: `Created experiment "${experiment.key}" on flag "${experiment.flag}" (draft)${spec.transforms ? ', a web experiment: the browser SDK applies each variant’s page changes' : ''}. In code, branch on glass.flag("${experiment.flag}") — it records exposures — then start it with update_experiment.`,
       dashboard: this.link(`experiments/${experiment.key}`, { project: ctx.project }),
     };
+  }
+
+  async editExperiment(input: unknown) {
+    const spec = inputs.editExperiment.parse(input);
+    const ctx = await this.context(spec.project);
+    const { project: _, key, ...changes } = spec;
+    const experiment = await updateExperimentDefinition(
+      this.env.DB,
+      ctx.project,
+      key,
+      changes as Parameters<typeof updateExperimentDefinition>[3],
+      this.actor,
+    );
+    return { project: ctx.project, experiment, summary: `Updated experiment "${key}".` };
+  }
+
+  /** The readout spec for a stored experiment: its metrics and options, over its run so far. */
+  private async experimentSpecFor(
+    project: string,
+    experiment: Experiment,
+    settings: ProjectSettings,
+  ) {
+    const flag = await getFlag(this.env.DB, project, experiment.flag);
+    const weights = Object.fromEntries((flag?.variants ?? []).map((v) => [v.key, v.weight]));
+    // Ten minutes of slack absorbs client clock correction around the start time.
+    const from = (experiment.startedAt ?? experiment.createdAt) - 10 * 60_000;
+    const bucketBy = flag?.bucketBy;
+    const groupType =
+      bucketBy && bucketBy !== 'device' && bucketBy !== 'person' ? bucketBy : undefined;
+    const filters =
+      experiment.filterTestAccounts && settings.internalFilters?.length
+        ? excludeInternal(settings.internalFilters)
+        : undefined;
+    const spec = experimentSpec.parse({
+      project,
+      flag: experiment.flag,
+      ...(experiment.goal ? { goal: experiment.goal } : {}),
+      ...(experiment.metrics.length ? { metrics: experiment.metrics } : {}),
+      ...(experiment.secondary.length ? { secondary: experiment.secondary } : {}),
+      variants: flag?.variants?.map((v) => v.key),
+      from,
+      to: experiment.endedAt ?? 'now',
+      ...(filters ? { filters } : {}),
+      ...(experiment.engine ? { engine: experiment.engine } : {}),
+      ...(experiment.confidence ? { confidence: experiment.confidence } : {}),
+      ...(experiment.exposure ? { exposure: experiment.exposure } : {}),
+      ...(experiment.minimumDays !== undefined ? { minimumDays: experiment.minimumDays } : {}),
+      ...(experiment.minimumExposures !== undefined
+        ? { minimumExposures: experiment.minimumExposures }
+        : {}),
+      ...(experiment.mde !== undefined ? { mde: experiment.mde } : {}),
+      ...(groupType ? { aggregateBy: groupType } : {}),
+    });
+    return { spec, weights };
   }
 
   async experimentResults(input: unknown) {
     const spec = inputs.experimentKey.parse(input);
     const ctx = await this.context(spec.project);
     const experiment = await getExperiment(this.env.DB, ctx.project, spec.key);
-    const flag = await getFlag(this.env.DB, ctx.project, experiment.flag);
-    const weights = Object.fromEntries((flag?.variants ?? []).map((v) => [v.key, v.weight]));
-    // Ten minutes of slack absorbs client clock correction around the start time.
-    const from = (experiment.startedAt ?? experiment.createdAt) - 10 * 60_000;
-    const results = await runExperiment(
-      experimentSpec.parse({
-        project: ctx.project,
-        flag: experiment.flag,
-        goal: experiment.goal,
-        variants: flag?.variants?.map((v) => v.key),
-        from,
-        to: experiment.endedAt ?? 'now',
-      }),
-      {
-        dialect: this.store.dialect,
-        project: ctx.project,
-        execute: (sql) => this.store.query(sql),
-      },
-      { weights },
+    const { spec: readout, weights } = await this.experimentSpecFor(
+      ctx.project,
+      experiment,
+      ctx.settings,
     );
+    const results = await runExperiment(await this.resolveCohorts(ctx.project, readout), ctx, {
+      weights,
+      startedAt: experiment.startedAt,
+    });
     return {
       project: ctx.project,
       experiment,
@@ -2850,15 +3023,135 @@ WHERE project = ${d.str(project)} AND session_id = ${d.str(row.session_id)} AND 
       spec.key,
       spec.action,
       spec.variant,
+      this.actor,
     );
-    const verb = { start: 'Started', stop: 'Stopped', ship: `Shipped "${spec.variant}" for` }[
-      spec.action
-    ];
+    const verb = {
+      start: 'Started',
+      pause: 'Paused',
+      resume: 'Resumed',
+      stop: 'Stopped',
+      ship: `Shipped "${spec.variant}" for`,
+      reset: 'Reset',
+      archive: 'Archived',
+      unarchive: 'Unarchived',
+    }[spec.action];
     return {
       project: ctx.project,
       experiment,
       flag,
       summary: `${verb} experiment "${spec.key}". Flag "${flag.key}" is now ${flag.enabled ? 'on' : 'off'}.`,
+    };
+  }
+
+  async duplicateExperiment(input: unknown) {
+    const spec = inputs.duplicateExperiment.parse(input);
+    const ctx = await this.context(spec.project);
+    const experiment = await duplicateExperiment(
+      this.env.DB,
+      ctx.project,
+      spec.key,
+      spec.newKey,
+      this.actor,
+    );
+    return {
+      project: ctx.project,
+      experiment,
+      summary: `Copied "${spec.key}" as "${spec.newKey}" (draft, on a new flag "${experiment.flag}").`,
+      dashboard: this.link(`experiments/${experiment.key}`, { project: ctx.project }),
+    };
+  }
+
+  /** How long an experiment would need to detect a change in a metric. */
+  async planExperiment(input: unknown) {
+    const spec = inputs.planExperiment.parse(input);
+    const ctx = await this.context(spec.project);
+    const plan = await planExperiment(
+      await this.resolveCohorts(ctx.project, spec as Parameters<typeof planExperiment>[0]),
+      ctx,
+    );
+    return { project: ctx.project, ...plan };
+  }
+
+  // ── Holdouts ─────────────────────────────────────────────────────────────
+
+  async listHoldouts(input: unknown) {
+    const ctx = await this.context(z.object({ project }).parse(input).project);
+    const holdouts = await listHoldouts(this.env.DB, ctx.project);
+    const out = [];
+    for (const h of holdouts) {
+      const using = await experimentsUsingHoldout(this.env.DB, ctx.project, h.key);
+      out.push({ ...h, experiments: using.map((e) => ({ key: e.key, status: e.status })) });
+    }
+    return {
+      project: ctx.project,
+      holdouts: out,
+      summary: out.length
+        ? out
+            .map(
+              (h) =>
+                `${h.name}: ${h.percentage}% held out of ${h.experiments.length} experiment${h.experiments.length === 1 ? '' : 's'}`,
+            )
+            .join('; ') + '.'
+        : 'No holdouts. Create one with save_holdout, then pass holdout when creating experiments.',
+    };
+  }
+
+  async saveHoldout(input: unknown) {
+    const spec = inputs.saveHoldout.parse(input);
+    const ctx = await this.context(spec.project);
+    const holdout = await saveHoldout(this.env.DB, ctx.project, spec, this.actor);
+    return {
+      project: ctx.project,
+      holdout,
+      summary: `Holdout "${holdout.name}" keeps ${holdout.percentage}% of people out of the experiments that use it; they get the value "holdout" (treat it as the default experience).`,
+    };
+  }
+
+  async deleteHoldout(input: unknown) {
+    const spec = inputs.holdoutKey.parse(input);
+    const ctx = await this.context(spec.project);
+    await deleteHoldout(this.env.DB, ctx.project, spec.key);
+    return { project: ctx.project, deleted: spec.key, summary: `Deleted holdout "${spec.key}".` };
+  }
+
+  /** The combined effect of a holdout's experiments: everyone exposed vs the people held out. */
+  async holdoutResults(input: unknown) {
+    const spec = inputs.holdoutResults.parse(input);
+    const ctx = await this.context(spec.project);
+    const holdout = await getHoldout(this.env.DB, ctx.project, spec.key);
+    const experiments = await experimentsUsingHoldout(this.env.DB, ctx.project, spec.key);
+    if (!experiments.length)
+      throw new HttpError(400, `No experiments use holdout "${spec.key}" yet`);
+    const metrics =
+      spec.metrics ??
+      experiments.flatMap((e) => {
+        if (e.metrics[0]) return [e.metrics[0]];
+        return e.goal
+          ? [{ kind: 'conversion' as const, event: e.goal.event, filters: e.goal.filters as never }]
+          : [];
+      });
+    const readout = {
+      ...experimentSpec.parse({
+        project: ctx.project,
+        flag: experiments[0]!.flag,
+        metrics: metrics.slice(0, 10),
+        // Ten minutes of slack absorbs client clock correction, as for experiments.
+        from: spec.from ?? holdout.createdAt - 10 * 60_000,
+        minimumDays: 0,
+        minimumExposures: 0,
+      }),
+      holdoutFlags: experiments.map((e) => e.flag),
+    };
+    const results = await runExperiment(readout as never, ctx, {
+      weights: { holdout: holdout.percentage, experiments: 100 - holdout.percentage },
+      timeline: false,
+    });
+    return {
+      project: ctx.project,
+      holdout,
+      experiments: experiments.map((e) => ({ key: e.key, status: e.status })),
+      results,
+      summary: `Holdout "${holdout.name}" (control) vs everyone in ${experiments.length} experiment${experiments.length === 1 ? '' : 's'}: ${results.summary}`,
     };
   }
 

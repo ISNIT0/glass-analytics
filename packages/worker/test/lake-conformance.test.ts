@@ -446,6 +446,12 @@ const READS: [string, string, unknown?][] = [
   ['POST', '/api/reports/sources?from=-7d'],
   ['POST', '/api/reports/health?from=-7d'],
   ['GET', '/api/experiments/checkout-v2'],
+  ['GET', '/api/experiments/checkout-metrics'],
+  [
+    'POST',
+    '/api/experiments/plan',
+    { metric: { kind: 'conversion', event: 'signup_completed' }, lookback: '-7d', mde: 0.2 },
+  ],
 ];
 
 /** Fields that legitimately differ by store: generated SQL, links, store names and freshness notes. */
@@ -544,6 +550,37 @@ function conformance(name: string, split: boolean) {
           body: { key: 'checkout-v2', goal: { event: 'purchase' } },
         });
         await app.json('POST', '/api/experiments/checkout-v2/start');
+        await app.json('POST', '/api/experiments', {
+          body: {
+            key: 'checkout-metrics',
+            flag: 'checkout-v2',
+            metrics: [
+              {
+                kind: 'mean',
+                event: 'purchase',
+                math: 'sum',
+                property: 'value',
+                winsorize: { upper: 95 },
+              },
+              {
+                kind: 'ratio',
+                numerator: { event: 'purchase', math: 'sum', property: 'value' },
+                denominator: { event: '$pageview' },
+              },
+              {
+                kind: 'funnel',
+                steps: [{ event: '$pageview' }, { event: 'purchase' }],
+                window: '1d',
+              },
+              { kind: 'retention', event: '$pageview', from: '1h', to: '2h' },
+            ],
+            secondary: [{ kind: 'conversion', event: 'signup_completed', within: '1d' }],
+            engine: 'frequentist',
+            minimumDays: 0,
+            minimumExposures: 0,
+          },
+        });
+        await app.json('POST', '/api/experiments/checkout-metrics/start');
         await app.json('POST', '/api/cohorts', {
           body: {
             key: 'engaged',

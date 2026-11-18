@@ -122,7 +122,16 @@ export interface ExperimentResult extends ResultBase {
   estimatedDaysToSignificance: number | null;
 }
 
-type Spec = ExperimentSpec & { startedAt?: number };
+type Spec = ExperimentSpec & {
+  startedAt?: number;
+  /**
+   * Holdout results: compare people in a holdout ("holdout") with everyone exposed to any of
+   * these flags otherwise ("experiments").
+   */
+  holdoutFlags?: string[];
+  /** Planning: everyone doing the exposure event counts as one group ("all"). */
+  baseline?: boolean;
+};
 
 const FLAG_VARIANT = (d: QueryContext['dialect'], flag: string) => d.jsonText('ev.flags', [flag]);
 
@@ -215,14 +224,20 @@ function exposureHead(
     filters: spec.filters as Filter[] | undefined,
     aggregation,
   });
-  const variant =
-    exposureEvent === SYSTEM_EVENTS.exposure && !spec.exposure?.event
-      ? d.jsonText('ev.props', ['variant'])
-      : FLAG_VARIANT(d, spec.flag);
-  const exposureCond =
-    exposureEvent === SYSTEM_EVENTS.exposure && !spec.exposure?.event
-      ? `ev.event = ${d.str(SYSTEM_EVENTS.exposure)} AND ${d.jsonText('ev.props', ['flag'])} = ${d.str(spec.flag)}`
-      : `ev.event = ${d.str(exposureEvent)}`;
+  const viaExposure = exposureEvent === SYSTEM_EVENTS.exposure && !spec.exposure?.event;
+  const flagProp = d.jsonText('ev.props', ['flag']);
+  const variantProp = d.jsonText('ev.props', ['variant']);
+  let variant = viaExposure ? variantProp : FLAG_VARIANT(d, spec.flag);
+  let exposureCond = viaExposure
+    ? `ev.event = ${d.str(SYSTEM_EVENTS.exposure)} AND ${flagProp} = ${d.str(spec.flag)}`
+    : `ev.event = ${d.str(exposureEvent)}`;
+  if (spec.holdoutFlags) {
+    exposureCond = `ev.event = ${d.str(SYSTEM_EVENTS.exposure)} AND ${flagProp} IN (${spec.holdoutFlags.map((f) => d.str(f)).join(', ')})`;
+    variant = `(CASE WHEN ${variantProp} = 'holdout' THEN 'holdout' WHEN ${variantProp} IS NULL OR ${variantProp} = '' THEN NULL ELSE 'experiments' END)`;
+  } else if (spec.baseline) {
+    exposureCond = `${exposureEvent === '*' ? '1 = 1' : `ev.event = ${d.str(exposureEvent)}`}`;
+    variant = "'all'";
+  }
   const firstSeen = spec.exposure?.multipleVariants === 'first_seen';
   const sql = `WITH ${cte},
 xr AS (
@@ -387,7 +402,12 @@ vals AS (SELECT xe.actor, xe.t0, xe.variant, COALESCE(mv.v, 0) AS v FROM xe LEFT
       const lower = m.winsorize.lower !== undefined ? quantile(m.winsorize.lower / 100) : null;
       const upper = m.winsorize.upper !== undefined ? quantile(m.winsorize.upper / 100) : null;
       winsorized = { lower, upper };
-      value = `(CASE${lower !== null ? ` WHEN v < ${d.num(lower)} THEN ${d.num(lower)}` : ''}${upper !== null ? ` WHEN v > ${d.num(upper)} THEN ${d.num(upper)}` : ''} ELSE v END)`;
+      // No values yet means nothing to clamp.
+      const clamps = [
+        ...(lower !== null ? [`WHEN v < ${d.num(lower)} THEN ${d.num(lower)}`] : []),
+        ...(upper !== null ? [`WHEN v > ${d.num(upper)} THEN ${d.num(upper)}`] : []),
+      ];
+      if (clamps.length) value = `(CASE ${clamps.join(' ')} ELSE v END)`;
     }
     const q = `${base}
 SELECT variant, COUNT(*) AS n, SUM(${value}) AS a, SUM(${value} * ${value}) AS b FROM vals GROUP BY variant`;
@@ -598,11 +618,15 @@ export async function runExperiment(
 SELECT variant, COUNT(*) AS exposures, MIN(t0) AS first_exposure, (SELECT COUNT(*) FROM x WHERE nv > 1) AS multi FROM xe GROUP BY variant`;
   sql.push(exposureQuery);
   const exposureRows = await ctx.execute(exposureQuery);
-  const seen = exposureRows.map((r) => text(r.variant)).filter((v) => v !== 'holdout');
-  const order = spec.variants ?? [
-    ...(seen.includes('control') ? ['control'] : []),
-    ...seen.filter((v) => v !== 'control').sort(),
-  ];
+  const seen = exposureRows
+    .map((r) => text(r.variant))
+    .filter((v) => spec.holdoutFlags || v !== 'holdout');
+  const order = spec.holdoutFlags
+    ? ['holdout', 'experiments']
+    : (spec.variants ?? [
+        ...(seen.includes('control') ? ['control'] : []),
+        ...seen.filter((v) => v !== 'control').sort(),
+      ]);
   const exposuresOf = new Map(exposureRows.map((r) => [text(r.variant), num(r.exposures)]));
   const excluded = num(exposureRows[0]?.multi);
   const firstExposure = Math.min(
@@ -671,7 +695,7 @@ SELECT variant, COUNT(*) AS exposures, MIN(t0) AS first_exposure, (SELECT COUNT(
   }
 
   // The original shape: conversion on the first rate metric (and the mean of a goal value).
-  const rate = metrics.find((r, i) => isRate(all[i]!)) ?? null;
+  const rate = metrics.find((_, i) => isRate(all[i]!)) ?? null;
   const meanMetric = spec.goal?.value ? metrics.find((r) => r.kind === 'mean') : undefined;
   const variants: VariantResult[] = order.map((v, i) => {
     const r = rate?.variants[i];
@@ -749,5 +773,108 @@ SELECT variant, COUNT(*) AS exposures, MIN(t0) AS first_exposure, (SELECT COUNT(
       totalExposures === 0
         ? `No exposures to "${spec.flag}" yet.`
         : `${fmt(totalExposures)} ${actorNoun(aggregation, totalExposures)} exposed over ${daysRunning.toFixed(1)} days. ${decider.name}: ${lines.join('; ')}. ${verdict}${secondaryNotes.length ? ` Secondary: ${secondaryNotes.join('; ')}.` : ''}`,
+  };
+}
+
+// ── Planning ─────────────────────────────────────────────────────────────────
+
+export interface ExperimentPlan {
+  kind: 'experiment_plan';
+  metric: string;
+  /** The metric's current value among people doing the traffic event (rate, mean or ratio). */
+  baseline: number;
+  /** Standard deviation per person, for means and ratios. */
+  standardDeviation: number | null;
+  mde: number;
+  confidence: number;
+  variants: number;
+  /** People needed in each variant. */
+  perVariant: number | null;
+  /** New people reaching the experiment per day (from the look-back). */
+  peoplePerDay: number;
+  /** Days to reach the sample size, and never fewer than the minimum runtime. */
+  days: number | null;
+  sql: string[];
+  range: { from: string; to: string };
+  summary: string;
+}
+
+/**
+ * How long an experiment needs: the metric's baseline among recent traffic, the sample size per
+ * variant to detect `mde`, and the days that takes at the recent rate of new people.
+ */
+export async function planExperiment(
+  input: {
+    metric: ExperimentMetric;
+    traffic?: { event: string; filters?: Filter[] };
+    variants?: number;
+    mde?: number;
+    confidence?: 0.9 | 0.95 | 0.99;
+    exposurePercentage?: number;
+    lookback?: string;
+    minimumDays?: number;
+    aggregateBy?: string;
+    filters?: Filter[];
+  },
+  ctx: QueryContext,
+): Promise<ExperimentPlan> {
+  const now = ctx.now ?? Date.now();
+  const lookback = input.lookback ?? '-14d';
+  const range = resolveRange(lookback, 'now', now);
+  const days = Math.max(1, (range.to - range.from) / DAY_MS);
+  const traffic = input.traffic ?? { event: SYSTEM_EVENTS.pageview };
+  const spec: Spec = {
+    flag: '$plan',
+    metrics: [input.metric],
+    exposure: { event: traffic.event, filters: traffic.filters },
+    baseline: true,
+    aggregateBy: input.aggregateBy,
+    filters: input.filters,
+    from: range.from,
+    to: range.to,
+  } as Spec;
+  const head = exposureHead(spec, ctx, range, [input.metric]);
+  const sql: string[] = [];
+  const countQuery = `${head.sql}\nSELECT COUNT(*) AS n FROM xe`;
+  sql.push(countQuery);
+  const people = num((await ctx.execute(countQuery))[0]?.n);
+  const measured = await measure(input.metric, head, ctx, sql, now);
+  const stats = measured.stats[0] ?? { variant: 'all', n: 0, a: 0, b: 0, c: 0, dd: 0, e: 0 };
+  const e = estimate(input.metric, stats);
+  const mde = input.mde ?? 0.1;
+  const confidence = input.confidence ?? 0.95;
+  const variants = input.variants ?? 2;
+  const sd = isRate(input.metric) ? null : e.se * Math.sqrt(Math.max(1, stats.n));
+  const perVariant = stats.n
+    ? isRate(input.metric)
+      ? sampleSizeForRate(e.value, mde, confidence)
+      : sampleSizeForMean(e.value, sd ?? 0, mde, confidence)
+    : Number.POSITIVE_INFINITY;
+  const share = Math.min(100, Math.max(1, input.exposurePercentage ?? 100)) / 100;
+  const peoplePerDay = (people / days) * share;
+  const minimumDays = input.minimumDays ?? 7;
+  const needDays =
+    Number.isFinite(perVariant) && peoplePerDay > 0
+      ? Math.max(minimumDays, Math.ceil((perVariant * variants) / peoplePerDay))
+      : null;
+  const name = metricName(input.metric);
+  const shown = isRate(input.metric) ? fmt(e.value, 'percent') : fmt(e.value, 'decimal');
+  return {
+    kind: 'experiment_plan',
+    metric: name,
+    baseline: e.value,
+    standardDeviation: sd,
+    mde,
+    confidence,
+    variants,
+    perVariant: Number.isFinite(perVariant) ? perVariant : null,
+    peoplePerDay,
+    days: needDays,
+    sql,
+    range: { from: iso(range.from), to: iso(range.to) },
+    summary:
+      needDays === null
+        ? `Not enough recent data to plan: ${name} is ${shown} over ${fmt(people)} people in ${Math.round(days)} days.`
+        : `${name} is ${shown} today. To detect a ${Math.round(mde * 100)}% change at ${Math.round(confidence * 100)}% with ${variants} variants you need about ${fmt(perVariant)} people per variant: roughly ${needDays} days at ${fmt(peoplePerDay)} new people a day${share < 1 ? ` (${Math.round(share * 100)}% of traffic)` : ''}.`,
   };
 }

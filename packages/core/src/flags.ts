@@ -64,7 +64,10 @@ export interface FlagDefinition {
   bucketBy?: string;
   /** Make the flag an early-access feature that people can opt into. */
   earlyAccess?: EarlyAccess;
-  /** A holdout this flag's experiment respects: people in it never get the flag (see experiments). */
+  /**
+   * A holdout this flag's experiment respects: people in it get the value "holdout" (treat it as
+   * the default experience) and are compared with everyone else in holdout results.
+   */
   holdout?: { key: string; percentage: number };
   tags?: string[];
 }
@@ -134,7 +137,9 @@ export function evaluateFlagDetailed(
     flag.holdout &&
     bucketOf({ key: flag.holdout.key }, id, 'holdout') < flag.holdout.percentage
   ) {
-    return { value: null, reason: `in holdout ${flag.holdout.key}` };
+    // The value (rather than null) means reading the flag still logs an exposure, so the
+    // holdout can be measured. Treat "holdout" as the default experience.
+    return { value: HOLDOUT, reason: `in holdout ${flag.holdout.key}` };
   }
   if (flag.earlyAccess) {
     const choice = (ctx.person?.[EARLY_ACCESS_PROPERTY] as Record<string, unknown> | undefined)?.[

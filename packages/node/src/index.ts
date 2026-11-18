@@ -545,7 +545,9 @@ export class Dataflare {
   }
 
   async isFeatureEnabled(key: string, distinctId: string, o: FlagOptions = {}): Promise<boolean> {
-    return (await this.getFeatureFlag(key, distinctId, o)) !== null;
+    // "holdout" (an experiment holdout) means the default experience.
+    const value = await this.getFeatureFlag(key, distinctId, o);
+    return value !== null && value !== 'holdout';
   }
 
   /** The JSON payload of a flag's value for a user, or null. Records no exposure. */

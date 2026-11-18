@@ -399,8 +399,8 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: 'list_experiments',
     title: 'List experiments',
-    description: 'All A/B tests with their status.',
-    input: projectOnly,
+    description: 'All A/B tests with their status (include_archived for archived ones).',
+    input: inputs.listExperiments,
     scope: 'read',
     run: (s, a) => s.listExperiments(a),
   },
@@ -408,7 +408,7 @@ export const TOOLS: ToolDefinition[] = [
     name: 'create_experiment',
     title: 'Create an experiment',
     description:
-      'Create an A/B test (draft) with a goal event. Creates a control/test flag unless you pass an existing multivariate flag. Then branch on glass.flag(flag) in code and start it with update_experiment.',
+      'Create an A/B test (draft). Measure it with a goal event or metrics: conversion, mean (count or sum per person, winsorised), ratio (e.g. revenue per order), funnel or retention, plus secondary metrics as guardrails. Choose engine (bayesian/frequentist), confidence, a holdout, or page changes per variant (transforms) for a no-code web experiment. Creates a control/test flag unless you pass one. Then branch on glass.flag(flag) in code (not needed for web experiments) and start it with update_experiment. Use plan_experiment first to see how long it needs.',
     input: inputs.createExperiment,
     scope: 'admin',
     run: (s, a) => s.createExperiment(a),
@@ -417,7 +417,7 @@ export const TOOLS: ToolDefinition[] = [
     name: 'experiment_results',
     title: 'Experiment results',
     description:
-      'Per-variant exposures, conversions and rates, probability to beat control, lift interval, sample ratio mismatch check, winner and days to significance.',
+      'Per-variant results for every metric: value with interval, probability to beat control and to be best (Bayesian) or p-value (frequentist), lift interval; sample ratio mismatch check; status (winner, no_winner_yet, too_early, srm); a daily timeline; and days still needed.',
     input: inputs.experimentKey,
     scope: 'read',
     run: (s, a) => s.experimentResults(a),
@@ -426,7 +426,7 @@ export const TOOLS: ToolDefinition[] = [
     name: 'update_experiment',
     title: 'Start, stop or ship an experiment',
     description:
-      '"start" enables the flag; "stop" freezes results; "ship" gives everyone the chosen variant.',
+      '"start" enables the flag; "pause" switches it off for everyone (results kept) and "resume" back on; "stop" freezes results; "ship" gives everyone the chosen variant; "reset" returns to draft and counts afresh from the next start; "archive"/"unarchive".',
     input: inputs.updateExperiment,
     scope: 'admin',
     run: (s, a) => s.updateExperiment(a),
@@ -492,6 +492,68 @@ export const TOOLS: ToolDefinition[] = [
     input: inputs.updateSettings,
     scope: 'admin',
     run: (s, a) => s.updateSettings(a),
+  },
+  {
+    name: 'edit_experiment',
+    title: 'Change an experiment',
+    description:
+      'Change an experiment’s metrics, secondary metrics, engine, confidence, minimum runtime or holdout.',
+    input: inputs.editExperiment,
+    scope: 'admin',
+    run: (s, a) => s.editExperiment(a),
+  },
+  {
+    name: 'duplicate_experiment',
+    title: 'Copy an experiment',
+    description:
+      'Copy an experiment (metrics, options and variants, on a new flag) as a new draft.',
+    input: inputs.duplicateExperiment,
+    scope: 'admin',
+    run: (s, a) => s.duplicateExperiment(a),
+  },
+  {
+    name: 'plan_experiment',
+    title: 'How long an experiment needs',
+    description:
+      'Running-time calculator: the metric’s current baseline among recent traffic, people needed per variant to detect a relative change (mde, default 10%) at the confidence level, and the days that takes at the recent rate of new people.',
+    input: inputs.planExperiment,
+    scope: 'read',
+    run: (s, a) => s.planExperiment(a),
+  },
+  {
+    name: 'list_holdouts',
+    title: 'List holdouts',
+    description:
+      'Holdouts (people kept out of a set of experiments) and the experiments using each.',
+    input: projectOnly,
+    scope: 'read',
+    run: (s, a) => s.listHoldouts(a),
+  },
+  {
+    name: 'save_holdout',
+    title: 'Create or change a holdout',
+    description:
+      'Keep a share of people (e.g. 10%) out of every experiment that uses this holdout, to measure the combined effect of what ships. People held out get the value "holdout".',
+    input: inputs.saveHoldout,
+    scope: 'admin',
+    run: (s, a) => s.saveHoldout(a),
+  },
+  {
+    name: 'delete_holdout',
+    title: 'Delete a holdout',
+    description: 'Delete a holdout no running experiment uses.',
+    input: inputs.holdoutKey,
+    scope: 'admin',
+    run: (s, a) => s.deleteHoldout(a),
+  },
+  {
+    name: 'holdout_results',
+    title: 'Holdout results',
+    description:
+      'Everyone exposed to a holdout’s experiments vs the people held out, on the experiments’ metrics (or ones you pass): the combined effect of shipping them.',
+    input: inputs.holdoutResults,
+    scope: 'read',
+    run: (s, a) => s.holdoutResults(a),
   },
   {
     name: 'list_projects',

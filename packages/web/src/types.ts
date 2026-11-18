@@ -118,6 +118,10 @@ export interface GlassOptions {
   flags?: boolean;
   /** Start with these ids and flag values (server-side rendering), before the Worker answers. */
   bootstrap?: Bootstrap;
+  /** Apply web experiments (page changes defined in Dataflare). Default true. */
+  webExperiments?: boolean;
+  /** Hide elements a web experiment changes for at most this long while flags load. Default 1000 ms. */
+  antiFlickerMs?: number;
   /** Inspect or rewrite every event before it is queued. Return null to drop it. */
   beforeSend?: (event: WireEvent) => WireEvent | null;
   /** Send at most this often, in ms. Default 5000. */

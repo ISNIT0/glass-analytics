@@ -17,6 +17,12 @@ import type {
   WireEvent,
 } from './types.ts';
 import { observeVitals } from './vitals.ts';
+import {
+  applyTransforms,
+  hideUntilApplied,
+  isWebPayload,
+  watchTransforms,
+} from './web-experiments.ts';
 
 type FlagListener = (flags: Readonly<Record<string, string>>) => void;
 
@@ -39,6 +45,9 @@ export class Dataflare {
   private overrides: Record<string, string | null> = {};
   private allowUrlOverrides = false;
   private flagsLoaded = false;
+  /** Web experiments applied on this page (their exposure is recorded once). */
+  private appliedExperiments = new Set<string>();
+  private reveal: () => void = () => {};
   private flagListeners = new Set<FlagListener>();
   private exposed = new Set<string>();
   private replay: ReplayController | null = null;
@@ -93,6 +102,14 @@ export class Dataflare {
       // Bootstrapped values are usable at once; the Worker's answer replaces them when it arrives.
       this.flagsLoaded = true;
     }
+    if (options.webExperiments !== false) {
+      // Hide what cached web experiments change until the fresh values apply (no flash).
+      const selectors = Object.values(this.flagPayloads)
+        .filter(isWebPayload)
+        .flatMap((p) => p.transforms.map((t) => t.selector));
+      this.reveal = hideUntilApplied(selectors, options.antiFlickerMs ?? 1000);
+      if (this.flagsLoaded) this.applyWebExperiments();
+    }
     if (options.flags !== false) void this.reloadFlags();
 
     const auto: AutocaptureOptions =
@@ -105,6 +122,8 @@ export class Dataflare {
       pageview: () => {
         this.pageStart = Date.now();
         this.capture('$pageview');
+        // Client-side navigation renders new elements: apply web experiments to them too.
+        if (this.flagsLoaded) this.applyWebExperiments();
       },
       pageleave: () => this.capture('$pageleave', { duration_ms: Date.now() - this.pageStart }),
       capture: (event: string, props: Record<string, unknown>) => this.capture(event, props),
@@ -255,7 +274,9 @@ export class Dataflare {
 
   /** True when a flag has any value for this user. Records an exposure like `flag()`. */
   isEnabled(key: string): boolean {
-    return this.flag(key) !== null;
+    // People in an experiment holdout get "holdout": the default experience, so not enabled.
+    const value = this.flag(key);
+    return value !== null && value !== 'holdout';
   }
 
   /** All flag values (with any overrides), without recording exposures. */
@@ -334,6 +355,29 @@ export class Dataflare {
     };
   }
 
+  /**
+   * Apply the page changes of web experiments this person is in, and record their exposure
+   * (every variant has a web payload, so control is counted too).
+   */
+  private applyWebExperiments(): void {
+    if (typeof document === 'undefined') return;
+    const values = this.flags();
+    for (const [key, payload] of Object.entries(this.flagPayloads)) {
+      if (!isWebPayload(payload)) continue;
+      const value = values[key];
+      if (!value || value === 'holdout') continue;
+      if (payload.transforms.length) {
+        applyTransforms(payload.transforms);
+        this.teardown.push(watchTransforms(payload.transforms));
+      }
+      if (!this.appliedExperiments.has(key)) {
+        this.appliedExperiments.add(key);
+        this.flag(key);
+      }
+    }
+    this.reveal();
+  }
+
   /** ?__glass_flags=new-checkout:test,beta:off overrides flags here when the project allows it. */
   private applyUrlOverrides(): void {
     if (!this.allowUrlOverrides || typeof location === 'undefined') return;
@@ -383,6 +427,7 @@ export class Dataflare {
       // Offline: keep cached values.
     } finally {
       this.flagsLoaded = true;
+      if (this.options?.webExperiments !== false) this.applyWebExperiments();
       for (const listener of this.flagListeners) listener(this.flags());
     }
   }

@@ -14,7 +14,7 @@ import { TOOLS } from './mcp/tools.ts';
 import type { GlassService } from './service.ts';
 
 const NUMERIC = new Set(['days', 'limit']);
-const BOOLEAN = new Set(['with_errors', 'compare']);
+const BOOLEAN = new Set(['with_errors', 'compare', 'include_archived']);
 
 /** Query string → plain object, converting the few numeric/boolean parameters. */
 function params(url: URL): Record<string, unknown> {
@@ -159,7 +159,18 @@ export async function apiRouter(
         'GET /api/experiments': 'Experiments',
         'POST /api/experiments': 'Create an experiment (admin)',
         'GET /api/experiments/:key': 'Experiment with results',
-        'POST /api/experiments/:key/start|stop|ship': 'Change experiment state (admin)',
+        'POST /api/experiments/:key/start|pause|resume|stop|ship|reset|archive|unarchive':
+          'Change experiment state (admin)',
+        'PATCH /api/experiments/:key': 'Change metrics, engine, confidence or holdout (admin)',
+        'POST /api/experiments/:key/duplicate':
+          'Copy an experiment as a new draft: { "newKey": "…" } (admin)',
+        'POST /api/experiments/plan':
+          'How long to detect a change: { metric, mde?, variants?, traffic? }',
+        'GET /api/holdouts': 'Holdouts and the experiments using them',
+        'PUT /api/holdouts/:key': 'Create or update a holdout: { "percentage": 10 } (admin)',
+        'DELETE /api/holdouts/:key': 'Delete an unused holdout (admin)',
+        'GET /api/holdouts/:key/results':
+          'Everyone in the holdout’s experiments vs the people held out',
         'POST /api/import':
           'Import events with their own timestamps (server or admin key): { project, events: [...] }, up to 1,000 per request',
         'GET /api/settings':
@@ -411,6 +422,32 @@ export async function apiRouter(
     admin();
     return json(await service.createExperiment(await body()), { status: 201 });
   });
+  r.post('/api/experiments/plan', async ({ url }) =>
+    json(await service.planExperiment({ ...params(url), ...(await body()) })),
+  );
+  r.patch('/api/experiments/:key', async ({ url, params: p }) => {
+    admin();
+    return json(await service.editExperiment({ ...params(url), ...(await body()), key: p.key }));
+  });
+  r.post('/api/experiments/:key/duplicate', async ({ url, params: p }) => {
+    admin();
+    return json(
+      await service.duplicateExperiment({ ...params(url), ...(await body()), key: p.key }),
+      { status: 201 },
+    );
+  });
+  r.get('/api/holdouts', async ({ url }) => json(await service.listHoldouts(params(url))));
+  r.put('/api/holdouts/:key', async ({ url, params: p }) => {
+    admin();
+    return json(await service.saveHoldout({ ...params(url), ...(await body()), key: p.key }));
+  });
+  r.delete('/api/holdouts/:key', async ({ url, params: p }) => {
+    admin();
+    return json(await service.deleteHoldout({ ...params(url), key: p.key }));
+  });
+  r.get('/api/holdouts/:key/results', async ({ url, params: p }) =>
+    json(await service.holdoutResults({ ...params(url), key: p.key })),
+  );
   r.get('/api/experiments/:key', async ({ url, params: p }) =>
     json(await service.experimentResults({ ...params(url), key: p.key })),
   );
