@@ -62,6 +62,8 @@ export async function apiRouter(
       'Use the read key (`dataflare key --read`) to query, or the admin key to change things.',
     );
   }
+  const actorName = request.headers.get('X-Glass-Actor')?.slice(0, 60);
+  service.actor = actorName ? `${actorName} (${scope} key)` : `${scope} key`;
   const admin = () => {
     if (scope !== 'admin') throw new HttpError(403, 'This action needs the admin key');
   };
@@ -142,6 +144,16 @@ export async function apiRouter(
           'Leave a note at a moment: { "at": "00:14", "text": "…" } (admin)',
         'DELETE /api/replays/:session/notes/:id': 'Delete a note (admin)',
         'GET /api/flags': 'Feature flags',
+        'GET /api/flags/definitions':
+          'Flag definitions and targeted cohort members for local evaluation (server key; ETag)',
+        'POST /api/flags/evaluate':
+          'Every flag for one user, with payloads and reasons: { distinct_id, user_id?, groups? }',
+        'GET /api/flags/:key/history': 'Changes to a flag: who, when, what',
+        'GET /api/flags/:key/usage?from=-30d': 'Exposures to a flag over time by value',
+        'POST /api/flags/:key/schedule':
+          'Change a flag later: { "at": "2026-11-20T09:00Z", "change": { "rollout": 50 } } (admin)',
+        'GET /api/flags/schedules?key=': 'Scheduled flag changes',
+        'DELETE /api/flags/schedules/:id': 'Cancel a scheduled change (admin)',
         'PUT /api/flags/:key': 'Create/update a flag (admin)',
         'DELETE /api/flags/:key': 'Delete a flag (admin)',
         'GET /api/experiments': 'Experiments',
@@ -354,6 +366,34 @@ export async function apiRouter(
   });
 
   r.get('/api/flags', async ({ url }) => json(await service.listFlags(params(url))));
+  r.get('/api/flags/definitions', async ({ url, request: req }) => {
+    server();
+    const defs = await service.flagDefinitions(params(url));
+    if (req.headers.get('If-None-Match') === defs.etag) {
+      return new Response(null, { status: 304, headers: { ETag: defs.etag } });
+    }
+    return json(defs, { headers: { ETag: defs.etag, 'Cache-Control': 'no-cache' } });
+  });
+  r.get('/api/flags/schedules', async ({ url }) => json(await service.flagSchedules(params(url))));
+  r.delete('/api/flags/schedules/:id', async ({ url, params: p }) => {
+    admin();
+    return json(await service.cancelFlagSchedule({ ...params(url), id: p.id }));
+  });
+  r.post('/api/flags/evaluate', async ({ url }) =>
+    json(await service.evaluateFlags({ ...params(url), ...(await body()) })),
+  );
+  r.get('/api/flags/:key/history', async ({ url, params: p }) =>
+    json(await service.flagHistory({ ...params(url), key: p.key })),
+  );
+  r.get('/api/flags/:key/usage', async ({ url, params: p }) =>
+    json(await service.flagUsage({ ...params(url), key: p.key })),
+  );
+  r.post('/api/flags/:key/schedule', async ({ url, params: p }) => {
+    admin();
+    return json(await service.scheduleFlag({ ...params(url), ...(await body()), key: p.key }), {
+      status: 201,
+    });
+  });
   r.get('/api/flags/:key', async ({ url, params: p }) =>
     json(await service.getFlag({ ...params(url), key: p.key })),
   );

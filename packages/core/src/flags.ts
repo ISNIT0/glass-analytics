@@ -2,16 +2,25 @@
  * Feature flags.
  *
  * A flag either returns `null` (off for this user) or a value: `"on"` for simple
- * flags, or a variant key for multivariate flags. Assignment is deterministic —
- * a hash of the flag key and the user's `distinct_id` — so the browser, the
- * Worker and your own servers always agree, with no shared state.
+ * flags, or a variant key for multivariate flags. Each value can carry a JSON
+ * payload (remote config). Assignment is deterministic — a hash of the flag key
+ * and an id — so the browser, the Worker and your own servers (dataflare-node,
+ * local evaluation) always agree, with no shared state.
  *
- * We hash `distinct_id` (the device id), not the user id, because Dataflare keeps
- * `distinct_id` stable across `identify()`: logging in never flips a user's
- * experiment variant mid-session.
+ * What is hashed (`bucketBy`):
+ * - "device" (default): `distinct_id`, which Dataflare keeps stable across
+ *   `identify()`, so logging in never flips a variant mid-session;
+ * - "person": the user id once identified (the device before), so a person
+ *   gets the same variant on every device;
+ * - a group type ("company"): the group key, so a whole account shares a variant.
+ *
+ * Rules are checked in order; the first whose conditions all match sets the
+ * rollout (and can force a variant). Conditions use the filter language: person,
+ * group and request properties, saved cohorts (`cohort`), and other flags
+ * (`flag.<key>`), which are evaluated first.
  */
 
-import { type EvaluationContext, type Filter, matchFilter } from './filters.ts';
+import { type EvaluationContext, type Filter, matchFilter, parseProperty } from './filters.ts';
 import { fnv1a32 } from './hash.ts';
 
 export interface FlagVariant {
@@ -29,6 +38,14 @@ export interface FlagRule {
   variant?: string;
 }
 
+export interface EarlyAccess {
+  /** Shown to users who can opt in, e.g. "New editor". */
+  name: string;
+  description?: string;
+  docsUrl?: string;
+  stage: 'concept' | 'alpha' | 'beta';
+}
+
 export interface FlagDefinition {
   key: string;
   description?: string;
@@ -41,9 +58,38 @@ export interface FlagDefinition {
   rules?: FlagRule[];
   /** Change to reshuffle everyone's buckets. */
   salt?: string;
+  /** JSON payload per value ("on" for a simple flag, or a variant key). */
+  payloads?: Record<string, unknown>;
+  /** What is hashed for bucketing: "device" (default), "person", or a group type. */
+  bucketBy?: string;
+  /** Make the flag an early-access feature that people can opt into. */
+  earlyAccess?: EarlyAccess;
+  /** A holdout this flag's experiment respects: people in it never get the flag (see experiments). */
+  holdout?: { key: string; percentage: number };
+  tags?: string[];
 }
 
 export const FLAG_ON = 'on';
+/** Value given to people in an experiment holdout. */
+export const HOLDOUT = 'holdout';
+/** Person property where early-access choices are stored: `$early_access.<flag>` = true/false. */
+export const EARLY_ACCESS_PROPERTY = '$early_access';
+
+export interface FlagEvaluation {
+  value: string | null;
+  /** Why: "disabled", "rule 2", "rollout", "outside rollout", "opted in", "no group"… */
+  reason: string;
+  /** Local evaluation couldn't decide (a property it doesn't know); ask the server. */
+  inconclusive?: boolean;
+}
+
+export interface EvaluateOptions {
+  /**
+   * Local evaluation: whether a property is known. A rule that needs an unknown
+   * property makes the result inconclusive instead of guessing.
+   */
+  isKnown?: (property: string) => boolean;
+}
 
 /** A user's position in [0, 100) for a given flag and purpose. */
 export function bucketOf(
@@ -54,11 +100,11 @@ export function bucketOf(
   return (fnv1a32(`${flag.key}:${flag.salt ?? ''}:${purpose}:${distinctId}`) % 10_000) / 100;
 }
 
-function pickVariant(flag: FlagDefinition, distinctId: string): string {
+function pickVariant(flag: FlagDefinition, id: string): string {
   const variants = flag.variants ?? [];
   const total = variants.reduce((a, v) => a + Math.max(0, v.weight), 0);
   if (total <= 0) return variants[0]?.key ?? FLAG_ON;
-  const point = (bucketOf(flag, distinctId, 'variant') / 100) * total;
+  const point = (bucketOf(flag, id, 'variant') / 100) * total;
   let cumulative = 0;
   for (const v of variants) {
     cumulative += Math.max(0, v.weight);
@@ -67,21 +113,141 @@ function pickVariant(flag: FlagDefinition, distinctId: string): string {
   return variants[variants.length - 1]!.key;
 }
 
-/** Evaluate one flag. Returns null when the flag is off for this context. */
-export function evaluateFlag(flag: FlagDefinition, ctx: EvaluationContext): string | null {
-  if (!flag.enabled) return null;
+/** The id a flag hashes, or null when it buckets by a group the context doesn't have. */
+export function bucketingId(flag: FlagDefinition, ctx: EvaluationContext): string | null {
+  const by = flag.bucketBy ?? 'device';
+  if (by === 'device') return ctx.distinct_id;
+  if (by === 'person') return ctx.user_id || ctx.distinct_id;
+  return ctx.groups?.[by] ?? null;
+}
+
+/** Evaluate one flag, with the reason. Other flags it depends on must already be in `ctx.flags`. */
+export function evaluateFlagDetailed(
+  flag: FlagDefinition,
+  ctx: EvaluationContext,
+  options: EvaluateOptions = {},
+): FlagEvaluation {
+  if (!flag.enabled) return { value: null, reason: 'disabled' };
+  const id = bucketingId(flag, ctx);
+  if (id === null) return { value: null, reason: `no ${flag.bucketBy} group` };
+  if (
+    flag.holdout &&
+    bucketOf({ key: flag.holdout.key }, id, 'holdout') < flag.holdout.percentage
+  ) {
+    return { value: null, reason: `in holdout ${flag.holdout.key}` };
+  }
+  if (flag.earlyAccess) {
+    const choice = (ctx.person?.[EARLY_ACCESS_PROPERTY] as Record<string, unknown> | undefined)?.[
+      flag.key
+    ];
+    if (choice === true) {
+      return {
+        value: flag.variants?.length ? flag.variants.at(-1)!.key : FLAG_ON,
+        reason: 'opted in',
+      };
+    }
+    if (choice === false) return { value: null, reason: 'opted out' };
+  }
   let rollout = flag.rollout;
   let forced: string | undefined;
-  for (const rule of flag.rules ?? []) {
+  let reason = 'rollout';
+  const rules = flag.rules ?? [];
+  for (let i = 0; i < rules.length; i++) {
+    const rule = rules[i]!;
+    if (options.isKnown && rule.conditions.some((c) => !options.isKnown!(c.property))) {
+      return {
+        value: null,
+        reason: `rule ${i + 1} needs properties local evaluation doesn't have`,
+        inconclusive: true,
+      };
+    }
     if (rule.conditions.every((c) => matchFilter(c, ctx))) {
       rollout = rule.rollout ?? flag.rollout;
       forced = rule.variant;
+      reason = `rule ${i + 1}`;
       break;
     }
   }
-  if (bucketOf(flag, ctx.distinct_id) >= rollout) return null;
-  if (forced) return forced;
-  return flag.variants && flag.variants.length > 0 ? pickVariant(flag, ctx.distinct_id) : FLAG_ON;
+  if (bucketOf(flag, id) >= rollout)
+    return { value: null, reason: `outside ${reason} (${rollout}%)` };
+  if (forced) return { value: forced, reason };
+  return {
+    value: flag.variants && flag.variants.length > 0 ? pickVariant(flag, id) : FLAG_ON,
+    reason,
+  };
+}
+
+/** Evaluate one flag. Returns null when the flag is off for this context. */
+export function evaluateFlag(flag: FlagDefinition, ctx: EvaluationContext): string | null {
+  return evaluateFlagDetailed(flag, ctx).value;
+}
+
+/** Keys of the flags a flag's rules depend on (`flag.<key>` conditions). */
+export function flagDependencies(flag: FlagDefinition): string[] {
+  const out = new Set<string>();
+  for (const rule of flag.rules ?? []) {
+    for (const c of rule.conditions) {
+      const ref = parseProperty(c.property);
+      if (ref.kind === 'flag') out.add(ref.key);
+    }
+  }
+  return [...out];
+}
+
+/** Flags in dependency order (dependencies first). Flags in a cycle are returned in `cyclic`. */
+export function dependencyOrder(flags: readonly FlagDefinition[]): {
+  ordered: FlagDefinition[];
+  cyclic: FlagDefinition[];
+} {
+  const byKey = new Map(flags.map((f) => [f.key, f]));
+  const ordered: FlagDefinition[] = [];
+  const state = new Map<string, 'visiting' | 'done'>();
+  const cyclic = new Set<string>();
+  const visit = (f: FlagDefinition, path: string[]) => {
+    const s = state.get(f.key);
+    if (s === 'done') return;
+    if (s === 'visiting') {
+      for (const k of path.slice(path.indexOf(f.key))) cyclic.add(k);
+      return;
+    }
+    state.set(f.key, 'visiting');
+    for (const dep of flagDependencies(f)) {
+      const d = byKey.get(dep);
+      if (d) visit(d, [...path, f.key]);
+    }
+    state.set(f.key, 'done');
+    ordered.push(f);
+  };
+  for (const f of flags) visit(f, []);
+  return {
+    ordered: ordered.filter((f) => !cyclic.has(f.key)),
+    cyclic: flags.filter((f) => cyclic.has(f.key)),
+  };
+}
+
+/** Evaluate every flag, dependencies first, with reasons. */
+export function evaluateFlagsDetailed(
+  flags: readonly FlagDefinition[],
+  ctx: EvaluationContext,
+  options: EvaluateOptions = {},
+): Record<string, FlagEvaluation> {
+  const out: Record<string, FlagEvaluation> = {};
+  const values: Record<string, string> = { ...(ctx.flags ?? {}) };
+  const { ordered, cyclic } = dependencyOrder(flags);
+  for (const flag of ordered) {
+    const deps = flagDependencies(flag);
+    const unknownDep = deps.find((k) => out[k]?.inconclusive);
+    if (unknownDep) {
+      out[flag.key] = { value: null, reason: `depends on ${unknownDep}`, inconclusive: true };
+      continue;
+    }
+    const result = evaluateFlagDetailed(flag, { ...ctx, flags: values }, options);
+    out[flag.key] = result;
+    if (result.value !== null) values[flag.key] = result.value;
+  }
+  for (const flag of cyclic)
+    out[flag.key] = { value: null, reason: 'flags depend on each other in a loop' };
+  return out;
 }
 
 /** Evaluate every flag for a context. Flags that are off are omitted. */
@@ -90,14 +256,28 @@ export function evaluateFlags(
   ctx: EvaluationContext,
 ): Record<string, string> {
   const out: Record<string, string> = {};
+  for (const [key, r] of Object.entries(evaluateFlagsDetailed(flags, ctx))) {
+    if (r.value !== null) out[key] = r.value;
+  }
+  return out;
+}
+
+/** Payloads for the values a user got. */
+export function payloadsFor(
+  flags: readonly FlagDefinition[],
+  values: Record<string, string>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
   for (const flag of flags) {
-    const value = evaluateFlag(flag, ctx);
-    if (value !== null) out[flag.key] = value;
+    const value = values[flag.key];
+    if (value === undefined || !flag.payloads) continue;
+    if (Object.hasOwn(flag.payloads, value)) out[flag.key] = flag.payloads[value];
   }
   return out;
 }
 
 const FLAG_KEY = /^[a-z0-9][a-z0-9_.-]{0,99}$/i;
+const MAX_PAYLOAD_BYTES = 10_000;
 
 /** Validate a definition, returning a list of human-readable problems (empty when valid). */
 export function validateFlag(flag: FlagDefinition): string[] {
@@ -122,5 +302,38 @@ export function validateFlag(flag: FlagDefinition): string[] {
       problems.push('rule rollout must be between 0 and 100');
     }
   }
+  if (flag.payloads) {
+    const values = flag.variants?.length ? keys : new Set([FLAG_ON]);
+    for (const k of Object.keys(flag.payloads)) {
+      if (!values.has(k))
+        problems.push(
+          `payload for "${k}", which this flag never returns (${[...values].join(', ')})`,
+        );
+    }
+    if (JSON.stringify(flag.payloads).length > MAX_PAYLOAD_BYTES)
+      problems.push('payloads must be at most 10 KB of JSON');
+  }
+  if (flag.bucketBy && flag.bucketBy !== 'device' && flag.bucketBy !== 'person') {
+    if (!/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,49}$/.test(flag.bucketBy))
+      problems.push('bucketBy must be "device", "person" or a group type');
+  }
+  if (flag.holdout && !(flag.holdout.percentage >= 0 && flag.holdout.percentage <= 100))
+    problems.push('holdout percentage must be between 0 and 100');
+  if (flagDependencies(flag).includes(flag.key)) problems.push('a flag cannot depend on itself');
+  return problems;
+}
+
+/** Problems across a project's flags: dependency loops and dependencies on missing flags. */
+export function validateFlagSet(flags: readonly FlagDefinition[]): string[] {
+  const problems: string[] = [];
+  const keys = new Set(flags.map((f) => f.key));
+  for (const f of flags) {
+    for (const dep of flagDependencies(f)) {
+      if (!keys.has(dep)) problems.push(`flag "${f.key}" depends on "${dep}", which doesn't exist`);
+    }
+  }
+  const { cyclic } = dependencyOrder(flags);
+  if (cyclic.length)
+    problems.push(`flags depend on each other in a loop: ${cyclic.map((f) => f.key).join(', ')}`);
   return problems;
 }

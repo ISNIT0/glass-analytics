@@ -245,10 +245,15 @@ describe('flags targeting cohorts', () => {
         rules: [{ conditions: [{ property: 'cohort', value: 'power' }], rollout: 100 }],
       },
     });
-    // The hourly refresh materialises cohorts that flags use.
-    const result = await runMaintenance(t.env, new D1Store(t.db), Date.now(), { hourly: false });
-    assert.equal(result.tasks.flagCohorts, 1);
+    // Saving the flag materialises the cohort it targets, so it works straight away…
     assert.equal((await evaluate('d1', 'ann'))['new-editor'], 'on');
+    // …and the maintenance task only refreshes it once it is an hour old.
+    const fresh = await runMaintenance(t.env, new D1Store(t.db), Date.now(), { hourly: false });
+    assert.equal(fresh.tasks.flagCohorts, 0);
+    const later = await runMaintenance(t.env, new D1Store(t.db), Date.now() + 61 * 60_000, {
+      hourly: false,
+    });
+    assert.equal(later.tasks.flagCohorts, 1);
     assert.equal((await evaluate('d2', 'bob'))['new-editor'], undefined);
     // Saving the cohort again re-materialises it straight away.
     await t.json('POST', '/api/cohorts', {

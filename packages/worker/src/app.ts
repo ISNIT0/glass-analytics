@@ -140,6 +140,8 @@ export function createApp(options: AppOptions) {
           });
         case '/mcp': {
           const scope = await requireScope(request, env, 'read');
+          const actorName = request.headers.get('X-Glass-Actor')?.slice(0, 60);
+          service.actor = actorName ? `${actorName} (MCP, ${scope} key)` : `MCP, ${scope} key`;
           return withCors(await handleMcp(request, service, scope));
         }
       }

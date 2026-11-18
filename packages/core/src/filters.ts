@@ -27,10 +27,15 @@ export type PropertyRef =
   | { kind: 'event'; path: string[] }
   | { kind: 'person'; path: string[] }
   /** `group.<type>` (path empty: the group key) or `group.<type>.<prop>`. */
-  | { kind: 'group'; type: string; path: string[] };
+  | { kind: 'group'; type: string; path: string[] }
+  /** `flag.<key>`: the value of another feature flag (on events: the flags they carried). */
+  | { kind: 'flag'; key: string };
 
 /** Prefix for group references: `group.company` (the key) or `group.company.plan`. */
 export const GROUP_PREFIX = 'group.';
+
+/** Prefix for flag references: `flag.new-checkout` is that flag's value. */
+export const FLAG_PREFIX = 'flag.';
 
 export const FILTER_OPS = [
   'eq',
@@ -89,6 +94,9 @@ export function parseProperty(input: string): PropertyRef {
   const raw = input.trim();
   if (!raw) throw new TypeError('Property name cannot be empty');
   if (raw.startsWith('person.')) return { kind: 'person', path: splitPath(raw.slice(7)) };
+  if (raw.startsWith(FLAG_PREFIX) && raw.length > FLAG_PREFIX.length) {
+    return { kind: 'flag', key: raw.slice(FLAG_PREFIX.length) };
+  }
   if (raw.startsWith(GROUP_PREFIX)) {
     const [type, ...path] = splitPath(raw.slice(GROUP_PREFIX.length));
     return { kind: 'group', type: type!, path };
@@ -115,6 +123,8 @@ export interface EvaluationContext {
   groupProps?: Record<string, Record<string, unknown>>;
   /** Saved cohorts the person belongs to (keys), for cohort conditions. */
   cohorts?: readonly string[];
+  /** Values of flags already evaluated, for `flag.<key>` conditions. */
+  flags?: Record<string, string>;
   country?: string;
   device?: string;
   browser?: string;
@@ -127,6 +137,7 @@ export interface EvaluationContext {
 
 function lookup(ctx: EvaluationContext, ref: PropertyRef): unknown {
   if (ref.kind === 'column') return ctx[ref.column];
+  if (ref.kind === 'flag') return ctx.flags?.[ref.key];
   if (ref.kind === 'group') {
     if (ref.path.length === 0) return ctx.groups?.[ref.type];
     let value: unknown = ctx.groupProps?.[ref.type];

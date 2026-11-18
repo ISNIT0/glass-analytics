@@ -14,6 +14,7 @@ import {
   normaliseCohort,
 } from '@dataflare/core/cohorts';
 import { COHORT_PROPERTY, type CohortMembers, type Filter, toList } from '@dataflare/core/filters';
+import { evaluateFlagsDetailed, payloadsFor } from '@dataflare/core/flags';
 import {
   experimentSpec,
   filterSchema,
@@ -91,7 +92,19 @@ import {
   listExperiments,
   transitionExperiment,
 } from './experiments.ts';
-import { deleteFlag, getFlag, listFlags, saveFlag } from './flags.ts';
+import {
+  cancelFlagSchedule,
+  deleteFlag,
+  type FlagInput,
+  flagContext,
+  flagDefinitions,
+  flagHistory,
+  getFlag,
+  listFlagSchedules,
+  listFlags,
+  saveFlag,
+  scheduleFlagChange,
+} from './flags.ts';
 import { HttpError } from './http.ts';
 import { upsertPerson } from './ingest.ts';
 import { DEFAULT_INSIGHTS } from './insight-defaults.ts';
@@ -519,8 +532,77 @@ export const inputs = {
       )
       .optional()
       .describe(
-        'Targeting rules, first match wins, e.g. [{"conditions":[{"property":"person.plan","value":"pro"}],"rollout":100}].',
+        'Targeting rules, first match wins. Conditions: person properties ("person.plan"), group properties ("group.company.plan"), country/device/browser/os, a saved cohort ({"property":"cohort","value":"beta"}) or another flag ({"property":"flag.new-nav","value":"on"}). E.g. [{"conditions":[{"property":"person.plan","value":"pro"}],"rollout":100}].',
       ),
+    payloads: z
+      .record(z.string(), z.unknown())
+      .nullable()
+      .optional()
+      .describe(
+        'JSON payload per value: {"on": {...}} for a simple flag, or one per variant key. Read with glass.flagPayload(key). Up to 10 KB.',
+      ),
+    bucketBy: z
+      .string()
+      .nullable()
+      .optional()
+      .describe(
+        '"device" (default: stable across login), "person" (same on every device once identified) or a group type such as "company" (a whole account shares the value).',
+      ),
+    earlyAccess: z
+      .object({
+        name: z.string().min(1),
+        description: z.string().optional(),
+        docsUrl: z.string().optional(),
+        stage: z.enum(['concept', 'alpha', 'beta']),
+      })
+      .nullable()
+      .optional()
+      .describe(
+        'Offer the flag as an early-access feature: people see it in glass.earlyAccessFeatures() and opt in or out with glass.optIn(key) / glass.optOut(key).',
+      ),
+    tags: z.array(z.string()).nullable().optional(),
+    salt: z.string().optional().describe('Change to reshuffle everyone’s buckets.'),
+    actor: z
+      .string()
+      .max(60)
+      .optional()
+      .describe('Who is making the change, for the flag’s history.'),
+  }),
+  flagHistory: z.object({
+    project,
+    key: z.string(),
+    limit: z.number().int().min(1).max(200).optional(),
+  }),
+  scheduleFlag: z.object({
+    project,
+    key: z.string(),
+    at: z
+      .union([z.string(), z.number()])
+      .describe('When: ISO time ("2026-11-20T09:00:00Z") or epoch ms. Must be in the future.'),
+    change: z
+      .object({
+        enabled: z.boolean().optional(),
+        rollout: z.number().min(0).max(100).optional(),
+        variants: z.array(z.object({ key: z.string(), weight: z.number().min(0) })).optional(),
+        rules: z.array(z.record(z.string(), z.unknown())).optional(),
+        payloads: z.record(z.string(), z.unknown()).optional(),
+      })
+      .describe('What to change at that time, e.g. {"rollout": 50}.'),
+    actor: z.string().max(60).optional(),
+  }),
+  flagSchedules: z.object({ project, key: z.string().optional() }),
+  cancelFlagSchedule: z.object({ project, id: z.string() }),
+  flagUsage: z.object({
+    project,
+    key: z.string(),
+    from: z.union([z.string(), z.number()]).optional().describe('Default -30d.'),
+    interval: z.enum(['hour', 'day', 'week']).optional(),
+  }),
+  evaluateFlags: z.object({
+    project,
+    distinct_id: z.string().describe('The device id (or user id for server-side users).'),
+    user_id: z.string().optional(),
+    groups: z.record(z.string(), z.string()).optional(),
   }),
   createExperiment: z.object({
     project,
@@ -621,6 +703,8 @@ export class GlassService {
   readonly env: Env;
   readonly store: EventStore;
   readonly baseUrl: string;
+  /** Who is calling, for change histories: the key's scope and an optional X-Glass-Actor name. */
+  actor = '';
 
   constructor(env: Env, store: EventStore, baseUrl: string) {
     this.env = env;
@@ -2522,25 +2606,177 @@ WHERE project = ${d.str(project)} AND session_id = ${d.str(row.session_id)} AND 
   async saveFlag(input: unknown) {
     const spec = inputs.saveFlag.parse(input);
     const ctx = await this.context(spec.project);
-    const { project: _, ...definition } = spec;
-    const result = await saveFlag(this.env.DB, ctx.project, definition);
+    const { project: _, actor, ...definition } = spec;
+    const result = await saveFlag(
+      this.env.DB,
+      ctx.project,
+      definition as FlagInput,
+      actor ?? this.actor,
+    );
+    // A flag that now targets a dynamic cohort needs its membership before /f can use it.
+    for (const key of cohortsUsedByFlags([result.flag])) {
+      const cohorts = await loadCohorts(this.env.DB, ctx.project);
+      const row = cohorts.get(key);
+      if (!row)
+        throw new HttpError(400, `Flag "${spec.key}" targets cohort "${key}", which doesn't exist`);
+      if (row.kind === 'dynamic' && !row.refreshedAt) {
+        await materialise(this.env, this.store, ctx.project, row, cohorts);
+      }
+    }
+    const f = result.flag;
     return {
       project: ctx.project,
       ...result,
-      summary: `${result.created ? 'Created' : 'Updated'} flag "${spec.key}"${result.changed.length && !result.created ? ` (${result.changed.join(', ')})` : ''}: ${result.flag.enabled ? `${result.flag.rollout}% rollout` : 'disabled'}. Read it with glass.flag("${spec.key}").`,
+      summary: `${result.created ? 'Created' : 'Updated'} flag "${spec.key}"${result.changed.length && !result.created ? ` (${result.changed.join(', ')})` : ''}: ${f.enabled ? `${f.rollout}% rollout` : 'disabled'}${f.bucketBy && f.bucketBy !== 'device' ? `, bucketed by ${f.bucketBy}` : ''}${f.payloads ? ', with payloads' : ''}${f.earlyAccess ? `, early access (${f.earlyAccess.stage})` : ''}. Read it with glass.flag("${spec.key}")${f.payloads ? ` and glass.flagPayload("${spec.key}")` : ''}.`,
     };
   }
 
   async deleteFlag(input: unknown) {
     const spec = inputs.flagKey.parse(input);
     const ctx = await this.context(spec.project);
-    const deleted = await deleteFlag(this.env.DB, ctx.project, spec.key);
+    const deleted = await deleteFlag(this.env.DB, ctx.project, spec.key, this.actor);
     if (!deleted) throw new HttpError(404, `No flag "${spec.key}"`);
     return {
       project: ctx.project,
       deleted: spec.key,
       summary: `Deleted flag "${spec.key}". Remove it from your code too.`,
     };
+  }
+
+  async flagHistory(input: unknown) {
+    const spec = inputs.flagHistory.parse(input);
+    const ctx = await this.context(spec.project);
+    const history = await flagHistory(this.env.DB, ctx.project, spec.key, spec.limit);
+    return {
+      project: ctx.project,
+      key: spec.key,
+      history,
+      summary: history.length
+        ? `${history.length} change${history.length === 1 ? '' : 's'} to "${spec.key}"; latest ${history[0]!.at.slice(0, 16).replace('T', ' ')}: ${history[0]!.action}${history[0]!.changed.length ? ` (${history[0]!.changed.join(', ')})` : ''}${history[0]!.actor ? ` by ${history[0]!.actor}` : ''}.`
+        : `No recorded changes to "${spec.key}".`,
+    };
+  }
+
+  async scheduleFlag(input: unknown) {
+    const spec = inputs.scheduleFlag.parse(input);
+    const ctx = await this.context(spec.project);
+    const at = typeof spec.at === 'number' ? spec.at : Date.parse(spec.at);
+    if (!Number.isFinite(at)) throw new HttpError(400, `Can't read "${spec.at}" as a time`);
+    if (at <= Date.now())
+      throw new HttpError(
+        400,
+        'Schedule a change in the future',
+        'To change it now, use save_flag.',
+      );
+    const schedule = await scheduleFlagChange(
+      this.env.DB,
+      ctx.project,
+      spec.key,
+      at,
+      spec.change,
+      spec.actor ?? this.actor,
+    );
+    return {
+      project: ctx.project,
+      schedule,
+      summary: `Scheduled ${Object.entries(spec.change)
+        .map(([k, v]) => `${k} → ${JSON.stringify(v)}`)
+        .join(
+          ', ',
+        )} for "${spec.key}" at ${schedule.runAt}. Changes apply within five minutes of that time.`,
+    };
+  }
+
+  async flagSchedules(input: unknown) {
+    const spec = inputs.flagSchedules.parse(input);
+    const ctx = await this.context(spec.project);
+    const schedules = await listFlagSchedules(this.env.DB, ctx.project, spec.key);
+    const pending = schedules.filter((s) => s.status === 'pending');
+    return {
+      project: ctx.project,
+      schedules,
+      summary: `${pending.length} pending scheduled change${pending.length === 1 ? '' : 's'}${pending[0] ? `; next: "${pending.at(-1)!.flag}" at ${pending.at(-1)!.runAt}` : ''}.`,
+    };
+  }
+
+  async cancelFlagSchedule(input: unknown) {
+    const spec = inputs.cancelFlagSchedule.parse(input);
+    const ctx = await this.context(spec.project);
+    if (!(await cancelFlagSchedule(this.env.DB, ctx.project, spec.id)))
+      throw new HttpError(404, `No pending scheduled change "${spec.id}"`);
+    return { project: ctx.project, cancelled: spec.id, summary: 'Scheduled change cancelled.' };
+  }
+
+  /** Exposures to a flag over time, by value: who has actually seen it. */
+  async flagUsage(input: unknown) {
+    const spec = inputs.flagUsage.parse(input);
+    const ctx = await this.context(spec.project);
+    const flag = await getFlag(this.env.DB, ctx.project, spec.key);
+    if (!flag) throw new HttpError(404, `No flag "${spec.key}"`);
+    const result = await this.runInsight('trends', {
+      project: ctx.project,
+      series: [
+        { event: '$exposure', label: 'Exposures' },
+        { event: '$exposure', math: 'unique_persons', label: 'People' },
+      ],
+      filters: [{ property: 'flag', value: spec.key }],
+      breakdown: 'variant',
+      from: spec.from ?? '-30d',
+      interval: spec.interval ?? 'day',
+    });
+    const people = (
+      result as unknown as {
+        series: { label: string; breakdown: string | null; total: number; seriesIndex: number }[];
+      }
+    ).series.filter((s) => s.seriesIndex === 1);
+    return {
+      ...result,
+      flag,
+      summary: people.length
+        ? `"${spec.key}" was seen by ${people.map((s) => `${s.total} (${s.breakdown})`).join(', ')} people since ${String(spec.from ?? '-30d')}.`
+        : `No one has been exposed to "${spec.key}" yet: read it with glass.flag("${spec.key}") where it is used.`,
+    };
+  }
+
+  /** What a user gets: every flag's value, payload and the reason. For debugging targeting. */
+  async evaluateFlags(input: unknown) {
+    const spec = inputs.evaluateFlags.parse(input);
+    const ctx = await this.context(spec.project);
+    const flags = await listFlags(this.env.DB, ctx.project, true);
+    const fctx = await flagContext(
+      this.env.DB,
+      ctx.project,
+      spec.distinct_id,
+      spec.user_id ?? null,
+      undefined,
+      cohortsUsedByFlags(flags).size > 0,
+      spec.groups ?? {},
+      true,
+    );
+    const results = evaluateFlagsDetailed(flags, fctx);
+    const values = Object.fromEntries(
+      Object.entries(results)
+        .filter(([, r]) => r.value !== null)
+        .map(([k, r]) => [k, r.value as string]),
+    );
+    return {
+      project: ctx.project,
+      flags: values,
+      payloads: payloadsFor(flags, values),
+      reasons: Object.fromEntries(Object.entries(results).map(([k, r]) => [k, r.reason])),
+      person: fctx.person,
+      cohorts: fctx.cohorts ?? [],
+      summary:
+        Object.entries(results)
+          .map(([k, r]) => `${k}: ${r.value ?? 'off'} (${r.reason})`)
+          .join('; ') || 'No flags.',
+    };
+  }
+
+  /** Flag definitions for local evaluation in a backend (server key). */
+  async flagDefinitions(input: unknown) {
+    const ctx = await this.context(z.object({ project }).parse(input).project);
+    return flagDefinitions(this.env, ctx.project);
   }
 
   // ── Experiments ──────────────────────────────────────────────────────────

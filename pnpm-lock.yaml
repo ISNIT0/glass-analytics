@@ -68,6 +68,12 @@ importers:
         specifier: ^2.0.0
         version: 2.2.0
 
+  packages/node:
+    devDependencies:
+      '@dataflare/core':
+        specifier: workspace:*
+        version: link:../core
+
   packages/web:
     devDependencies:
       '@dataflare/core':

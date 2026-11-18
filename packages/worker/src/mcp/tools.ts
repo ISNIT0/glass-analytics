@@ -331,7 +331,7 @@ export const TOOLS: ToolDefinition[] = [
     name: 'save_flag',
     title: 'Create or update a flag',
     description:
-      'Create a flag or change its rollout, variants or targeting. Fields you omit keep their current values. Read it in code with glass.flag(key), which returns "on", a variant key, or null.',
+      'Create a flag or change its rollout, variants, targeting rules (person/group properties, cohorts, other flags), payloads, bucketing (device, person or group) or early-access offer. Fields you omit keep their current values; null clears one. Read it in code with glass.flag(key) ("on", a variant key, or null) and glass.flagPayload(key).',
     input: inputs.saveFlag,
     scope: 'admin',
     run: (s, a) => s.saveFlag(a),
@@ -343,6 +343,58 @@ export const TOOLS: ToolDefinition[] = [
     input: inputs.flagKey,
     scope: 'admin',
     run: (s, a) => s.deleteFlag(a),
+  },
+  {
+    name: 'evaluate_flags',
+    title: 'Which flags a user gets',
+    description:
+      'Every flag’s value and payload for one user (device id, optional user id and groups), with the reason (rule matched, rollout, opted in, disabled…). Use it to debug targeting.',
+    input: inputs.evaluateFlags,
+    scope: 'read',
+    run: (s, a) => s.evaluateFlags(a),
+  },
+  {
+    name: 'flag_usage',
+    title: 'Flag exposures',
+    description:
+      'How many times, and by how many people, each value of a flag was seen, over time.',
+    input: inputs.flagUsage,
+    scope: 'read',
+    run: (s, a) => s.flagUsage(a),
+  },
+  {
+    name: 'flag_history',
+    title: 'Flag history',
+    description:
+      'Every change to a flag: when, by whom (key scope and X-Glass-Actor) and which fields changed.',
+    input: inputs.flagHistory,
+    scope: 'read',
+    run: (s, a) => s.flagHistory(a),
+  },
+  {
+    name: 'schedule_flag_change',
+    title: 'Schedule a flag change',
+    description:
+      'Change a flag at a future time, e.g. roll out to 50% on Monday 09:00 UTC, or switch a promotion off at midnight: {"key":"promo","at":"2026-11-30T00:00:00Z","change":{"enabled":false}}.',
+    input: inputs.scheduleFlag,
+    scope: 'admin',
+    run: (s, a) => s.scheduleFlag(a),
+  },
+  {
+    name: 'list_flag_schedules',
+    title: 'Scheduled flag changes',
+    description: 'Pending and past scheduled changes, optionally for one flag.',
+    input: inputs.flagSchedules,
+    scope: 'read',
+    run: (s, a) => s.flagSchedules(a),
+  },
+  {
+    name: 'cancel_flag_schedule',
+    title: 'Cancel a scheduled change',
+    description: 'Cancel a pending scheduled flag change by id.',
+    input: inputs.cancelFlagSchedule,
+    scope: 'admin',
+    run: (s, a) => s.cancelFlagSchedule(a),
   },
   {
     name: 'list_experiments',

@@ -9,6 +9,7 @@ import { Store } from './storage.ts';
 import { Transport } from './transport.ts';
 import type {
   AutocaptureOptions,
+  EarlyAccessFeature,
   GlassOptions,
   ReplayController,
   ReplayModule,
@@ -33,6 +34,10 @@ export class Dataflare {
   private store: Store | null = null;
   private transport: Transport | null = null;
   private flagValues: Record<string, string> = {};
+  private flagPayloads: Record<string, unknown> = {};
+  /** Local overrides (overrideFlags, or ?__glass_flags= when the project allows it). */
+  private overrides: Record<string, string | null> = {};
+  private allowUrlOverrides = false;
   private flagsLoaded = false;
   private flagListeners = new Set<FlagListener>();
   private exposed = new Set<string>();
@@ -62,10 +67,31 @@ export class Dataflare {
       options.flushIntervalMs ?? 5000,
     );
 
+    const boot = options.bootstrap;
+    if (boot?.distinctId && !this.store.cookieless) this.store.set('id', boot.distinctId);
+    if (boot?.userId) this.store.setUserId(boot.userId);
     try {
       this.flagValues = JSON.parse(this.store.get('flags') ?? '{}') as Record<string, string>;
+      this.flagPayloads = JSON.parse(this.store.get('flag_payloads') ?? '{}') as Record<
+        string,
+        unknown
+      >;
+      this.overrides = JSON.parse(this.store.get('flag_overrides') ?? '{}') as Record<
+        string,
+        string | null
+      >;
     } catch {
       this.flagValues = {};
+    }
+    if (boot?.flags) {
+      this.flagValues = {};
+      for (const [k, v] of Object.entries(boot.flags)) {
+        if (v === true) this.flagValues[k] = 'on';
+        else if (typeof v === 'string') this.flagValues[k] = v;
+      }
+      this.flagPayloads = boot.payloads ?? {};
+      // Bootstrapped values are usable at once; the Worker's answer replaces them when it arrives.
+      this.flagsLoaded = true;
     }
     if (options.flags !== false) void this.reloadFlags();
 
@@ -119,10 +145,16 @@ export class Dataflare {
     return this;
   }
 
-  /** Record an event. Names starting with `$` are reserved for Dataflare. */
-  capture(event: string, props: Record<string, unknown> = {}): void {
+  /**
+   * Record an event. Names starting with `$` are reserved for Dataflare. Returns the event's id
+   * (for de-duplicating with other tools, e.g. the Meta Pixel's eventID), or null when not sent.
+   */
+  capture(event: string, props: Record<string, unknown> = {}): string | null {
     const store = this.store;
-    if (!store || !this.transport) return;
+    if (!store || !this.transport) return null;
+    const groups = this.groupsNow();
+    if (Object.keys(groups).length && props.$groups === undefined)
+      props = { ...props, $groups: groups };
     const session = store.session();
     if (session.isNew && this.replay) void this.restartReplay();
     const wire: WireEvent = {
@@ -137,11 +169,45 @@ export class Dataflare {
       title: document.title,
       props,
     };
-    if (Object.keys(this.flagValues).length > 0) wire.flags = { ...this.flagValues };
+    const active = this.flags();
+    if (Object.keys(active).length > 0) wire.flags = active;
     const final = this.options?.beforeSend ? this.options.beforeSend(wire) : wire;
-    if (!final) return;
+    if (!final) return null;
     if (this.options?.debug) console.debug('[glass]', final.event, final);
     this.transport.push(final);
+    return final.id;
+  }
+
+  // ── Groups ─────────────────────────────────────────────────────────────
+
+  private groupsNow(): Record<string, string> {
+    try {
+      return JSON.parse(this.store?.get('groups') ?? '{}') as Record<string, string>;
+    } catch {
+      return {};
+    }
+  }
+
+  /**
+   * Associate this user's events with a group, e.g. `glass.group('company', 'acme', { plan: 'pro' })`.
+   * Later events carry it, so insights can count companies and flags can target them.
+   */
+  group(type: string, key: string, properties?: Record<string, unknown>): void {
+    if (!this.store || !type || key === undefined || key === null) return;
+    const groups = { ...this.groupsNow(), [type]: String(key) };
+    this.store.set('groups', JSON.stringify(groups));
+    this.capture('$groupidentify', {
+      $group_type: type,
+      $group_key: String(key),
+      ...(properties ? { $group_set: properties } : {}),
+    });
+    void this.reloadFlags();
+  }
+
+  /** Stop associating events with any group (e.g. when switching accounts). */
+  resetGroups(): void {
+    this.store?.set('groups', null);
+    void this.reloadFlags();
   }
 
   /**
@@ -166,7 +232,9 @@ export class Dataflare {
     this.replay?.stop();
     this.replay = null;
     this.store.clear();
+    this.store.set('groups', null);
     this.flagValues = {};
+    this.flagPayloads = {};
     this.exposed.clear();
     void this.reloadFlags();
   }
@@ -177,7 +245,7 @@ export class Dataflare {
    * experiment results count — so read flags where the variant is actually shown.
    */
   flag(key: string): string | null {
-    const value = this.flagValues[key] ?? null;
+    const value = this.flags()[key] ?? null;
     if (value !== null && !this.exposed.has(key)) {
       this.exposed.add(key);
       this.capture('$exposure', { flag: key, variant: value });
@@ -190,9 +258,95 @@ export class Dataflare {
     return this.flag(key) !== null;
   }
 
-  /** All flag values, without recording exposures. */
+  /** All flag values (with any overrides), without recording exposures. */
   flags(): Readonly<Record<string, string>> {
-    return { ...this.flagValues };
+    const out: Record<string, string> = { ...this.flagValues };
+    for (const [k, v] of Object.entries(this.overrides)) {
+      if (v === null) delete out[k];
+      else out[k] = v;
+    }
+    return out;
+  }
+
+  /** The JSON payload of a flag's current value (remote config), or null. Records no exposure. */
+  flagPayload<T = unknown>(key: string): T | null {
+    if (this.overrides[key] !== undefined && this.overrides[key] !== this.flagValues[key])
+      return null;
+    return (this.flagPayloads[key] as T | undefined) ?? null;
+  }
+
+  /**
+   * Override flag values in this browser, for development and QA: `{ "new-checkout": "test" }`,
+   * `null` to force a flag off, or `false` to clear every override. Persisted on the device.
+   */
+  overrideFlags(overrides: Record<string, string | boolean | null> | false): void {
+    if (overrides === false) this.overrides = {};
+    else {
+      for (const [k, v] of Object.entries(overrides)) {
+        this.overrides[k] = v === true ? 'on' : v === false ? null : v;
+      }
+    }
+    this.store?.set(
+      'flag_overrides',
+      Object.keys(this.overrides).length ? JSON.stringify(this.overrides) : null,
+    );
+    for (const listener of this.flagListeners) listener(this.flags());
+  }
+
+  /** Early-access features this person can opt into, with their current choice. */
+  async earlyAccessFeatures(): Promise<EarlyAccessFeature[]> {
+    if (!this.store || !this.options) return [];
+    try {
+      const res = await fetch(`${this.host}/f`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({ ...this.flagRequest(), early_access: true }),
+      });
+      if (!res.ok) return [];
+      return ((await res.json()) as { earlyAccess?: EarlyAccessFeature[] }).earlyAccess ?? [];
+    } catch {
+      return [];
+    }
+  }
+
+  /** Opt this person into an early-access feature (stored as a person property), then reload flags. */
+  async optIn(key: string): Promise<void> {
+    await this.setEarlyAccess(key, true);
+  }
+
+  /** Opt this person out of an early-access feature. */
+  async optOut(key: string): Promise<void> {
+    await this.setEarlyAccess(key, false);
+  }
+
+  private async setEarlyAccess(key: string, enrolled: boolean): Promise<void> {
+    this.setPersonProperties({ $early_access: { [key]: enrolled } });
+    await this.flush();
+    await this.reloadFlags();
+  }
+
+  private flagRequest() {
+    return {
+      project: this.options!.project,
+      distinct_id: this.store!.distinctId(),
+      user_id: this.store!.userId(),
+      groups: this.groupsNow(),
+    };
+  }
+
+  /** ?__glass_flags=new-checkout:test,beta:off overrides flags here when the project allows it. */
+  private applyUrlOverrides(): void {
+    if (!this.allowUrlOverrides || typeof location === 'undefined') return;
+    const raw = new URLSearchParams(location.search).get('__glass_flags');
+    if (!raw) return;
+    const overrides: Record<string, string | null> = {};
+    for (const pair of raw.split(',')) {
+      const [k, v] = pair.split(':');
+      if (!k) continue;
+      overrides[k] =
+        !v || v === 'on' || v === 'true' ? 'on' : v === 'off' || v === 'false' ? null : v;
+    }
+    this.overrideFlags(overrides);
   }
 
   /** Called with flag values once they load and whenever they change. Returns an unsubscribe function. */
@@ -209,16 +363,22 @@ export class Dataflare {
       const res = await fetch(`${this.host}/f`, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({
-          project: this.options.project,
-          distinct_id: this.store.distinctId(),
-          user_id: this.store.userId(),
-        }),
+        body: JSON.stringify(this.flagRequest()),
       });
       if (!res.ok) return;
-      const data = (await res.json()) as { flags?: Record<string, string> };
+      const data = (await res.json()) as {
+        flags?: Record<string, string>;
+        payloads?: Record<string, unknown>;
+        allowOverrides?: boolean;
+      };
       this.flagValues = data.flags ?? {};
+      this.flagPayloads = data.payloads ?? {};
       this.store.set('flags', JSON.stringify(this.flagValues));
+      this.store.set('flag_payloads', JSON.stringify(this.flagPayloads));
+      if (data.allowOverrides && !this.allowUrlOverrides) {
+        this.allowUrlOverrides = true;
+        this.applyUrlOverrides();
+      }
     } catch {
       // Offline: keep cached values.
     } finally {

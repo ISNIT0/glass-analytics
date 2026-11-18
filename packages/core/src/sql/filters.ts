@@ -25,6 +25,8 @@ function jsonLocation(
   alias?: string,
 ): { column: string; path: string[] } {
   if (r.kind === 'person') return { column: col('person_props', alias), path: r.path };
+  // Events carry the flag values active when they fired.
+  if (r.kind === 'flag') return { column: col('flags', alias), path: [r.key] };
   if (r.kind === 'group') {
     // Group keys and a snapshot of each group's properties travel in the event's props.
     return r.path.length === 0
