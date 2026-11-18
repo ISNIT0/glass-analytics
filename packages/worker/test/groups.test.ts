@@ -67,6 +67,26 @@ describe('groups', () => {
     assert.equal((await t.call('GET', '/api/groups/company/nobody?project=acme')).status, 404);
   });
 
+  it("shows a person's groups on their page", async () => {
+    await t.json('PATCH', '/api/groups/company/initech?project=acme', {
+      body: { properties: { name: 'Initech' } },
+    });
+    const ann = await t.json<{
+      groups: { type: string; key: string; name: string | null; link: string }[];
+      summary: string;
+    }>('GET', '/api/persons/ann?project=acme', { key: READ });
+    assert.deepEqual(
+      ann.groups.map((g) => [g.type, g.key, g.name]),
+      [['company', 'initech', 'Initech']],
+    );
+    assert.match(ann.groups[0]!.link, /groups\/company\/initech/);
+    assert.match(ann.summary, /in company initech/);
+    // Someone whose events name no group has none.
+    await t.ingest([wire('report_run', { distinct_id: 'dee' })]);
+    const dee = await t.json<{ groups: unknown[] }>('GET', '/api/persons/dee?project=acme');
+    assert.deepEqual(dee.groups, []);
+  });
+
   it('sets properties and adds types, up to five', async () => {
     const r = await t.json<{ properties: Record<string, unknown> }>(
       'PATCH',

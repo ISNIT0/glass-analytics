@@ -197,7 +197,7 @@ describe('cohort conditions', () => {
     assert.deepEqual(await members(def), ['casual', 'power', 'veteran']);
     assert.match(
       describeCohort(def),
-      /person\.plan eq "free".* or .*did report in 2d and didn't do invite/,
+      /person\.plan is "free".* or .*did report in the last 2 days and didn't do invite in the last 7 days/,
     );
   });
 });

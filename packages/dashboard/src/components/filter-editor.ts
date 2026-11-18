@@ -26,6 +26,8 @@ export interface FilterEditorOptions {
   cohorts?: boolean;
   /** Only person properties (cohort definitions). */
   personOnly?: boolean;
+  /** Exactly one row: no joiner, no remove or add buttons (the caller owns those). */
+  single?: boolean;
 }
 
 type Kind = 'cohort' | 'string' | 'number' | 'boolean';
@@ -145,7 +147,7 @@ export function filterEditor(
     const el = h(
       'div',
       { class: 'filter-row' },
-      h('span', { class: 'filter-joiner' }, i === 0 ? 'where' : 'and'),
+      options.single ? null : h('span', { class: 'filter-joiner' }, i === 0 ? 'where' : 'and'),
     );
     el.append(
       propertyPicker({
@@ -211,6 +213,7 @@ export function filterEditor(
         }),
       );
     }
+    if (options.single) return el;
     el.append(
       h(
         'button',
@@ -244,6 +247,7 @@ export function filterEditor(
         el = next;
       });
     });
+    if (options.single) return;
     root.append(
       h(
         'div',

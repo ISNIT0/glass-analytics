@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { exceptionInfo, fingerprint, issueIdFor } from '@dataflare/core/issues';
 import { LAKE_TABLES, type LakeSchemaChange, lakeFields } from '@dataflare/core/lake';
 import { configureExports, runExports } from '../src/exports.ts';
+import { clearGroupTypeCache } from '../src/ingest.ts';
 import { D1Store } from '../src/stores/d1.ts';
 import { LakeStore } from '../src/stores/lake.ts';
 import type { EventStore } from '../src/stores/types.ts';
@@ -629,6 +630,8 @@ function conformance(name: string, split: boolean) {
       ]);
       const events = fixture(Date.now());
       for (const app of [d1, lake]) {
+        // Group types are cached per isolate by project; these two apps share one isolate and project.
+        clearGroupTypeCache();
         await app.json('POST', '/api/projects', { body: { id: 'acme' } });
         // Purchases are revenue (and subscription payments, for MRR).
         await app.json('PATCH', '/api/settings', {

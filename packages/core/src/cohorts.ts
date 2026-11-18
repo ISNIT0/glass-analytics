@@ -324,27 +324,75 @@ export function cohortReferences(def: CohortDefinition): string[] {
 }
 
 /** A one-line description of a definition, for summaries. */
-export function describeCohort(def: CohortDefinition): string {
+const OP_WORDS: Record<string, string> = {
+  eq: 'is',
+  neq: 'is not',
+  in: 'is any of',
+  not_in: 'is none of',
+  contains: 'contains',
+  not_contains: "doesn't contain",
+  gt: '>',
+  gte: '≥',
+  lt: '<',
+  lte: '≤',
+  is_set: 'is set',
+  is_not_set: 'is not set',
+};
+
+const UNIT_WORDS: Record<string, string> = {
+  s: 'second',
+  m: 'minute',
+  min: 'minute',
+  h: 'hour',
+  d: 'day',
+  w: 'week',
+  mo: 'month',
+};
+
+/** "30d" → "30 days", "1w" → "1 week"; anything else as given (seconds as "N seconds"). */
+export function durationWords(input: string | number): string {
+  if (typeof input === 'number') return `${input} second${input === 1 ? '' : 's'}`;
+  const m = /^(\d+)\s*(s|m|min|h|d|w|mo)$/i.exec(input.trim());
+  if (!m) return input;
+  const n = Number(m[1]);
+  return `${n} ${UNIT_WORDS[m[2]!.toLowerCase()]}${n === 1 ? '' : 's'}`;
+}
+
+const COUNT_WORDS = { gte: 'at least', eq: 'exactly', lte: 'at most' } as const;
+
+/**
+ * A definition in plain words, e.g. "did report at least 3 times in the last 7 days".
+ * `names` turns referenced cohort keys into their names.
+ */
+export function describeCohort(def: CohortDefinition, names?: Map<string, string>): string {
+  const value = (v: unknown) =>
+    v === undefined
+      ? ''
+      : ` ${Array.isArray(v) ? v.map((x) => JSON.stringify(x)).join(', ') : JSON.stringify(v)}`;
   const one = (c: CohortCondition): string => {
     switch (c.type) {
-      case 'property':
-        return `${c.negate ? 'not ' : ''}${c.property} ${c.op ?? 'eq'} ${JSON.stringify(c.value ?? '')}`;
+      case 'property': {
+        const op = c.op ?? 'eq';
+        return `${c.negate ? 'not: ' : ''}${c.property} ${OP_WORDS[op] ?? op}${op === 'is_set' || op === 'is_not_set' ? '' : value(c.value)}`;
+      }
       case 'performed':
-        return `did ${c.event}${c.count ? ` ${c.count.op} ${c.count.value}×` : ''} in ${c.within ?? '30d'}`;
+        return `did ${c.event}${c.count ? ` ${COUNT_WORDS[c.count.op]} ${c.count.value} time${c.count.value === 1 ? '' : 's'}` : ''} in the last ${durationWords(c.within ?? '30d')}`;
       case 'not_performed':
-        return `didn't do ${c.event} in ${c.within ?? '30d'}`;
+        return `didn't do ${c.event} in the last ${durationWords(c.within ?? '30d')}`;
       case 'performed_regularly':
-        return `did ${c.event} in ${c.minPeriods} of the last ${c.periods} ${c.period}s`;
+        return `did ${c.event} in at least ${c.minPeriods} of the last ${c.periods} ${c.period}s`;
       case 'first_performed':
-        return `first did ${c.event} in the last ${c.within ?? '30d'}`;
+        return `first did ${c.event} in the last ${durationWords(c.within ?? '30d')}`;
       case 'stopped':
-        return `stopped doing ${c.event} (none in ${c.within})`;
+        return `stopped doing ${c.event} (none in the last ${durationWords(c.within)})`;
       case 'started':
-        return `started doing ${c.event} (in ${c.within})`;
+        return `started doing ${c.event} (in the last ${durationWords(c.within)})`;
       case 'sequence':
-        return `did ${c.event} then ${c.followedBy.event} within ${c.gap ?? '1d'}`;
-      case 'cohort':
-        return `${c.negate ? 'not in' : 'in'} cohort ${c.key}`;
+        return `did ${c.event} then ${c.followedBy.event} within ${durationWords(c.gap ?? '1d')}`;
+      case 'cohort': {
+        const name = names?.get(c.key);
+        return `${c.negate ? 'not in' : 'in'} cohort ${name ? `"${name}"` : c.key}`;
+      }
     }
   };
   return def.groups

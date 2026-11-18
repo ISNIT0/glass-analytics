@@ -132,6 +132,67 @@ await call(
   { 'User-Agent': UA, 'Content-Type': 'text/plain' },
 );
 await call('POST', '/api/projects', { id: 'shop', name: 'Shop' }).catch(() => {});
+// People with properties, and cohorts of every kind: by behaviour, two groups with a cohort reference, a list.
+for (const [id, name, plan] of [
+  ['dev-1', 'Ada Lovelace', 'pro'],
+  ['dev-2', 'Grace Hopper', 'team'],
+  ['dev-3', 'Alan Turing', 'starter'],
+] as const)
+  await call('PATCH', `/api/persons/${id}`, {
+    project: 'demo',
+    properties: { name, email: `${id}@example.com`, plan },
+  });
+await call('PATCH', '/api/groups/company/co-1?project=demo', { properties: { name: 'Initech' } });
+await call('POST', '/api/cohorts', {
+  project: 'demo',
+  key: 'buyers',
+  name: 'Repeat buyers',
+  description: 'Paid at least twice this month',
+  definition: {
+    groups: [
+      {
+        conditions: [
+          { type: 'performed', event: 'order_paid', count: { op: 'gte', value: 2 }, within: '30d' },
+        ],
+      },
+    ],
+  },
+});
+await call('POST', '/api/cohorts', {
+  project: 'demo',
+  key: 'healthy-pro',
+  name: 'Healthy paying accounts',
+  definition: {
+    groups: [
+      {
+        match: 'any',
+        conditions: [
+          { type: 'property', property: 'person.plan', op: 'in', value: ['pro', 'team'] },
+          { type: 'cohort', key: 'buyers' },
+        ],
+      },
+      {
+        conditions: [
+          { type: 'not_performed', event: '$exception', within: '7d' },
+          {
+            type: 'performed_regularly',
+            event: '$pageview',
+            period: 'day',
+            periods: 7,
+            minPeriods: 2,
+          },
+        ],
+      },
+    ],
+  },
+});
+await call('POST', '/api/cohorts', {
+  project: 'demo',
+  key: 'beta',
+  name: 'Beta testers',
+  static: true,
+  ids: ['dev-1', 'dev-2', 'dev-5'],
+});
 const dest = await call('POST', '/api/destinations', {
   project: 'demo',
   template: 'slack',
@@ -253,6 +314,9 @@ const routes: [string, string][] = [
     'insights/new/retention?project=demo&from=-7d&spec=%7B%22cohortEvent%22%3A%7B%22event%22%3A%22%24pageview%22%7D%2C%22returnEvent%22%3A%7B%22event%22%3A%22%24pageview%22%7D%2C%22period%22%3A%22day%22%2C%22periods%22%3A6%2C%22retentionType%22%3A%22recurring%22%2C%22cumulative%22%3Atrue%2C%22aggregateBy%22%3A%22company%22%7D',
   ],
   ['people', 'users?project=demo'],
+  ['person', 'users/dev-1?project=demo'],
+  ['cohorts', 'users?tab=cohorts&project=demo'],
+  ['cohorts-members', 'users?tab=cohorts&project=demo&view=members'],
   ['flag', 'flags/new-checkout?project=demo'],
   ['experiments-list', 'experiments?project=demo'],
   ['experiment', 'experiments/checkout-test?project=demo'],
@@ -275,9 +339,11 @@ async function session(theme: 'light' | 'dark', width: number, height: number): 
         `${theme}/${width} HTTP ${r.status()} ${r.request().method()} ${r.url()}: ${(await r.text().catch(() => '')).slice(0, 200)}`,
       );
   });
+  // Ignore what the first load (signing in with the key) reports, but keep earlier sessions' problems.
+  const before = problems.length;
   await page.goto(`${base}/app?project=demo#key=dev-admin-key`);
   await page.waitForTimeout(300);
-  problems.length = 0;
+  problems.splice(before);
   return page;
 }
 const actions: Record<string, (p: Page) => Promise<void>> = {
@@ -293,12 +359,28 @@ const actions: Record<string, (p: Page) => Promise<void>> = {
     await p.getByRole('button', { name: 'Try it' }).click();
     await p.waitForTimeout(700);
   },
+  cohorts: async (p) => {
+    await p
+      .locator('.cohorts-table tr', { hasText: 'Healthy paying accounts' })
+      .getByRole('button', { name: 'Edit' })
+      .click();
+    await p.waitForTimeout(900);
+  },
+  'cohorts-members': async (p) => {
+    await p
+      .locator('.cohorts-table tr', { hasText: 'Beta testers' })
+      .getByRole('button', { name: 'People' })
+      .click();
+    await p.waitForTimeout(700);
+  },
   exports: async (p) => {
     await p.locator('table .link-button').first().click();
     await p.waitForTimeout(700);
   },
 };
 const MOBILE = new Set([
+  'person',
+  'cohorts',
   'errors',
   'issue',
   'revenue',

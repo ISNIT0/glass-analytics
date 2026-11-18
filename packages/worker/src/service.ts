@@ -467,8 +467,8 @@ export const inputs = {
   cohortMembers: z.object({
     project,
     key: z.string(),
-    limit: z.number().int().min(1).max(1000).optional().describe('Default 100.'),
-    offset: z.number().int().min(0).optional(),
+    limit: z.coerce.number().int().min(1).max(1000).optional().describe('Default 100.'),
+    offset: z.coerce.number().int().min(0).optional(),
     format: z.enum(['json', 'csv']).optional(),
   }),
   editCohortMembers: z.object({
@@ -1066,6 +1066,11 @@ export const inputs = {
   }),
   deleteInsight: z.object({ project, key: z.string() }),
 };
+
+/** Cohort key → name, so summaries name the cohorts a definition references. */
+function cohortNames(cohorts: Map<string, { key: string; name: string }>): Map<string, string> {
+  return new Map([...cohorts.values()].map((c) => [c.key, c.name]));
+}
 
 export class GlassService {
   readonly env: Env;
@@ -2124,11 +2129,14 @@ FROM (SELECT ts_ms, ${rev} AS r FROM ev WHERE pid = ${d.str(id)} OR distinct_id 
         currency: ctx.settings.baseCurrency ?? 'USD',
       };
     }
+    // The groups (companies, teams…) their events in the last 90 days were part of.
+    const groups = await this.personGroups(ctx.project, id, now);
     return {
       project: ctx.project,
       id,
       identified: Boolean(person),
       properties: person ? (JSON.parse(person.props) as Record<string, unknown>) : {},
+      groups: groups.list,
       firstSeen: person ? new Date(person.first_seen).toISOString() : (events.at(-1)?.time ?? null),
       lastSeen: person ? new Date(person.last_seen).toISOString() : (events[0]?.time ?? null),
       devices: devices.results.map((r) => r.distinct_id),
@@ -2140,9 +2148,58 @@ FROM (SELECT ts_ms, ${rev} AS r FROM ev WHERE pid = ${d.str(id)} OR distinct_id 
         errors: r.errors,
         url: r.start_url,
       })),
-      summary: `${person ? 'Identified person' : 'Anonymous device'} "${id}": ${events.length} events in 90 days${replays.length ? `, ${replays.length} recorded sessions` : ''}${revenue?.orders ? `, ${revenue.orders} payments worth ${revenue.net} ${revenue.currency} net` : ''}.`,
-      sql: [sql],
+      summary: `${person ? 'Identified person' : 'Anonymous device'} "${id}": ${events.length} events in 90 days${replays.length ? `, ${replays.length} recorded sessions` : ''}${groups.list.length ? `, in ${groups.list.map((g) => `${g.type} ${g.key}`).join(', ')}` : ''}${revenue?.orders ? `, ${revenue.orders} payments worth ${revenue.net} ${revenue.currency} net` : ''}.`,
+      sql: [sql, ...groups.sql],
       dashboard: this.link(`users/${encodeURIComponent(id)}`, { project: ctx.project }),
+    };
+  }
+
+  /** Groups a person's events named in the last 90 days, newest first, with each group's name. */
+  private async personGroups(project: string, id: string, now: number) {
+    const { results: types } = await this.env.DB.prepare(
+      'SELECT type FROM group_types WHERE project = ? ORDER BY idx',
+    )
+      .bind(project)
+      .all<{ type: string }>();
+    if (!types.length) return { list: [], sql: [] };
+    const d = this.store.dialect;
+    const who = `(pid = ${d.str(id)} OR distinct_id = ${d.str(id)})`;
+    const sql = `WITH ${eventsCte(d, { project, from: now - 90 * DAY_MS, to: now + 60_000 })}
+${types
+  .map(({ type }) => {
+    const key = d.jsonText('props', ['$groups', type]);
+    return `SELECT ${d.str(type)} AS type, ${key} AS group_key, MAX(ts_ms) AS last_ts FROM ev WHERE ${who} AND ${key} IS NOT NULL GROUP BY ${key}`;
+  })
+  .join('\nUNION ALL\n')}`;
+    const rows = (await this.store.query(sql))
+      .map((r) => ({ type: text(r.type), key: text(r.group_key), last: num(r.last_ts) }))
+      .filter((r) => r.key)
+      .sort((a, b) => b.last - a.last)
+      .slice(0, 20);
+    const names = new Map<string, Record<string, unknown>>();
+    if (rows.length) {
+      const { results } = await this.env.DB.prepare(
+        `SELECT type, key, props FROM groups WHERE project = ? AND (${rows.map(() => '(type = ? AND key = ?)').join(' OR ')})`,
+      )
+        .bind(project, ...rows.flatMap((r) => [r.type, r.key]))
+        .all<{ type: string; key: string; props: string }>();
+      for (const r of results) names.set(`${r.type}\u0000${r.key}`, safeParse(r.props));
+    }
+    return {
+      list: rows.map((r) => {
+        const props = names.get(`${r.type}\u0000${r.key}`) ?? {};
+        return {
+          type: r.type,
+          key: r.key,
+          name: typeof props.name === 'string' ? props.name : null,
+          properties: props,
+          lastSeen: new Date(r.last).toISOString(),
+          link: this.link(`groups/${encodeURIComponent(r.type)}/${encodeURIComponent(r.key)}`, {
+            project,
+          }),
+        };
+      }),
+      sql: [sql],
     };
   }
 
@@ -2247,8 +2304,8 @@ FROM (SELECT ts_ms, ${rev} AS r FROM ev WHERE pid = ${d.str(id)} OR distinct_id 
     return {
       project: ctx.project,
       count,
-      description: describeCohort(definition),
-      summary: `${count} ${count === 1 ? 'person' : 'people'} match: ${describeCohort(definition)}.`,
+      description: describeCohort(definition, cohortNames(cohorts)),
+      summary: `${count} ${count === 1 ? 'person' : 'people'} match: ${describeCohort(definition, cohortNames(cohorts))}.`,
       sql: [sql],
     };
   }
@@ -2280,7 +2337,10 @@ FROM (SELECT ts_ms, ${rev} AS r FROM ev WHERE pid = ${d.str(id)} OR distinct_id 
         description: row.description,
         kind: row.kind,
         definition: row.kind === 'static' ? null : row.definition,
-        summary: row.kind === 'static' ? 'Static list of people' : describeCohort(row.definition),
+        summary:
+          row.kind === 'static'
+            ? 'Static list of people'
+            : describeCohort(row.definition, cohortNames(cohorts)),
         count,
         usedByFlags: usedByFlags.has(row.key),
         refreshedAt: row.refreshedAt ? new Date(row.refreshedAt).toISOString() : null,
@@ -2397,7 +2457,7 @@ FROM (SELECT ts_ms, ${rev} AS r FROM ev WHERE pid = ${d.str(id)} OR distinct_id 
       kind: isStatic ? 'static' : 'dynamic',
       created: !existing,
       count,
-      summary: `${existing ? 'Updated' : 'Created'} ${isStatic ? 'static ' : ''}cohort "${spec.name}" (${count} people)${definition ? `: ${describeCohort(definition)}` : ''}.`,
+      summary: `${existing ? 'Updated' : 'Created'} ${isStatic ? 'static ' : ''}cohort "${spec.name}" (${count} people)${definition ? `: ${describeCohort(definition, cohortNames(cohorts))}` : ''}.`,
       sql: sql ? [sql] : [],
       dashboard: this.link('users', { project: ctx.project, cohort: key }),
     };

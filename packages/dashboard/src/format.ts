@@ -107,3 +107,12 @@ export function ago(value: string | number): string {
   if (seconds < 86400) return `${Math.floor(seconds / 3600)} h ago`;
   return `${Math.floor(seconds / 86400)} d ago`;
 }
+
+/** An amount of money in a currency, without "-0.00" and with whole units from 1,000 up. */
+export function money(n: number, currency = 'USD'): string {
+  return new Intl.NumberFormat(undefined, {
+    style: 'currency',
+    currency,
+    maximumFractionDigits: Math.abs(n) >= 1000 ? 0 : 2,
+  }).format(n === 0 ? 0 : n);
+}

@@ -3240,9 +3240,6 @@ input.palette-input:focus {
 .cohort-form {
   display: grid;
   gap: 14px;
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid var(--hairline);
 }
 
 /* ── Flags & experiments ───────────────────────────────── */
@@ -5029,16 +5026,6 @@ pre.transcript {
   border-top: 1px solid var(--hairline);
 }
 
-.cohort-form {
-  display: grid;
-  gap: 14px;
-}
-
-.cohort-form .field .picker,
-.cohort-filters {
-  max-width: 760px;
-}
-
 .cohort-submit {
   align-items: center;
 }
@@ -5766,4 +5753,173 @@ select.short-select {
 
 .section-gap {
   margin-top: 16px;
+}
+
+/* Cohorts: definition editor, list and members. */
+.cohorts {
+  display: grid;
+  gap: 16px;
+}
+
+.cohort-editor {
+  display: grid;
+  gap: 10px;
+  max-width: 880px;
+}
+
+.cohort-group {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+
+.cohort-group-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+}
+
+.cohort-group-title {
+  font-weight: 650;
+  font-size: 13px;
+}
+
+.cohort-condition {
+  display: grid;
+  gap: 8px;
+  padding: 10px 0;
+  border-top: 1px dashed var(--hairline);
+}
+
+.cohort-condition-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cohort-sentence {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.cohort-event {
+  flex: 1 1 200px;
+  min-width: min(200px, 100%);
+  max-width: 320px;
+}
+
+.cohort-words {
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.cohort-joiner {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  font-size: 11px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.cohort-duration {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+input.tiny {
+  width: 5em;
+  flex: none;
+}
+
+.cohort-between {
+  display: flex;
+  justify-content: center;
+}
+
+.cohort-between select {
+  width: auto;
+  font-weight: 650;
+}
+
+.cohort-event-filters,
+.cohort-property {
+  max-width: 760px;
+}
+
+.cohort-editor-foot {
+  margin-top: 2px;
+}
+
+.cohort-name {
+  display: grid;
+  gap: 4px;
+  min-width: 160px;
+}
+
+.cohort-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.cohort-badges:empty {
+  display: none;
+}
+
+.cohort-summary {
+  display: block;
+  min-width: 220px;
+  max-width: 460px;
+}
+
+.count-link {
+  font-variant-numeric: tabular-nums;
+}
+
+.members {
+  display: grid;
+  gap: 12px;
+}
+
+.members-add input {
+  flex: 1;
+  min-width: 200px;
+}
+
+.members-more {
+  justify-self: center;
+}
+
+.person-groups {
+  display: grid;
+  gap: 8px;
+}
+
+.person-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.kpi dd.kpi-date {
+  font-size: 18px;
+  line-height: 1.35;
+}
+
+.cohorts-table .row-actions {
+  flex-wrap: nowrap;
 }

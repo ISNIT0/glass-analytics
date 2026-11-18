@@ -69,7 +69,7 @@ describe('cohort definitions', () => {
     );
     assert.equal(saved.count, 1);
     assert.equal(saved.kind, 'dynamic');
-    assert.match(saved.summary, /did report gte 3× in 7d/);
+    assert.match(saved.summary, /did report at least 3 times in the last 7 days/);
     const count = await t.json<{ count: number }>('POST', '/api/cohorts/count', {
       body: {
         project: 'acme',
@@ -171,6 +171,15 @@ describe('static cohorts', () => {
         ['ann', 'pro'],
         ['bob', 'free'],
       ],
+    );
+    // Pages through the query string (numbers arrive as text).
+    const second = await t.json<{ people: { id: string }[]; offset: number; hasMore: boolean }>(
+      'GET',
+      '/api/cohorts/beta/members?project=acme&limit=1&offset=1',
+    );
+    assert.deepEqual(
+      [second.people.map((p) => p.id), second.offset, second.hasMore],
+      [['bob'], 1, false],
     );
     const csv = await (
       await t.call('GET', '/api/cohorts/beta/members?project=acme&format=csv')
