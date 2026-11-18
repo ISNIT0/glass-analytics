@@ -367,14 +367,11 @@ function destinations(route: Route): Child {
       ),
     );
     if (!list.length)
-      return [
-        empty(
-          'Forward events as they arrive: chat alerts, ad platforms (with hashed identifiers), CRMs, other analytics tools or your own webhook.',
-          newButton,
-          { icon: 'zap', title: 'No destinations' },
-        ),
-        gallery,
-      ];
+      return panel('Pick a destination', gallery, {
+        icon: 'zap',
+        subtitle:
+          'No destinations yet. Forward events as they arrive: chat alerts, ad platforms (with hashed identifiers), CRMs, other analytics tools or your own webhook.',
+      });
     return [
       panel(
         `${list.length} ${list.length === 1 ? 'destination' : 'destinations'}`,

@@ -294,6 +294,7 @@ const routes: [string, string][] = [
   ['destinations', 'pipelines/destinations?project=demo'],
   ['destination', `pipelines/destinations/${dest.destination.id}?project=demo`],
   ['destination-new', 'pipelines/destinations/new?project=demo&template=meta-capi'],
+  ['destination-pick', 'pipelines/destinations/new?project=demo'],
   ['transformations', 'pipelines/transformations?project=demo'],
   ['exports', 'pipelines/exports?project=demo'],
   ['settings', 'settings?project=demo'],
@@ -322,6 +323,18 @@ const routes: [string, string][] = [
   ['experiment', 'experiments/checkout-test?project=demo'],
   ['experiment-new', 'experiments/new?project=demo'],
   ['holdout', 'experiments/holdouts/q4-holdout?project=demo'],
+  // A project with no data: every page's empty state.
+  ['empty-destinations', 'pipelines/destinations?project=shop'],
+  ['empty-transformations', 'pipelines/transformations?project=shop'],
+  ['empty-exports', 'pipelines/exports?project=shop'],
+  ['empty-errors', 'errors?project=shop&from=-7d'],
+  ['empty-revenue', 'revenue?project=shop'],
+  ['empty-groups', 'groups?project=shop'],
+  ['empty-flags', 'flags?project=shop'],
+  ['empty-experiments', 'experiments?project=shop'],
+  ['empty-cohorts', 'users?tab=cohorts&project=shop'],
+  ['empty-people', 'users?project=shop'],
+  ['empty-settings', 'settings?project=shop'],
 ];
 const browser = await chromium.launch({ args: [`--user-agent=${UA}`] });
 const problems: string[] = [];
@@ -346,6 +359,57 @@ async function session(theme: 'light' | 'dark', width: number, height: number): 
   problems.splice(before);
   return page;
 }
+/**
+ * Cards that sit on top of each other with no gap: for every panel, KPI strip,
+ * notice or toolbar, the nearest block above it that overlaps it horizontally
+ * (and isn't its ancestor or descendant) must be at least 8px away.
+ */
+async function touchingBlocks(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    // Blocks in the page flow (through loading wrappers and plain divs), plus every panel.
+    const flow: HTMLElement[] = [];
+    const walk = (parent: Element) => {
+      for (const child of parent.children) {
+        const wrapper =
+          child.classList.contains('later') ||
+          child.classList.contains('section-gap') ||
+          (child.tagName === 'DIV' && child.classList.length === 0);
+        if (wrapper) walk(child);
+        else flow.push(child as HTMLElement);
+      }
+    };
+    const content = document.querySelector('.content');
+    if (content) walk(content);
+    const blocks = [
+      ...new Set([
+        ...flow,
+        ...document.querySelectorAll<HTMLElement>('.content .panel, .content .kpis, .modal .panel'),
+      ]),
+    ].filter((el) => el.offsetParent !== null && el.getBoundingClientRect().height > 0);
+    const name = (el: HTMLElement) =>
+      (el.querySelector('.panel-head h2, .panel-title, h1, h2, h3')?.textContent ?? '').trim() ||
+      `.${[...el.classList].join('.')}`;
+    const out: string[] = [];
+    for (const el of blocks) {
+      const box = el.getBoundingClientRect();
+      let nearest: { el: HTMLElement; bottom: number } | null = null;
+      for (const other of blocks) {
+        if (other === el || other.contains(el) || el.contains(other)) continue;
+        const o = other.getBoundingClientRect();
+        const overlap = Math.min(box.right, o.right) - Math.max(box.left, o.left);
+        if (overlap < 40 || o.bottom > box.top + 1) continue;
+        if (!nearest || o.bottom > nearest.bottom) nearest = { el: other, bottom: o.bottom };
+      }
+      if (!nearest) continue;
+      // Two blocks that start together are one row of a grid, not a stack.
+      const gap = box.top - nearest.bottom;
+      if (gap < 8)
+        out.push(`"${name(el)}" is ${gap.toFixed(0)}px below "${name(nearest.el)}" (want ≥ 8px)`);
+    }
+    return [...new Set(out)];
+  });
+}
+
 const actions: Record<string, (p: Page) => Promise<void>> = {
   'insights-trends': async (p) => {
     await p.getByRole('button', { name: 'People' }).first().click();
@@ -379,6 +443,11 @@ const actions: Record<string, (p: Page) => Promise<void>> = {
   },
 };
 const MOBILE = new Set([
+  'empty-destinations',
+  'empty-errors',
+  'destination-pick',
+  'experiment',
+  'experiments-list',
   'person',
   'cohorts',
   'errors',
@@ -417,6 +486,7 @@ for (const [theme, width, height, suffix] of [
         `${name}${suffix}: page text mentions an error: ${text.slice(0, 300).replace(/\n/g, ' | ')}`,
       );
     await page.screenshot({ path: `${out}/${name}${suffix}.png`, fullPage: true });
+    for (const gap of await touchingBlocks(page)) problems.push(`${name}${suffix}: ${gap}`);
     const act = actions[name];
     if (act && suffix !== '-mobile') {
       await act(page).catch((e) => problems.push(`${name}${suffix}: action failed: ${e.message}`));

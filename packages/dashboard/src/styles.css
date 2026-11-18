@@ -878,6 +878,15 @@ pre.sql {
   margin-bottom: 0;
 }
 
+/*
+ * Loaded sections sit in the page flow, so whatever follows them still needs
+ * the 16px gap. (A last panel's own margin collapses into this one, so nothing
+ * doubles.)
+ */
+.later:not(:last-child) {
+  margin-bottom: 16px;
+}
+
 /* ── KPIs ──────────────────────────────────────────────── */
 
 .kpis {
@@ -2382,6 +2391,8 @@ textarea.prose {
   display: grid;
   justify-items: center;
   gap: 6px;
+  /* A page-level card like a panel; flush when it ends a panel or dialog (below). */
+  margin-bottom: 16px;
   padding: 40px 24px;
   border: 1px dashed var(--hairline-strong);
   background: color-mix(in srgb, var(--surface) 60%, transparent);
@@ -2398,6 +2409,10 @@ textarea.prose {
   border-radius: 14px;
   background: color-mix(in srgb, var(--glass-green) 11%, transparent);
   color: var(--glass-green);
+}
+
+:is(.panel, .modal) .state.empty:last-child {
+  margin-bottom: 0;
 }
 
 .state.empty h3 {
@@ -3198,7 +3213,7 @@ input.palette-input:focus {
   display: flex;
   align-items: center;
   gap: 16px;
-  margin-bottom: 4px;
+  margin-bottom: 20px;
 }
 
 .person-head .page-head {
