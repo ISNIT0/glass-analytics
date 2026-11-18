@@ -1,0 +1,72 @@
+# Mutation testing (scripts/mutation.ts, StrykerJS). On a pull request it mutates the core,
+# worker and cli source files the PR changed, runs each package's tests against every mutant,
+# and comments the score and the surviving mutants. Weekly it runs all three packages. It
+# informs and never fails: coverage gates PRs in quality.yml, this shows whether the tests
+# that run a line would notice if it were wrong.
+name: Mutation
+
+on:
+  pull_request:
+    paths:
+      - "packages/core/src/**"
+      - "packages/worker/src/**"
+      - "packages/cli/src/**"
+  schedule:
+    - cron: "41 3 * * 0"
+  workflow_dispatch:
+
+concurrency:
+  group: mutation-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  # Same-repo pull requests only: GitHub gives fork pull requests a read-only token, so those
+  # get the job summary and artifact but no comment.
+  pull-requests: write
+
+jobs:
+  mutation:
+    name: Mutation testing
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: pnpm
+      # Switch to --frozen-lockfile once pnpm-lock.yaml is committed.
+      - run: pnpm install --no-frozen-lockfile
+
+      - name: Run Stryker
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            pnpm mutation --changed "$BASE_SHA"
+          else
+            pnpm mutation --all
+          fi
+          cat coverage/mutation/report.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the HTML reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mutation-report
+          path: coverage/mutation/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Comment on the pull request
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          COMMENT_MARKER: "<!-- dataflare-mutation-report -->"
+        run: .github/scripts/post-quality-comment.sh "$GITHUB_REPOSITORY" "$PR_NUMBER" coverage/mutation/report.md

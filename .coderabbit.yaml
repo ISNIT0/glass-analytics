@@ -1,0 +1,98 @@
+# CodeRabbit AI review (open-source plan). Schema: https://coderabbit.ai/integrations/schema.v2.json
+# Deterministic checks (types, Biome, tests, the quality ratchet, knip, size budgets, zizmor,
+# CodeQL) already gate PRs in GitHub Actions; this review is for what they can't see: logic
+# bugs, security holes, and the repo rules in AGENTS.md.
+language: en-GB
+tone_instructions: Be brief and specific. Lead with bugs and security issues; skip style nits Biome already covers.
+
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  review_status: true
+  collapse_walkthrough: true
+  sequence_diagrams: false
+  suggested_labels: false
+  suggested_reviewers: false
+  in_progress_fortune: false
+  poem: false
+  auto_review:
+    enabled: true
+    drafts: false
+  path_filters:
+    - "!**/dist/**"
+    - "!pnpm-lock.yaml"
+    - "!**/CHANGELOG.md"
+    - "!site/public/demo/**"
+  path_instructions:
+    - path: "packages/core/src/**/*.ts"
+      instructions: >-
+        Pure logic: no network, Cloudflare bindings or DOM. SQL must run on both SQLite and Basin SQL:
+        build it with eventsCte(), bucketExpr(), filtersSql() and the Dialect methods, inline values only
+        through d.str()/d.num(), timestamps are integer ms (ts_ms), and avoid window functions. Flag any
+        string-built SQL that interpolates user input as a likely injection.
+    - path: "packages/worker/src/**/*.ts"
+      instructions: >-
+        New capabilities belong in GlassService (service.ts), validated with zod, and exposed through
+        api.ts and mcp/tools.ts; route handlers stay thin. Errors use HttpError(status, message, hint).
+        Check auth on every route that reads or writes project data, and that MCP tool descriptions are
+        specific and short. No new runtime dependencies.
+    - path: "packages/worker/migrations/**"
+      instructions: Migrations are append-only. Any edit to an existing migration file is a blocking bug; changes go in a new 000N_*.sql file.
+    - path: "packages/web/src/**/*.ts"
+      instructions: >-
+        The browser SDK runs on every visitor's page: keep it small, never import the @dataflare/core
+        barrel (import specific modules such as @dataflare/core/ids), no new runtime dependencies, and
+        never throw into the host page. Flag anything that could leak PII or break the host site.
+    - path: "packages/cli/src/**/*.ts"
+      instructions: Errors use UsageError(message, hint). Cloudflare calls go through cloudflare/wrangler.ts. Watch for shell injection in anything passed to execFileSync/spawn.
+    - path: ".github/workflows/**"
+      instructions: >-
+        Actions are pinned to full commit SHAs, permissions are least-privilege, checkout uses
+        persist-credentials: false unless the job pushes, and untrusted values (PR titles, branch names,
+        bodies) reach shell only through env vars, never ${{ }} inside run:. Pull request code must never
+        run with secrets or a write token (pull_request_target, workflow_run).
+    - path: "**/*.ts"
+      instructions: Node runs these .ts files directly, so only erasable syntax (no enums, namespaces or parameter properties) and .ts import extensions.
+  pre_merge_checks:
+    custom_checks:
+      - name: Migrations are append-only
+        mode: error
+        instructions: Fail if the PR modifies or deletes any existing file under packages/worker/migrations/. Adding new migration files is fine.
+      - name: No new runtime dependencies
+        mode: warning
+        instructions: Warn if the PR adds an entry to "dependencies" (not devDependencies) in packages/worker/package.json or packages/web/package.json, unless the PR description links an issue where maintainers agreed to it.
+      - name: Quality baseline not loosened
+        mode: warning
+        instructions: Warn if the PR raises any function's number or lowers any coverage floor in quality-baseline.json, or raises a budget in scripts/size.ts, without explaining why in the PR description.
+  tools:
+    biome:
+      enabled: true
+    actionlint:
+      enabled: true
+    zizmor:
+      enabled: true
+    shellcheck:
+      enabled: true
+    gitleaks:
+      enabled: true
+    osvScanner:
+      enabled: true
+    semgrep:
+      enabled: true
+    markdownlint:
+      enabled: false
+    languagetool:
+      enabled: false
+    eslint:
+      enabled: false
+
+knowledge_base:
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - AGENTS.md
+      - CONTRIBUTING.md
+
+chat:
+  auto_reply: true

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "ignoreBinaries": ["uv"],
+  "ignore": ["site/public/demo/**"],
+  "rules": {
+    "exports": "warn",
+    "types": "warn"
+  },
+  "workspaces": {
+    ".": {
+      "entry": ["scripts/*.ts", "scripts/**/*.test.ts", "e2e/*.test.ts"],
+      "project": ["scripts/**/*.ts", "e2e/**/*.ts"],
+      "ignoreDependencies": ["@stryker-mutator/core"]
+    },
+    "packages/web": {
+      "entry": ["src/index.ts", "src/script.ts", "src/replay.ts", "test/**/*.test.ts"]
+    },
+    "packages/dashboard": {
+      "entry": ["src/main.ts"]
+    },
+    "packages/worker": {
+      "entry": ["src/index.ts", "test/**/*.test.ts"],
+      "ignoreDependencies": ["@dataflare/dashboard", "dataflare-web", "rrweb"]
+    },
+    "packages/cli": {
+      "entry": ["src/index.ts", "test/**/*.test.ts"],
+      "ignoreDependencies": ["@dataflare/worker"]
+    },
+    "site": {
+      "entry": ["src/client/*.ts"]
+    }
+  }
+}
