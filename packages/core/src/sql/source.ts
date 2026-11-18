@@ -51,6 +51,8 @@ export interface SourceOptions {
   filters?: readonly Filter[];
   /** What the `actor` column holds. Defaults to the person. */
   aggregation?: Aggregation;
+  /** CTE name. Default "ev". */
+  name?: string;
 }
 
 /**
@@ -74,8 +76,9 @@ export function eventsCte(d: Dialect, o: SourceOptions): string {
     ...o,
     filters: (o.filters ?? []).filter((f) => f.property !== COHORT_PROPERTY),
   });
-  if (cohort.length === 0) return `ev AS (\n  ${rows}\n)`;
-  return `ev AS (\n  SELECT * FROM (\n  ${rows}\n  ) ev_all\n  WHERE ${filtersSql(cohort, d)}\n)`;
+  const name = o.name ?? 'ev';
+  if (cohort.length === 0) return `${name} AS (\n  ${rows}\n)`;
+  return `${name} AS (\n  SELECT * FROM (\n  ${rows}\n  ) ev_all\n  WHERE ${filtersSql(cohort, d)}\n)`;
 }
 
 /** Distinct person ids in a cohort, as a subquery for `pid IN (…)`. */

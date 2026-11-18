@@ -10,6 +10,7 @@
 
 import { z } from 'zod/v4';
 import { type Aggregation, parseAggregation } from '../sql/source.ts';
+import { compileFunnelActors } from './funnel.ts';
 import { compileTrendsActors } from './trends.ts';
 import type { QueryContext } from './types.ts';
 
@@ -63,6 +64,13 @@ export const ACTOR_COMPILERS: Record<string, ActorCompiler> = {
       page,
     );
   },
+  funnel: (spec, ctx, sel, page) =>
+    compileFunnelActors(
+      spec as Parameters<typeof compileFunnelActors>[0],
+      ctx,
+      { step: sel.step, status: sel.status, breakdown: sel.breakdown },
+      page,
+    ),
 };
 
 /** The aggregation a spec counts (its `aggregateBy`). */

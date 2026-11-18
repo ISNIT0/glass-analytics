@@ -555,7 +555,7 @@ describe('query API', () => {
     const unknown = await t.call('POST', '/api/query', { body: { kind: 'paths' } });
     assert.match(
       ((await unknown.json()) as { hint: string }).hint,
-      /web, trends, funnel, retention/,
+      /web, trends, funnel, funnel_correlation, retention/,
     );
   });
 

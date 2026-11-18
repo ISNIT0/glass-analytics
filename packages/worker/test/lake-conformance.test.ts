@@ -306,6 +306,66 @@ const READS: [string, string, unknown?][] = [
     'POST',
     '/api/query',
     {
+      kind: 'funnel',
+      from: '-7d',
+      steps: [
+        { event: '$pageview' },
+        { event: 'signup_completed', optional: true },
+        { event: 'purchase' },
+      ],
+      exclusions: [{ event: '$web_vitals', fromStep: 2, toStep: 3 }],
+      breakdown: 'device',
+      breakdownAttribution: 'last_touch',
+    },
+  ],
+  [
+    'POST',
+    '/api/query',
+    {
+      kind: 'funnel',
+      from: '-7d',
+      steps: [{ event: '$pageview' }, { event: '$web_vitals' }],
+      order: 'strict',
+      viz: 'time_to_convert',
+    },
+  ],
+  [
+    'POST',
+    '/api/query',
+    {
+      kind: 'funnel',
+      from: '-7d',
+      steps: [{ event: 'signup_completed' }, { event: '$pageview' }],
+      order: 'unordered',
+      viz: 'trends',
+      aggregateBy: 'session',
+      interval: 'day',
+    },
+  ],
+  [
+    'POST',
+    '/api/query',
+    {
+      kind: 'funnel_correlation',
+      from: '-7d',
+      steps: [{ event: '$pageview' }, { event: 'signup_completed' }],
+    },
+  ],
+  [
+    'POST',
+    '/api/query',
+    {
+      kind: 'funnel_correlation',
+      from: '-7d',
+      steps: [{ event: '$pageview' }, { event: 'purchase' }],
+      correlation: 'properties',
+      properties: ['device', 'utm_source'],
+    },
+  ],
+  [
+    'POST',
+    '/api/query',
+    {
       kind: 'retention',
       from: '-7d',
       cohortEvent: { event: '$pageview' },

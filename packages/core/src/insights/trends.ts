@@ -46,8 +46,11 @@ import {
   type TimeRange,
   type Zone,
 } from '../time.ts';
+import { type CohortBreakdown, numericBins } from './breakdowns.ts';
 import type { TrendsMath, TrendsSpec } from './schemas.ts';
 import { fmt, type QueryContext, type ResultBase, zoneOf } from './types.ts';
+
+export type { CohortBreakdown } from './breakdowns.ts';
 
 export interface TrendsSeries {
   label: string;
@@ -86,13 +89,6 @@ export interface TrendsResult extends ResultBase {
 }
 
 type Series = TrendsSpec['series'][number];
-
-/** A cohort to break down by, attached by the service (label and resolved membership filter). */
-export interface CohortBreakdown {
-  key: string;
-  label: string;
-  filter: Filter;
-}
 
 type Spec = TrendsSpec & { cohortBreakdown?: CohortBreakdown[] };
 
@@ -473,38 +469,6 @@ export function compileTrendsSeries(
   return { perBucket: plan.sql[0]!, totals: plan.sql[1] ?? plan.sql[0]! };
 }
 
-/** Numeric breakdown bins: edges from the range's min and max, labels like "10 – 20". */
-async function binsFor(
-  spec: Spec,
-  ctx: QueryContext,
-  range: TimeRange,
-  aggregation: Aggregation,
-  property: string,
-): Promise<{ expr: string; bins: { label: string; from: number; to: number }[]; sql: string }> {
-  const d = ctx.dialect;
-  const events = [...new Set(spec.series.flatMap((s) => eventsOf(s) ?? ['*']))];
-  const v = propertyNumber(property, d);
-  const sql = `WITH ${eventsCte(d, { project: ctx.project, ...range, events, filters: spec.filters, aggregation })}
-SELECT MIN(${v}) AS lo, MAX(${v}) AS hi FROM ev`;
-  const [row] = await ctx.execute(sql);
-  const lo = row?.lo == null ? 0 : num(row.lo);
-  const hi = row?.hi == null ? lo : num(row.hi);
-  const n = spec.breakdownBins!;
-  const width = hi > lo ? (hi - lo) / n : 1;
-  const round = (x: number) => Number(x.toPrecision(4));
-  const bins = Array.from({ length: n }, (_, i) => {
-    const from = lo + i * width;
-    const to = i === n - 1 ? hi : lo + (i + 1) * width;
-    return { label: `${round(from)} – ${round(to)}`, from, to };
-  }).filter((_, i) => hi > lo || i === 0);
-  const cases = bins
-    .slice(0, -1)
-    .map((b) => `WHEN ${v} < ${d.num(b.to)} THEN ${d.str(b.label)}`)
-    .join(' ');
-  const expr = `(CASE WHEN ${v} IS NULL THEN '(none)' ${cases} ELSE ${d.str(bins.at(-1)!.label)} END)`;
-  return { expr, bins, sql };
-}
-
 /** Running totals, a trailing moving average and a least-squares line, applied in that order. */
 function postProcess(line: TrendsSeries, spec: TrendsSpec): TrendsSeries {
   let values = line.values;
@@ -598,7 +562,14 @@ export async function runTrends(input: TrendsSpec, ctx: QueryContext): Promise<T
   let bins: { label: string; from: number; to: number }[] | undefined;
   let bdExpr = breakdowns.length && !byCohort ? breakdownExpr(breakdowns, ctx.dialect) : "''";
   if (spec.breakdownBins && breakdowns.length === 1 && !byCohort) {
-    const b = await binsFor(spec, ctx, range, aggregation, breakdowns[0]!);
+    const events = [...new Set(spec.series.flatMap((s) => eventsOf(s) ?? ['*']))];
+    const b = await numericBins(ctx, range, {
+      events,
+      filters: spec.filters as Filter[] | undefined,
+      aggregation,
+      property: breakdowns[0]!,
+      bins: spec.breakdownBins,
+    });
     bins = b.bins;
     bdExpr = b.expr;
     sql.push(b.sql);

@@ -170,3 +170,35 @@ describe('annotations', () => {
     assert.equal(after.annotations.length, 0);
   });
 });
+
+describe('funnels through the service', () => {
+  beforeEach(setup);
+
+  it('lists who dropped off at a step, and runs funnel correlation', async () => {
+    await t.ingest([
+      wire('checkout', { id: 'c1', distinct_id: 'd1', user_id: 'ann' }),
+      wire('purchase', { id: 'p1', distinct_id: 'd1', user_id: 'ann', ts: Date.now() - 500 }),
+      wire('checkout', { id: 'c2', distinct_id: 'd2', user_id: 'bob' }),
+    ]);
+    const spec = { steps: [{ event: 'checkout' }, { event: 'purchase' }] };
+    const dropped = await t.json<{ actors: { id: string; properties: Record<string, unknown> }[] }>(
+      'POST',
+      '/api/actors',
+      {
+        body: { project: 'acme', kind: 'funnel', spec, selection: { step: 2, status: 'dropped' } },
+      },
+    );
+    assert.deepEqual(
+      dropped.actors.map((a) => [a.id, a.properties.plan]),
+      [['bob', 'free']],
+    );
+    const correlation = await t.json<{ kind: string; converters: number; dropOffs: number }>(
+      'POST',
+      '/api/query',
+      { body: { kind: 'funnel_correlation', project: 'acme', ...spec } },
+    );
+    assert.equal(correlation.kind, 'funnel_correlation');
+    assert.equal(correlation.converters, 1);
+    assert.equal(correlation.dropOffs, 1);
+  });
+});

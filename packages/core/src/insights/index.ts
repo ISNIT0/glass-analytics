@@ -8,9 +8,16 @@
  */
 
 import type { z } from 'zod/v4';
+import { runFunnelCorrelation } from './correlation.ts';
 import { runFunnel } from './funnel.ts';
 import { runRetention } from './retention.ts';
-import { funnelSpec, retentionSpec, trendsSpec, webSpec } from './schemas.ts';
+import {
+  funnelCorrelationSpec,
+  funnelSpec,
+  retentionSpec,
+  trendsSpec,
+  webSpec,
+} from './schemas.ts';
 import { runTrends } from './trends.ts';
 import type { QueryContext, ResultBase } from './types.ts';
 import { runWeb } from './web.ts';
@@ -46,9 +53,15 @@ export const INSIGHTS = {
   }),
   funnel: define({
     description:
-      'Conversion through ordered steps within a time window, with drop-off per step and optional breakdown. Use for signup or checkout flows.',
+      'Conversion through steps within a time window: ordered, strict or unordered, with exclusions and optional steps, drop-off and median time per step, breakdowns (first/last touch, a step, all steps), time-to-convert distribution or conversion over time (viz). Use for signup or checkout flows.',
     schema: funnelSpec,
     run: runFunnel,
+  }),
+  funnel_correlation: define({
+    description:
+      'What goes with converting through a funnel and with dropping off: other events done during the attempt, or values of properties (e.g. person.plan, browser), ranked by odds ratio with significance. Use after query_funnel to explain a drop-off.',
+    schema: funnelCorrelationSpec,
+    run: runFunnelCorrelation,
   }),
   retention: define({
     description:
@@ -64,6 +77,7 @@ export function isInsightKind(kind: string): kind is InsightKind {
   return Object.hasOwn(INSIGHTS, kind);
 }
 
+export * from './correlation.ts';
 export * from './experiment.ts';
 export * from './funnel.ts';
 export * from './retention.ts';

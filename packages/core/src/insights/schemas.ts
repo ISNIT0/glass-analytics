@@ -219,29 +219,109 @@ export const trendsSpec = z
   })
   .describe('Event counts or aggregates over time.');
 
+const funnelStepSchema = stepSchema.extend({
+  optional: z
+    .boolean()
+    .optional()
+    .describe('People may skip this step and still reach the next ones (not for the first step).'),
+});
+
 export const funnelSpec = z
   .object({
     ...common,
     steps: z
-      .array(stepSchema)
+      .array(funnelStepSchema)
       .min(2)
-      .max(10)
+      .max(20)
       .describe('Ordered steps. A person converts by doing each step after the previous one.'),
     window: z
       .union([z.string(), z.number()])
       .optional()
       .describe(
-        'Maximum time from the first step to the last, e.g. "1h", "7d". Seconds if a number. Default "7d".',
+        'Maximum time from the first step to the last, e.g. "1h", "7d", "2w". Seconds if a number. Default "7d".',
       ),
+    order: z
+      .enum(['ordered', 'strict', 'unordered'])
+      .optional()
+      .describe(
+        '"ordered" (default): each step after the previous one, other events in between allowed. "strict": each step must be the very next event. "unordered": steps in any order within the window.',
+      ),
+    exclusions: z
+      .array(
+        z.object({
+          event: z.string(),
+          filters: z.array(filterSchema).optional(),
+          fromStep: z
+            .number()
+            .int()
+            .min(1)
+            .describe('Step after which the event excludes (1 = first).'),
+          toStep: z.number().int().min(2).describe('Step before which it excludes.'),
+        }),
+      )
+      .max(5)
+      .optional()
+      .describe(
+        'Drop attempts where this event happened between two steps, e.g. a "coupon_applied" between checkout and purchase.',
+      ),
+    aggregateBy,
     breakdown: z
       .union([z.string(), z.array(z.string()).min(1).max(4)])
       .optional()
       .describe(
-        'Split by one or more properties of the first step, e.g. "utm_source" or ["utm_source","device"]. Multiple properties are joined with " · ".',
+        'Split by one or more properties, e.g. "utm_source" or ["utm_source","device"]. "cohort" splits by breakdownCohorts.',
       ),
-    breakdownLimit: z.number().int().min(1).max(50).optional(),
+    breakdownAttribution: z
+      .union([z.enum(['first_touch', 'last_touch', 'all_steps']), z.number().int().min(1)])
+      .optional()
+      .describe(
+        'Which event the breakdown value comes from: the first step (default), the last step reached, a step number, or "all_steps" (the value must be the same on every step).',
+      ),
+    ...breakdownExtras,
+    viz: z
+      .enum(['steps', 'time_to_convert', 'trends'])
+      .optional()
+      .describe(
+        '"steps" (default): counts and conversion per step. "time_to_convert": the distribution of time between fromStep and toStep. "trends": conversion rate over time, by when people entered.',
+      ),
+    fromStep: z
+      .number()
+      .int()
+      .min(1)
+      .optional()
+      .describe('time_to_convert / trends: from this step (default 1).'),
+    toStep: z
+      .number()
+      .int()
+      .min(2)
+      .optional()
+      .describe('time_to_convert / trends: to this step (default the last).'),
+    interval: z
+      .enum(['hour', 'day', 'week', 'month'])
+      .optional()
+      .describe('trends view: bucket size. Default picks from the range length.'),
   })
   .describe('Conversion through an ordered sequence of events.');
+
+export const funnelCorrelationSpec = funnelSpec
+  .extend({
+    correlation: z
+      .enum(['events', 'properties'])
+      .optional()
+      .describe(
+        '"events" (default): which other events people did before converting or dropping off. "properties": which values of `properties` go with converting.',
+      ),
+    properties: z
+      .array(z.string())
+      .max(10)
+      .optional()
+      .describe(
+        'For correlation "properties": person or first-step properties, e.g. ["person.plan","browser"].',
+      ),
+    exclude: z.array(z.string()).optional().describe('Events to leave out of the correlation.'),
+    limit: z.number().int().min(1).max(50).optional().describe('Top N each way. Default 10.'),
+  })
+  .describe('What goes with converting through a funnel, and with dropping off.');
 
 export const retentionSpec = z
   .object({
@@ -327,6 +407,7 @@ export const sqlSpec = z
 
 export type TrendsSpec = z.infer<typeof trendsSpec>;
 export type FunnelSpec = z.infer<typeof funnelSpec>;
+export type FunnelCorrelationSpec = z.infer<typeof funnelCorrelationSpec>;
 export type RetentionSpec = z.infer<typeof retentionSpec>;
 export type WebSpec = z.infer<typeof webSpec>;
 export type ExperimentSpec = z.infer<typeof experimentSpec>;
