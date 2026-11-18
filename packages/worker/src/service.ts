@@ -5,6 +5,14 @@
  * gets the same answer whichever way it asks.
  */
 
+import {
+  type CohortDefinition,
+  cohortDefinitionV2,
+  cohortReferences,
+  compileCohort,
+  describeCohort,
+  normaliseCohort,
+} from '@dataflare/core/cohorts';
 import { COHORT_PROPERTY, type CohortMembers, type Filter, toList } from '@dataflare/core/filters';
 import {
   experimentSpec,
@@ -67,6 +75,13 @@ import {
   upgradeMessage,
 } from '@dataflare/core/version';
 import { z } from 'zod/v4';
+import {
+  cohortContext,
+  cohortsUsedByFlags,
+  loadCohorts,
+  materialise,
+  membershipSql,
+} from './cohorts.ts';
 import type { Env } from './env.ts';
 import { continueErasure, ERASURE_SLICES_PER_REQUEST, startErasure } from './erasure.ts';
 import {
@@ -106,6 +121,8 @@ import {
 import type { EventStore } from './stores/types.ts';
 
 const project = z.string().optional();
+/** Most people a static cohort can hold. */
+const STATIC_COHORT_LIMIT = 10_000;
 /** Event-store matches feeding a replay search are capped (they are inlined into a D1 query). */
 const SESSION_MATCH_LIMIT = 1000;
 /** A session that hasn't uploaded anything for this long is finished, and its summary can be cached. */
@@ -353,17 +370,62 @@ export const inputs = {
   saveCohort: z.object({
     project,
     key: z.string().optional().describe('Stable id. Defaults to a slug of the name.'),
-    name: z.string().min(1).describe('Human label, e.g. "Pro plan".'),
-    filters: z.array(filterSchema).default([]),
-    didEvent: z.string().optional(),
-    from: z.union([z.string(), z.number()]).optional(),
+    name: z.string().min(1).describe('Human label, e.g. "Power users".'),
+    description: z.string().max(500).optional(),
+    definition: cohortDefinitionV2
+      .optional()
+      .describe(
+        'Groups of conditions: property, performed (N times in a window), not_performed, performed_regularly, first_performed, stopped, started, sequence, cohort. E.g. {"groups":[{"conditions":[{"type":"performed","event":"report_created","count":{"op":"gte","value":3},"within":"30d"}]}]}.',
+      ),
+    filters: z
+      .array(filterSchema)
+      .default([])
+      .describe(
+        'Simple form: filters any one event in the look-back must match (instead of definition).',
+      ),
+    didEvent: z.string().optional().describe('Simple form: only people who did this event.'),
+    from: z
+      .union([z.string(), z.number()])
+      .optional()
+      .describe('Simple form: look-back. Default -90d.'),
+    static: z
+      .boolean()
+      .optional()
+      .describe(
+        'A fixed list of people (ids) instead of conditions, e.g. an uploaded CSV of user ids.',
+      ),
+    ids: z
+      .array(z.string())
+      .max(STATIC_COHORT_LIMIT)
+      .optional()
+      .describe('For static cohorts: the person ids (replaces the list).'),
   }),
   deleteCohort: z.object({ project, key: z.string() }),
   countCohort: z.object({
     project,
+    definition: cohortDefinitionV2.optional(),
     filters: z.array(filterSchema).default([]),
     didEvent: z.string().optional(),
     from: z.union([z.string(), z.number()]).optional(),
+  }),
+  cohortMembers: z.object({
+    project,
+    key: z.string(),
+    limit: z.number().int().min(1).max(1000).optional().describe('Default 100.'),
+    offset: z.number().int().min(0).optional(),
+    format: z.enum(['json', 'csv']).optional(),
+  }),
+  editCohortMembers: z.object({
+    project,
+    key: z.string(),
+    add: z.array(z.string()).max(5000).optional().describe('Person ids to add.'),
+    remove: z.array(z.string()).max(5000).optional().describe('Person ids to remove.'),
+  }),
+  duplicateCohort: z.object({
+    project,
+    key: z.string().describe('Cohort to copy.'),
+    name: z.string().optional(),
+    newKey: z.string().optional(),
   }),
   listReplays: z.object({
     ...replayFilters,
@@ -507,6 +569,10 @@ export const inputs = {
     limit: z.number().int().min(1).max(1000).optional().describe('Default 100.'),
     offset: z.number().int().min(0).optional(),
     format: z.enum(['json', 'csv']).optional().describe('"csv" returns the list as CSV text.'),
+    saveAsCohort: z
+      .object({ name: z.string().min(1), key: z.string().optional() })
+      .optional()
+      .describe('Save everyone in the selection (up to 10,000 people) as a static cohort.'),
   }),
   listAnnotations: z.object({
     project,
@@ -671,6 +737,35 @@ export class GlassService {
       ...args.spec,
       ...(args.project ? { project: args.project } : {}),
     });
+    if (args.saveAsCohort) {
+      if (aggregationOf(resolved as { aggregateBy?: string }) !== 'person') {
+        throw new HttpError(
+          400,
+          'Only people can be saved as a cohort; this spec counts sessions or groups.',
+        );
+      }
+      const all = await this.store.query(
+        compile(resolved, ctx, args.selection as ActorSelection, {
+          limit: STATIC_COHORT_LIMIT + 1,
+          offset: 0,
+        }),
+      );
+      if (all.length > STATIC_COHORT_LIMIT) {
+        throw new HttpError(
+          400,
+          `More than ${STATIC_COHORT_LIMIT.toLocaleString('en-US')} people: too many for a static cohort`,
+          'Save a dynamic cohort with conditions instead.',
+        );
+      }
+      return this.saveCohort({
+        project: ctx.project,
+        key: args.saveAsCohort.key,
+        name: args.saveAsCohort.name,
+        description: `Saved from a ${args.kind} selection on ${new Date().toISOString().slice(0, 10)}`,
+        static: true,
+        ids: all.map((r) => text(r.actor)),
+      });
+    }
     const limit = args.limit ?? 100;
     const offset = args.offset ?? 0;
     const sql = compile(resolved, ctx, args.selection as ActorSelection, {
@@ -1586,20 +1681,45 @@ ORDER BY ts_ms DESC LIMIT 100`;
 
   // ── Cohorts ──────────────────────────────────────────────────────────────
 
-  /** How many distinct people match a cohort definition in its look-back window. */
-  async countCohort(input: unknown) {
-    const spec = inputs.countCohort.parse(input);
-    const ctx = await this.context(spec.project);
-    const { count, sql, range } = await this.cohortMembership(ctx.project, {
-      filters: spec.filters,
+  /** A cohort definition from v2 `definition` or the v1 fields (filters, didEvent, from). */
+  private definitionFrom(spec: {
+    definition?: CohortDefinition;
+    filters?: unknown[];
+    didEvent?: string;
+    from?: string | number;
+  }): CohortDefinition {
+    if (spec.definition) return spec.definition;
+    return normaliseCohort({
+      filters: spec.filters ?? [],
       didEvent: spec.didEvent,
       from: spec.from,
     });
+  }
+
+  private async countMembers(sql: string): Promise<number> {
+    return num((await this.store.query(`SELECT COUNT(*) AS n FROM (${sql}) m`))[0]?.n);
+  }
+
+  /** How many distinct people match a cohort definition right now. */
+  async countCohort(input: unknown) {
+    const spec = inputs.countCohort.parse(input);
+    const ctx = await this.context(spec.project);
+    const definition = this.definitionFrom(spec);
+    const cohorts = await loadCohorts(this.env.DB, ctx.project);
+    const cctx = await cohortContext(
+      this.env,
+      this.store,
+      ctx.project,
+      cohorts,
+      cohortReferences(definition),
+    );
+    const sql = compileCohort(definition, cctx);
+    const count = await this.countMembers(sql);
     return {
       project: ctx.project,
       count,
-      range,
-      summary: `${count} ${count === 1 ? 'person' : 'people'} match this cohort in the selected window.`,
+      description: describeCohort(definition),
+      summary: `${count} ${count === 1 ? 'person' : 'people'} match: ${describeCohort(definition)}.`,
       sql: [sql],
     };
   }
@@ -1607,57 +1727,58 @@ ORDER BY ts_ms DESC LIMIT 100`;
   async listCohorts(input: unknown) {
     const spec = inputs.listCohorts.parse(input);
     const ctx = await this.context(spec.project);
-    const { results } = await this.env.DB.prepare(
-      'SELECT key, name, definition, created_at, updated_at FROM cohorts WHERE project = ? ORDER BY name COLLATE NOCASE',
-    )
-      .bind(ctx.project)
-      .all<{
-        key: string;
-        name: string;
-        definition: string;
-        created_at: number;
-        updated_at: number;
-      }>();
-    const cohorts = [];
-    for (const row of results) {
-      const definition = safeParse(row.definition) as {
-        filters?: unknown;
-        didEvent?: string;
-        from?: string | number;
-      };
-      const filters = Array.isArray(definition.filters) ? definition.filters : [];
-      const parsed = inputs.cohortDefinition.parse({
-        filters,
-        didEvent: definition.didEvent,
-        from: definition.from,
-      });
-      const { count, sql } = await this.cohortMembership(ctx.project, parsed);
-      cohorts.push({
+    const cohorts = await loadCohorts(this.env.DB, ctx.project);
+    const usedByFlags = cohortsUsedByFlags(await listFlags(this.env.DB, ctx.project, true));
+    const cctx = await cohortContext(this.env, this.store, ctx.project, cohorts, [
+      ...cohorts.keys(),
+    ]);
+    const out = [];
+    for (const row of cohorts.values()) {
+      let count: number;
+      let sql: string;
+      if (row.kind === 'static') {
+        sql = `SELECT COUNT(*) AS n FROM cohort_members WHERE project = ? AND cohort = ? AND source = 'static'`;
+        const r = await this.env.DB.prepare(sql).bind(ctx.project, row.key).first<{ n: number }>();
+        count = Number(r?.n ?? 0);
+      } else {
+        sql = membershipSql(row, cctx);
+        count = await this.countMembers(sql);
+      }
+      const performed = row.definition.groups[0]?.conditions.find((c) => c.type === 'performed');
+      out.push({
         key: row.key,
         name: row.name,
-        filters: parsed.filters,
-        didEvent: parsed.didEvent ?? null,
-        from: parsed.from ?? '-90d',
+        description: row.description,
+        kind: row.kind,
+        definition: row.kind === 'static' ? null : row.definition,
+        summary: row.kind === 'static' ? 'Static list of people' : describeCohort(row.definition),
         count,
-        updatedAt: new Date(row.updated_at).toISOString(),
+        usedByFlags: usedByFlags.has(row.key),
+        refreshedAt: row.refreshedAt ? new Date(row.refreshedAt).toISOString() : null,
+        updatedAt: new Date(row.updatedAt).toISOString(),
         sql: [sql],
         retention: this.link('insights/retention', {
           project: ctx.project,
           spec: {
-            cohortEvent: { event: parsed.didEvent || '$pageview', filters: parsed.filters },
+            cohortEvent: {
+              event:
+                performed && performed.type === 'performed' && performed.event !== '*'
+                  ? performed.event
+                  : '$pageview',
+            },
             returnEvent: { event: '$pageview' },
             period: 'week',
             periods: 8,
-            filters: parsed.filters,
+            filters: [{ property: COHORT_PROPERTY, value: row.key }],
           },
         }),
       });
     }
     return {
       project: ctx.project,
-      cohorts,
-      summary: cohorts.length
-        ? `${cohorts.length} cohort${cohorts.length === 1 ? '' : 's'}: ${cohorts.map((c) => `${c.name} (${c.count})`).join(', ')}.`
+      cohorts: out,
+      summary: out.length
+        ? `${out.length} cohort${out.length === 1 ? '' : 's'}: ${out.map((c) => `${c.name} (${c.count}${c.kind === 'static' ? ', static' : ''})`).join(', ')}.`
         : 'No cohorts yet. Save a person filter from the People tab.',
       dashboard: this.link('users', { project: ctx.project }),
     };
@@ -1665,13 +1786,6 @@ ORDER BY ts_ms DESC LIMIT 100`;
 
   async saveCohort(input: unknown) {
     const spec = inputs.saveCohort.parse(input);
-    if (spec.filters.some((f) => f.property === COHORT_PROPERTY)) {
-      throw new HttpError(
-        400,
-        'A cohort cannot filter on another cohort',
-        "Copy the other cohort's person filters into this one instead.",
-      );
-    }
     const ctx = await this.context(spec.project);
     const key = (spec.key?.trim() || slugKey(spec.name)).slice(0, 64);
     if (!/^[a-z0-9][a-z0-9_-]*$/.test(key)) {
@@ -1681,54 +1795,270 @@ ORDER BY ts_ms DESC LIMIT 100`;
         'Use lowercase letters, numbers, hyphens or underscores.',
       );
     }
-    const definition = {
-      filters: spec.filters,
-      didEvent: spec.didEvent,
-      from: spec.from ?? '-90d',
-    };
+    const isStatic = spec.static ?? false;
+    const definition = isStatic ? null : this.definitionFrom(spec);
+    const cohorts = await loadCohorts(this.env.DB, ctx.project);
+    const existing = cohorts.get(key);
     const now = Date.now();
-    const existing = await this.env.DB.prepare(
-      'SELECT key FROM cohorts WHERE project = ? AND key = ?',
-    )
-      .bind(ctx.project, key)
-      .first();
+    let sql = '';
+    if (definition) {
+      // Compile against the saved cohorts with this one in place, so loops through it are caught.
+      cohorts.set(key, {
+        key,
+        name: spec.name,
+        description: spec.description ?? '',
+        kind: 'dynamic',
+        definition,
+        createdAt: now,
+        updatedAt: now,
+        refreshedAt: null,
+      });
+      const cctx = await cohortContext(this.env, this.store, ctx.project, cohorts, [key]);
+      try {
+        sql = compileCohort(definition, cctx, [key]);
+      } catch (err) {
+        throw new HttpError(400, err instanceof Error ? err.message : String(err));
+      }
+    }
     await this.env.DB.prepare(
-      existing
-        ? 'UPDATE cohorts SET name = ?, definition = ?, updated_at = ? WHERE project = ? AND key = ?'
-        : 'INSERT INTO cohorts (project, key, name, definition, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+      `INSERT INTO cohorts (project, key, name, definition, kind, description, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (project, key) DO UPDATE SET name = excluded.name, definition = excluded.definition,
+         kind = excluded.kind, description = excluded.description, updated_at = excluded.updated_at, refreshed_at = NULL`,
     )
       .bind(
-        ...(existing
-          ? [spec.name, JSON.stringify(definition), now, ctx.project, key]
-          : [ctx.project, key, spec.name, JSON.stringify(definition), now, now]),
+        ctx.project,
+        key,
+        spec.name,
+        JSON.stringify(definition ?? {}),
+        isStatic ? 'static' : 'dynamic',
+        spec.description ?? '',
+        existing?.createdAt ?? now,
+        now,
       )
       .run();
-    const { count, sql } = await this.cohortMembership(ctx.project, definition);
+    if (isStatic && spec.ids) await this.replaceStaticMembers(ctx.project, key, spec.ids);
+    if (!isStatic && existing?.kind === 'static') {
+      await this.env.DB.prepare(
+        "DELETE FROM cohort_members WHERE project = ? AND cohort = ? AND source = 'static'",
+      )
+        .bind(ctx.project, key)
+        .run();
+    }
+    const flagged = cohortsUsedByFlags(await listFlags(this.env.DB, ctx.project, true)).has(key);
+    if (flagged && definition) {
+      const fresh = await loadCohorts(this.env.DB, ctx.project);
+      await materialise(this.env, this.store, ctx.project, fresh.get(key)!, fresh);
+    }
+    const count = isStatic
+      ? Number(
+          (
+            await this.env.DB.prepare(
+              "SELECT COUNT(*) AS n FROM cohort_members WHERE project = ? AND cohort = ? AND source = 'static'",
+            )
+              .bind(ctx.project, key)
+              .first<{ n: number }>()
+          )?.n ?? 0,
+        )
+      : await this.countMembers(sql);
     return {
       project: ctx.project,
       key,
       name: spec.name,
+      kind: isStatic ? 'static' : 'dynamic',
       created: !existing,
       count,
-      summary: `${existing ? 'Updated' : 'Created'} cohort "${spec.name}" (${count} people).`,
-      sql: [sql],
-      dashboard: this.link('users', { project: ctx.project }),
+      summary: `${existing ? 'Updated' : 'Created'} ${isStatic ? 'static ' : ''}cohort "${spec.name}" (${count} people)${definition ? `: ${describeCohort(definition)}` : ''}.`,
+      sql: sql ? [sql] : [],
+      dashboard: this.link('users', { project: ctx.project, cohort: key }),
     };
+  }
+
+  private async replaceStaticMembers(project: string, key: string, ids: string[]): Promise<void> {
+    const db = this.env.DB;
+    const now = Date.now();
+    const unique = [...new Set(ids.map(String).filter(Boolean))];
+    const statements = [
+      db
+        .prepare(
+          "DELETE FROM cohort_members WHERE project = ? AND cohort = ? AND source = 'static'",
+        )
+        .bind(project, key),
+    ];
+    for (let i = 0; i < unique.length; i += 2000) {
+      statements.push(
+        db
+          .prepare(
+            `INSERT OR IGNORE INTO cohort_members (project, cohort, person_id, source, added_at)
+             SELECT ?1, ?2, value, 'static', ?3 FROM json_each(?4)`,
+          )
+          .bind(project, key, now, JSON.stringify(unique.slice(i, i + 2000))),
+      );
+    }
+    await db.batch(statements);
+  }
+
+  /** Add or remove people from a static cohort. */
+  async editCohortMembers(input: unknown) {
+    const spec = inputs.editCohortMembers.parse(input);
+    const ctx = await this.context(spec.project);
+    const cohorts = await loadCohorts(this.env.DB, ctx.project);
+    const row = cohorts.get(spec.key);
+    if (!row) throw new HttpError(404, `No cohort "${spec.key}"`);
+    if (row.kind !== 'static')
+      throw new HttpError(
+        400,
+        `Cohort "${spec.key}" is dynamic: its members come from its conditions`,
+        'Duplicate it as a static cohort to edit the list.',
+      );
+    const db = this.env.DB;
+    const statements = [];
+    const now = Date.now();
+    if (spec.add?.length) {
+      statements.push(
+        db
+          .prepare(
+            `INSERT OR IGNORE INTO cohort_members (project, cohort, person_id, source, added_at)
+             SELECT ?1, ?2, value, 'static', ?3 FROM json_each(?4)`,
+          )
+          .bind(ctx.project, spec.key, now, JSON.stringify(spec.add)),
+      );
+    }
+    if (spec.remove?.length) {
+      statements.push(
+        db
+          .prepare(
+            "DELETE FROM cohort_members WHERE project = ?1 AND cohort = ?2 AND source = 'static' AND person_id IN (SELECT value FROM json_each(?3))",
+          )
+          .bind(ctx.project, spec.key, JSON.stringify(spec.remove)),
+      );
+    }
+    if (statements.length) await db.batch(statements);
+    const r = await db
+      .prepare(
+        "SELECT COUNT(*) AS n FROM cohort_members WHERE project = ? AND cohort = ? AND source = 'static'",
+      )
+      .bind(ctx.project, spec.key)
+      .first<{ n: number }>();
+    const count = Number(r?.n ?? 0);
+    return {
+      project: ctx.project,
+      key: spec.key,
+      count,
+      summary: `Cohort "${row.name}" now has ${count} people.`,
+    };
+  }
+
+  /** People in a saved cohort, with their properties. */
+  async cohortMembers(input: unknown) {
+    const spec = inputs.cohortMembers.parse(input);
+    const ctx = await this.context(spec.project);
+    const cohorts = await loadCohorts(this.env.DB, ctx.project);
+    const row = cohorts.get(spec.key);
+    if (!row) throw new HttpError(404, `No cohort "${spec.key}"`);
+    const limit = spec.limit ?? 100;
+    const offset = spec.offset ?? 0;
+    const cctx = await cohortContext(this.env, this.store, ctx.project, cohorts, [spec.key]);
+    const sql = `SELECT DISTINCT m.pid AS pid FROM (${membershipSql(row, cctx)}) m ORDER BY m.pid LIMIT ${limit + 1} OFFSET ${offset}`;
+    const ids =
+      row.kind === 'static' && this.store.kind !== 'd1'
+        ? (
+            await this.env.DB.prepare(
+              "SELECT person_id AS pid FROM cohort_members WHERE project = ? AND cohort = ? AND source = 'static' ORDER BY person_id LIMIT ? OFFSET ?",
+            )
+              .bind(ctx.project, spec.key, limit + 1, offset)
+              .all<{ pid: string }>()
+          ).results.map((r) => r.pid)
+        : (await this.store.query(sql)).map((r) => text(r.pid));
+    const hasMore = ids.length > limit;
+    const page = ids.slice(0, limit);
+    const details = await this.actorDetails(ctx.project, 'person', page);
+    const people = page.map((id) => ({
+      id,
+      type: 'person',
+      events: 0,
+      properties: details.get(id) ?? {},
+      dashboard: this.link(`users/${encodeURIComponent(id)}`, { project: ctx.project }),
+    }));
+    const result = {
+      project: ctx.project,
+      key: spec.key,
+      name: row.name,
+      people,
+      offset,
+      hasMore,
+      sql: [sql],
+      summary: `${people.length}${hasMore ? '+' : ''} people in "${row.name}"${offset ? ` from #${offset + 1}` : ''}.`,
+    };
+    return spec.format === 'csv' ? { ...result, csv: actorsCsv(people) } : result;
+  }
+
+  /** Copy a cohort as a static list of who is in it now. */
+  async duplicateCohort(input: unknown) {
+    const spec = inputs.duplicateCohort.parse(input);
+    const ctx = await this.context(spec.project);
+    const cohorts = await loadCohorts(this.env.DB, ctx.project);
+    const row = cohorts.get(spec.key);
+    if (!row) throw new HttpError(404, `No cohort "${spec.key}"`);
+    const cctx = await cohortContext(this.env, this.store, ctx.project, cohorts, [spec.key]);
+    const ids = (
+      await this.store.query(
+        `SELECT DISTINCT m.pid AS pid FROM (${membershipSql(row, cctx)}) m LIMIT ${STATIC_COHORT_LIMIT + 1}`,
+      )
+    ).map((r) => text(r.pid));
+    if (ids.length > STATIC_COHORT_LIMIT) {
+      throw new HttpError(
+        400,
+        `"${row.name}" has more than ${STATIC_COHORT_LIMIT.toLocaleString('en-US')} people, too many for a static cohort`,
+      );
+    }
+    return this.saveCohort({
+      project: ctx.project,
+      key: spec.newKey,
+      name: spec.name ?? `${row.name} (static copy)`,
+      description: `Copy of "${row.name}" on ${new Date().toISOString().slice(0, 10)}`,
+      static: true,
+      ids,
+    });
   }
 
   async deleteCohort(input: unknown) {
     const spec = inputs.deleteCohort.parse(input);
     const ctx = await this.context(spec.project);
+    if (cohortsUsedByFlags(await listFlags(this.env.DB, ctx.project, true)).has(spec.key)) {
+      throw new HttpError(
+        409,
+        `Cohort "${spec.key}" is used by a feature flag`,
+        'Remove it from the flag’s targeting first.',
+      );
+    }
+    const cohorts = await loadCohorts(this.env.DB, ctx.project);
+    const users = [...cohorts.values()].filter(
+      (c) =>
+        c.key !== spec.key &&
+        c.kind === 'dynamic' &&
+        cohortReferences(c.definition).includes(spec.key),
+    );
+    if (users.length) {
+      throw new HttpError(
+        409,
+        `Cohort "${spec.key}" is used by ${users.map((c) => `"${c.name}"`).join(', ')}`,
+        'Change those cohorts first.',
+      );
+    }
     const result = await this.env.DB.prepare('DELETE FROM cohorts WHERE project = ? AND key = ?')
       .bind(ctx.project, spec.key)
       .run();
     if (!result.meta.changes) throw new HttpError(404, `No cohort "${spec.key}"`);
+    await this.env.DB.prepare('DELETE FROM cohort_members WHERE project = ? AND cohort = ?')
+      .bind(ctx.project, spec.key)
+      .run();
     return { project: ctx.project, deleted: spec.key, summary: `Deleted cohort "${spec.key}".` };
   }
 
   /**
-   * Attach saved definitions to every `cohort` filter in a query spec, so core
-   * can compile membership without reading the cohorts table. Returns a copy.
+   * Attach compiled membership to every `cohort` filter in a query spec, so core
+   * can filter by it without reading the cohorts table. Returns a copy.
    */
   private async resolveCohorts<T>(project: string, spec: T): Promise<T> {
     const refs: Filter[] = [];
@@ -1743,57 +2073,34 @@ ORDER BY ts_ms DESC LIMIT 100`;
     };
     walk(copy);
     if (refs.length === 0) return copy;
-    const { results } = await this.env.DB.prepare(
-      'SELECT key, definition FROM cohorts WHERE project = ?',
-    )
-      .bind(project)
-      .all<{ key: string; definition: string }>();
-    const saved = new Map(results.map((r) => [r.key, r.definition]));
-    const now = Date.now();
+    const cohorts = await loadCohorts(this.env.DB, project);
+    const keys = [...new Set(refs.flatMap((f) => toList(f.value)))];
+    for (const key of keys) {
+      if (!cohorts.has(key)) {
+        throw new HttpError(
+          400,
+          `No cohort "${key}" in project "${project}"`,
+          cohorts.size
+            ? `Saved cohorts: ${[...cohorts.keys()].join(', ')}.`
+            : 'Save one with save_cohort or from the People tab first.',
+        );
+      }
+    }
+    const cctx = await cohortContext(this.env, this.store, project, cohorts, keys);
     for (const f of refs) {
       f.cohorts = {};
       for (const key of toList(f.value)) {
-        const raw = saved.get(key);
-        if (raw === undefined) {
-          throw new HttpError(
-            400,
-            `No cohort "${key}" in project "${project}"`,
-            saved.size
-              ? `Saved cohorts: ${[...saved.keys()].join(', ')}.`
-              : 'Save one with save_cohort or from the People tab first.',
-          );
-        }
-        const def = inputs.cohortDefinition.parse(safeParse(raw));
-        const range = resolveRange(def.from ?? '-90d', undefined, now);
         const members: CohortMembers = {
           project,
-          from: range.from,
-          to: range.to,
-          filters: def.filters as Filter[],
+          from: 0,
+          to: 0,
+          filters: [],
+          sql: membershipSql(cohorts.get(key)!, cctx),
         };
-        if (def.didEvent) members.events = [def.didEvent];
         f.cohorts[key] = members;
       }
     }
     return copy;
-  }
-
-  private async cohortMembership(
-    project: string,
-    definition: { filters?: Filter[]; didEvent?: string; from?: string | number },
-  ): Promise<{ count: number; sql: string; range: { from: number; to: number } }> {
-    const range = resolveRange(definition.from ?? '-90d', undefined);
-    const d = this.store.dialect;
-    const sql = `WITH ${eventsCte(d, {
-      project,
-      from: range.from,
-      to: range.to,
-      events: definition.didEvent ? [definition.didEvent] : undefined,
-      filters: definition.filters,
-    })}
-SELECT COUNT(DISTINCT pid) AS n FROM ev`;
-    const count = num((await this.store.query(sql))[0]?.n);
-    return { count, sql, range };
   }
 
   // ── Replays ──────────────────────────────────────────────────────────────

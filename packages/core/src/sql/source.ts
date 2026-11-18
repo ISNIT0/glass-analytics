@@ -83,8 +83,18 @@ export function eventsCte(d: Dialect, o: SourceOptions): string {
 
 /** Distinct person ids in a cohort, as a subquery for `pid IN (…)`. */
 export function cohortMembersSql(d: Dialect, c: CohortMembers): string {
+  if (c.sql) return c.sql;
   const filters = c.filters.filter((f) => f.property !== COHORT_PROPERTY);
   return `SELECT DISTINCT cm.pid FROM (${resolvedEvents(d, { project: c.project, from: c.from, to: c.to, events: c.events, filters })}) cm`;
+}
+
+/** Events in range with their resolved person (`pid`) and `actor`, as a plain SELECT (no CTE). */
+export function resolvedEventsSql(d: Dialect, o: SourceOptions): string {
+  const filters = (o.filters ?? []).filter((f) => f.property !== COHORT_PROPERTY);
+  const cohort = (o.filters ?? []).filter((f) => f.property === COHORT_PROPERTY);
+  const rows = resolvedEvents(d, { ...o, filters });
+  if (cohort.length === 0) return rows;
+  return `SELECT * FROM (${rows}) ev_all WHERE ${filtersSql(cohort, d)}`;
 }
 
 function resolvedEvents(d: Dialect, o: SourceOptions): string {

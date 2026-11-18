@@ -11,8 +11,10 @@
  */
 
 import { DAY_MS } from '@dataflare/core/time';
+import { refreshFlagCohorts } from './cohorts.ts';
 import type { Env } from './env.ts';
 import { resumeErasures } from './erasure.ts';
+import { listFlags } from './flags.ts';
 import { listProjects } from './projects.ts';
 import {
   deleteReplays,
@@ -44,7 +46,20 @@ export function isHourlyTick(cron: string | undefined, now: number): boolean {
 
 /** Work that runs on every tick. Later features register here; each returns a count for the log. */
 export type FrequentTask = (env: Env, store: EventStore, now: number) => Promise<number>;
-export const FREQUENT_TASKS: { name: string; run: FrequentTask }[] = [];
+export const FREQUENT_TASKS: { name: string; run: FrequentTask }[] = [
+  {
+    // Dynamic cohorts that flags target, recomputed when an hour old (a few per tick).
+    name: 'flagCohorts',
+    run: async (env, store, now) =>
+      refreshFlagCohorts(
+        env,
+        store,
+        now,
+        (project) => listFlags(env.DB, project),
+        (await listProjects(env.DB)).map((p) => p.id),
+      ),
+  },
+];
 
 export interface MaintenanceResult {
   events: number;

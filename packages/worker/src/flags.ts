@@ -8,6 +8,7 @@
 import type { EvaluationContext } from '@dataflare/core/filters';
 import { evaluateFlags, type FlagDefinition, validateFlag } from '@dataflare/core/flags';
 import { parseUserAgent } from '@dataflare/core/ua';
+import { cohortsOf, cohortsUsedByFlags } from './cohorts.ts';
 import type { D1Database, Env } from './env.ts';
 import { HttpError, readJson } from './http.ts';
 import { requestInfo } from './ingest.ts';
@@ -95,6 +96,7 @@ export async function flagContext(
   distinctId: string,
   userId: string | null,
   request?: Request,
+  withCohorts = false,
 ): Promise<EvaluationContext> {
   let personId = userId;
   if (!personId) {
@@ -116,6 +118,11 @@ export async function flagContext(
     distinct_id: distinctId,
     user_id: userId,
     person: row ? (JSON.parse(row.props) as Record<string, unknown>) : {},
+    ...(withCohorts
+      ? {
+          cohorts: await cohortsOf(db, project, [...new Set([personId ?? distinctId, distinctId])]),
+        }
+      : {}),
     country: info?.country ?? '',
     device: ua?.device ?? '',
     browser: ua?.browser ?? '',
@@ -145,6 +152,7 @@ export async function handleFlagEvaluation(
     String(body.distinct_id),
     body.user_id ? String(body.user_id) : null,
     request,
+    cohortsUsedByFlags(flags).size > 0,
   );
   return { flags: evaluateFlags(flags, ctx) };
 }

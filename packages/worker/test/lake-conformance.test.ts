@@ -413,6 +413,31 @@ const READS: [string, string, unknown?][] = [
       timezone: 'America/New_York',
     },
   ],
+  [
+    'POST',
+    '/api/query',
+    {
+      kind: 'trends',
+      from: '-7d',
+      series: [{ event: '$pageview', math: 'unique_persons' }],
+      breakdown: 'cohort',
+      breakdownCohorts: ['engaged', 'vips'],
+    },
+  ],
+  [
+    'POST',
+    '/api/query',
+    {
+      kind: 'retention',
+      from: '-7d',
+      cohortEvent: { event: '$pageview' },
+      returnEvent: { event: '$pageview' },
+      period: 'day',
+      filters: [{ property: 'cohort', value: 'vips' }],
+    },
+  ],
+  ['GET', '/api/cohorts'],
+  ['GET', '/api/cohorts/engaged/members'],
   ['GET', '/api/events?from=-30d'],
   ['GET', '/api/events/signup_completed?from=-30d'],
   ['GET', '/api/properties/values?property=plan&event=signup_completed'],
@@ -519,6 +544,38 @@ function conformance(name: string, split: boolean) {
           body: { key: 'checkout-v2', goal: { event: 'purchase' } },
         });
         await app.json('POST', '/api/experiments/checkout-v2/start');
+        await app.json('POST', '/api/cohorts', {
+          body: {
+            key: 'engaged',
+            name: 'Engaged',
+            definition: {
+              groups: [
+                {
+                  match: 'any',
+                  conditions: [
+                    {
+                      type: 'performed',
+                      event: '$pageview',
+                      count: { op: 'gte', value: 3 },
+                      within: '7d',
+                    },
+                    {
+                      type: 'performed_regularly',
+                      event: '$pageview',
+                      period: 'day',
+                      periods: 7,
+                      minPeriods: 2,
+                    },
+                  ],
+                },
+                { conditions: [{ type: 'not_performed', event: 'purchase', within: '7d' }] },
+              ],
+            },
+          },
+        });
+        await app.json('POST', '/api/cohorts', {
+          body: { key: 'vips', name: 'VIPs', static: true, ids: ['user-1', 'user-3', 'user-5'] },
+        });
         // Batches as the SDK sends them, so identities resolve in the same order in both stores.
         for (let i = 0; i < events.length; i += 25) await app.ingest(events.slice(i, i + 25));
       }

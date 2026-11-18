@@ -183,7 +183,7 @@ export const TOOLS: ToolDefinition[] = [
     name: 'save_cohort',
     title: 'Save a cohort',
     description:
-      'Create or update a named person cohort from filters (and optional didEvent). Returns the live membership count.',
+      'Create or update a named cohort. Either a definition of condition groups (person properties; performed an event N times in a window; did not; did it regularly; first did it; stopped or started doing it; did A then B; in or not in another cohort), the simple form (filters + didEvent), or static: true with a list of person ids. Returns the live membership count.',
     input: inputs.saveCohort,
     scope: 'admin',
     run: (s, a) => s.saveCohort(a),
@@ -191,10 +191,36 @@ export const TOOLS: ToolDefinition[] = [
   {
     name: 'count_cohort',
     title: 'Count a cohort',
-    description: 'How many distinct people match filters (and optional didEvent) without saving.',
+    description:
+      'How many people match a cohort definition (or filters + didEvent) without saving it.',
     input: inputs.countCohort,
     scope: 'read',
     run: (s, a) => s.countCohort(a),
+  },
+  {
+    name: 'cohort_members',
+    title: 'List cohort members',
+    description: 'The people in a saved cohort, with their properties; format "csv" exports them.',
+    input: inputs.cohortMembers,
+    scope: 'read',
+    run: (s, a) => s.cohortMembers(a),
+  },
+  {
+    name: 'edit_cohort_members',
+    title: 'Edit a static cohort',
+    description: 'Add or remove person ids from a static cohort.',
+    input: inputs.editCohortMembers,
+    scope: 'admin',
+    run: (s, a) => s.editCohortMembers(a),
+  },
+  {
+    name: 'duplicate_cohort',
+    title: 'Freeze a cohort',
+    description:
+      'Copy a cohort as a static list of who is in it right now (e.g. to email or to keep a holdout).',
+    input: inputs.duplicateCohort,
+    scope: 'admin',
+    run: (s, a) => s.duplicateCohort(a),
   },
   {
     name: 'delete_cohort',
@@ -358,8 +384,17 @@ export const TOOLS: ToolDefinition[] = [
     title: 'Who is behind a number',
     description:
       'List the people (or sessions, or groups when the spec has aggregateBy) behind one number of a trends, funnel or retention result: a trends point (selection {series, bucket, breakdown}), a funnel step ({step, status: "converted"|"dropped"}), or a retention cell ({cohort, period}). Pass the same spec you queried. Each has properties and a link; format "csv" exports the list.',
-    input: inputs.actors,
+    input: inputs.actors.omit({ saveAsCohort: true }),
     scope: 'read',
+    run: (s, a) => s.actors({ ...(a as object), saveAsCohort: undefined }),
+  },
+  {
+    name: 'save_actors_as_cohort',
+    title: 'Save a selection as a cohort',
+    description:
+      'Save everyone behind a number (the same kind, spec and selection as list_actors, up to 10,000 people) as a static cohort, e.g. "people who dropped off at checkout last week".',
+    input: inputs.actors.required({ saveAsCohort: true }),
+    scope: 'admin',
     run: (s, a) => s.actors(a),
   },
   {

@@ -78,6 +78,11 @@ export interface CohortMembers {
   /** Only people who did one of these events. */
   events?: string[];
   filters: Filter[];
+  /**
+   * The membership as SQL selecting `pid` (compiled from a cohort definition, see cohorts.ts).
+   * When set, it is used instead of `events`/`filters`.
+   */
+  sql?: string;
 }
 
 export function parseProperty(input: string): PropertyRef {

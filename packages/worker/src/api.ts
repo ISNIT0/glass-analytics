@@ -111,6 +111,11 @@ export async function apiRouter(
         'POST /api/cohorts': 'Create or update a cohort (admin)',
         'POST /api/cohorts/count': 'Count people matching a cohort definition',
         'DELETE /api/cohorts/:key': 'Delete a cohort (admin)',
+        'GET /api/cohorts/:key/members?format=csv': 'People in a cohort (CSV with format=csv)',
+        'PATCH /api/cohorts/:key/members':
+          'Add or remove people of a static cohort: { "add": [...], "remove": [...] } (admin)',
+        'POST /api/cohorts/:key/duplicate':
+          'Copy a cohort as a static list of its current members (admin)',
         'GET /api/insights': 'Saved analyses (seeded with DAU/WAU/retention defaults)',
         'GET /api/insights/:key': 'One saved analysis',
         'POST /api/insights': 'Create or update a saved analysis (admin)',
@@ -148,6 +153,12 @@ export async function apiRouter(
         'GET /api/settings':
           'Project settings: time zone, internal-traffic filters, currency, revenue events',
         'PATCH /api/settings': 'Change project settings (admin)',
+        'POST /api/actors':
+          'The people/sessions/groups behind a number: { kind, spec, selection: { series, bucket } | { step, status } | { cohort, period } }; ?format=csv for CSV; saveAsCohort: { name } saves them (admin)',
+        'GET /api/annotations?from=&to=': 'Notes pinned to moments on time charts',
+        'POST /api/annotations':
+          'Pin a note: { "at": "2026-11-03", "text": "Launched v2" } (admin)',
+        'DELETE /api/annotations/:id': 'Delete an annotation (admin)',
         'GET /api/projects': 'Projects',
         'POST /api/projects': 'Create a project (admin)',
         'GET /api/instrument?event=&framework=': 'Tracking code for an event',
@@ -176,7 +187,9 @@ export async function apiRouter(
   });
 
   r.post('/api/actors', async ({ url }) => {
-    const result = await service.actors({ ...params(url), ...(await body()) });
+    const input = { ...params(url), ...(await body()) };
+    if (input.saveAsCohort) admin();
+    const result = await service.actors(input);
     if ('csv' in result && result.csv !== undefined) {
       return new Response(result.csv, {
         headers: {
@@ -265,6 +278,28 @@ export async function apiRouter(
   r.delete('/api/cohorts/:key', async ({ url, params: p }) => {
     admin();
     return json(await service.deleteCohort({ ...params(url), key: p.key }));
+  });
+  r.get('/api/cohorts/:key/members', async ({ url, params: p }) => {
+    const result = await service.cohortMembers({ ...params(url), key: p.key });
+    if ('csv' in result && result.csv !== undefined) {
+      return new Response(result.csv, {
+        headers: {
+          'Content-Type': 'text/csv; charset=utf-8',
+          'Content-Disposition': `attachment; filename="cohort-${p.key}.csv"`,
+        },
+      });
+    }
+    return json(result);
+  });
+  r.patch('/api/cohorts/:key/members', async ({ url, params: p }) => {
+    admin();
+    return json(await service.editCohortMembers({ ...params(url), ...(await body()), key: p.key }));
+  });
+  r.post('/api/cohorts/:key/duplicate', async ({ url, params: p }) => {
+    admin();
+    return json(await service.duplicateCohort({ ...params(url), ...(await body()), key: p.key }), {
+      status: 201,
+    });
   });
 
   r.get('/api/insights', async ({ url }) => json(await service.listInsights(params(url))));
