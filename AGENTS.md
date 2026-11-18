@@ -11,8 +11,11 @@ Dataflare is open-source, agent-first analytics that runs in the user's own Clou
 - `pnpm dev`: local Worker on :8787 (admin key `dev-admin-key`) and demo site on :8788
 - `pnpm quality`: tests with coverage, then the coverage and complexity ratchet (see below); `--fast` checks complexity only
 - `pnpm quality:hotspots`: the most complex, least tested functions and files
+- `pnpm knip`: unused files, dependencies and exports (unused files and dependencies fail CI)
+- `pnpm size`: gzipped size of each bundle against its budget in `scripts/size.ts` (after `pnpm build`)
+- `pnpm mutation --changed origin/main`: mutation testing of the core, worker and cli files you changed; survivors are bugs no test would catch
 
-Run `pnpm typecheck && pnpm test && pnpm quality` before you finish. If you changed the SDK, ingest, replay or dashboard, also run `pnpm test:e2e`.
+Run `pnpm check` (typecheck, lint, knip, tests, quality) before you finish; after `pnpm build`, also `pnpm size`. If you changed the SDK, ingest, replay or dashboard, also run `pnpm test:e2e`.
 
 ## Map
 
@@ -50,3 +53,10 @@ The PR gets a comment with coverage before and after, the changed lines no test 
 4. **Don't loosen the baseline to get green.** `pnpm quality:update` refuses to lower a floor or add debt unless you pass `--allow-regression`. Use it only when the change is right, for example when code moved and kept its complexity, and say why in the PR. The PR comment flags every loosening for the reviewer.
 
 Without [uv](https://docs.astral.sh/uv/) the Python-backed lake tests skip, so local coverage reads low; `pnpm quality` then only warns about coverage, and CI enforces it. The dashboard and the browser SDK are covered by the e2e suite, which the coverage numbers don't include yet, so they read 0%.
+
+## Security and review checks on PRs
+
+- **Security workflow**: zizmor and actionlint audit `.github/workflows` (pin actions to full commit SHAs, least-privilege `permissions`, `persist-credentials: false` unless the job pushes, untrusted values only through `env`), and dependency review fails a PR that adds a vulnerable dependency. Run `uvx zizmor .github/workflows` locally after editing a workflow.
+- **CodeQL** (repository setting) scans every PR; **secret scanning push protection** rejects pushes that contain credentials.
+- **CodeRabbit** reviews every PR using `.coderabbit.yaml`, which points it at this file. Treat its comments like a reviewer's: fix what is right, reply where it is wrong.
+- **Mutation** comments a mutation score and the surviving mutants for changed core, worker and cli files. It doesn't block merging, but when you add tests, kill the survivors in code you touched.

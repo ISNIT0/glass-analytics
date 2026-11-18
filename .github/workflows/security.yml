@@ -1,0 +1,53 @@
+# Security checks on every PR and on main:
+#   - zizmor and actionlint audit the GitHub Actions workflows (script injection, over-broad
+#     tokens, unpinned actions, credential leaks) and catch workflow mistakes;
+#   - dependency review fails a PR that adds a dependency with a known vulnerability.
+# CodeQL code scanning, secret scanning with push protection and Dependabot alerts are
+# repository settings, not workflows; Scorecard runs in scorecard.yml.
+#
+# Locally: uvx zizmor .github/workflows && uvx --from actionlint-py actionlint
+name: Security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  workflows:
+    name: Workflow audit (zizmor, actionlint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+      - name: zizmor
+        # The token lets zizmor's online audits check pinned actions against advisories.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: uvx zizmor==1.32.0 --format github .github/workflows
+      - name: actionlint
+        run: uvx --from actionlint-py==1.7.12.25 actionlint
+
+  dependencies:
+    name: Dependency review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Posts a summary when the review fails. Fork PRs get a read-only token and skip it.
+      pull-requests: write
+    steps:
+      - uses: actions/dependency-review-action@bbc44d14a204704ccc493733616cd1e93a0321ec # v5.0.1
+        with:
+          fail-on-severity: moderate
+          comment-summary-in-pr: on-failure
+          show-patched-versions: true

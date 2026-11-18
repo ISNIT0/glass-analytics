@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Post the Quality report on a pull request as one comment, updated in place on every run.
+# Post a report on a pull request as one comment, updated in place on every run. The comment is
+# found by its marker: the report's first line (COMMENT_MARKER overrides, default the quality one).
 #
 #   post-quality-comment.sh <owner/repo> <pr number> <report.md> [expected head sha]
 #
@@ -12,7 +13,7 @@ repo=$1
 pr=$(printf '%s' "$2" | tr -dc '0-9')
 report=$3
 expected_sha=${4:-}
-marker='<!-- dataflare-quality-report -->'
+marker=${COMMENT_MARKER:-'<!-- dataflare-quality-report -->'}
 
 if [ -z "$pr" ]; then echo "No pull request number."; exit 0; fi
 if [ -n "$expected_sha" ]; then

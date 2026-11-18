@@ -4,3 +4,11 @@ packages:
 
 ignoredBuiltDependencies:
   - esbuild
+
+# Dependencies only @stryker-mutator/core (dev) pulls in, pinned past their advisories:
+# minimatch GHSA-g3hv-75wg-m249; qs (via typed-rest-client) GHSA-q8mj-m7cp-5q26,
+# GHSA-4mjr-xmp4-gh2g, GHSA-x5fp-wj9c-mxmx, GHSA-6pq8-jhm2-2vcw. Drop each once Stryker
+# depends on a patched version.
+overrides:
+  minimatch@<11.0.1: 11.0.1
+  qs@<6.16.1: 6.17.1

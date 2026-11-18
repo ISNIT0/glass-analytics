@@ -10,3 +10,4 @@ playwright-report/
 # Local data from `pnpm dev` (Node dev server)
 .glass-dev/
 __pycache__/
+.stryker-tmp/
