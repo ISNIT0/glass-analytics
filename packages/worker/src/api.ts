@@ -214,6 +214,13 @@ export async function apiRouter(
         'GET /api/sourcemaps?release=': 'Uploaded source maps',
         'DELETE /api/sourcemaps?release=&path=':
           "Delete a release's source maps (server or admin key)",
+        'GET /api/groups/types': 'Group types (company, workspace…) with how many groups each has',
+        'PUT /api/groups/types/:type': 'Add a group type or name it: { singular, plural } (admin)',
+        'GET /api/groups?type=&search=': 'Groups of a type, most recently active first',
+        'GET /api/groups/:type/:key':
+          'A group: properties, activity, members, recent events, revenue',
+        'PATCH /api/groups/:type/:key': 'Set group properties: { properties } (admin)',
+        'DELETE /api/groups/:type/:key': 'Delete a group and remove it from its events (admin)',
         'GET /api/stripe': 'Stripe connection: webhook URL, events received, customers linked',
         'POST /api/stripe':
           'Connect Stripe: { webhookSecret, apiKey?, personKey?, groupType?, groupKey?, linkByEmail? } (admin)',
@@ -379,6 +386,31 @@ export async function apiRouter(
   r.delete('/api/sourcemaps', async ({ url }) => {
     server();
     return json(await service.deleteSourcemaps(params(url)));
+  });
+
+  r.get('/api/groups/types', async ({ url }) => json(await service.listGroupTypes(params(url))));
+  r.put('/api/groups/types/:type', async ({ url, params: p }) => {
+    admin();
+    return json(await service.setGroupType({ ...params(url), ...(await body()), type: p.type }));
+  });
+  r.get('/api/groups', async ({ url }) => json(await service.searchGroups(params(url))));
+  r.get('/api/groups/:type/:key', async ({ url, params: p }) =>
+    json(await service.getGroup({ ...params(url), type: p.type, key: p.key })),
+  );
+  r.patch('/api/groups/:type/:key', async ({ url, params: p }) => {
+    admin();
+    return json(
+      await service.setGroupProperties({
+        ...params(url),
+        ...(await body()),
+        type: p.type,
+        key: p.key,
+      }),
+    );
+  });
+  r.delete('/api/groups/:type/:key', async ({ url, params: p }) => {
+    admin();
+    return json(await service.deleteGroup({ ...params(url), type: p.type, key: p.key }));
   });
 
   r.get('/api/stripe', async ({ url }) => json(await service.stripeStatus(params(url))));

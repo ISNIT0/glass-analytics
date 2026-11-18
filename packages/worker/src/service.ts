@@ -14,6 +14,7 @@ import {
   normaliseCohort,
 } from '@dataflare/core/cohorts';
 import { TEMPLATES } from '@dataflare/core/destinations/index';
+import { MAX_GROUP_TYPES } from '@dataflare/core/events';
 import { COHORT_PROPERTY, type CohortMembers, type Filter, toList } from '@dataflare/core/filters';
 import { evaluateFlagsDetailed, payloadsFor } from '@dataflare/core/flags';
 import {
@@ -42,6 +43,7 @@ import {
   SOURCE_DIMENSIONS,
   type SourceDimension,
 } from '@dataflare/core/insights/report';
+import { runRevenue } from '@dataflare/core/insights/revenue';
 import { experimentOptions, metricSchema } from '@dataflare/core/insights/schemas';
 import { runSites } from '@dataflare/core/insights/sites';
 import type { QueryContext, ResultBase } from '@dataflare/core/insights/types';
@@ -67,6 +69,7 @@ import {
   type ProjectSettings,
   projectSettingsSchema,
 } from '@dataflare/core/settings';
+import { assertSafeKey } from '@dataflare/core/sql/dialect';
 import { propertyText } from '@dataflare/core/sql/filters';
 import { assertReadOnlySql } from '@dataflare/core/sql/guard';
 import { eventsCte, num, text } from '@dataflare/core/sql/source';
@@ -129,7 +132,7 @@ import {
   scheduleFlagChange,
 } from './flags.ts';
 import { HttpError } from './http.ts';
-import { upsertPerson } from './ingest.ts';
+import { clearGroupTypeCache, upsertPerson } from './ingest.ts';
 import { DEFAULT_INSIGHTS } from './insight-defaults.ts';
 import {
   deleteSourcemaps,
@@ -958,6 +961,41 @@ export const inputs = {
     ids: z.array(z.string()).min(1).describe('Issues to merge into it.'),
   }),
   listSourcemaps: z.object({ project, release: z.string().optional() }),
+  listGroupTypes: z.object({ project }),
+  setGroupType: z.object({
+    project,
+    type: z
+      .string()
+      .min(1)
+      .max(60)
+      .describe('Group type, e.g. "company" (at most five per project).'),
+    singular: z.string().max(60).optional().describe('Display name, e.g. "Company".'),
+    plural: z.string().max(60).optional().describe('e.g. "Companies".'),
+  }),
+  searchGroups: z.object({
+    project,
+    type: z.string().describe('Group type, e.g. "company".'),
+    search: z.string().optional().describe('Text in the group key or its properties.'),
+    limit: z.number().int().min(1).max(200).optional().describe('Default 50.'),
+  }),
+  getGroup: z.object({
+    project,
+    type: z.string(),
+    key: z.string(),
+    from: z.union([z.string(), z.number()]).optional().describe('Activity since. Default -30d.'),
+    to: z.union([z.string(), z.number()]).optional(),
+  }),
+  setGroupProperties: z.object({
+    project,
+    type: z.string(),
+    key: z.string(),
+    properties: z
+      .record(z.string(), z.unknown())
+      .describe(
+        'Merged into the group’s properties (null removes one). Events from now on carry them.',
+      ),
+  }),
+  deleteGroup: z.object({ project, type: z.string(), key: z.string() }),
   connectStripe: z.object({
     project,
     webhookSecret: z
@@ -3932,6 +3970,228 @@ WHERE project = ${d.str(project)} AND session_id = ${d.str(row.session_id)} AND 
       project: ctx.project,
       deleted: n,
       summary: `Deleted ${n} source map${n === 1 ? '' : 's'}.`,
+    };
+  }
+
+  // ── Groups ───────────────────────────────────────────────────────────────
+
+  async listGroupTypes(input: unknown) {
+    const ctx = await this.context(inputs.listGroupTypes.parse(input).project);
+    const { results } = await this.env.DB.prepare(
+      `SELECT t.type, t.idx, t.name_singular, t.name_plural,
+         (SELECT COUNT(*) FROM groups g WHERE g.project = t.project AND g.type = t.type) AS n
+       FROM group_types t WHERE t.project = ? ORDER BY t.idx`,
+    )
+      .bind(ctx.project)
+      .all<{ type: string; idx: number; name_singular: string; name_plural: string; n: number }>();
+    const types = results.map((r) => ({
+      type: r.type,
+      index: r.idx,
+      singular: r.name_singular || r.type,
+      plural: r.name_plural || `${r.type}s`,
+      groups: r.n,
+    }));
+    return {
+      project: ctx.project,
+      types,
+      max: MAX_GROUP_TYPES,
+      summary: types.length
+        ? `Group types: ${types.map((t) => `${t.type} (${t.groups})`).join(', ')}.`
+        : 'No group types yet. They appear when the SDK calls glass.group(type, key) (or set_group_type adds one).',
+      dashboard: this.link('groups', { project: ctx.project }),
+    };
+  }
+
+  async setGroupType(input: unknown) {
+    const spec = inputs.setGroupType.parse(input);
+    const ctx = await this.context(spec.project);
+    assertSafeKey(spec.type);
+    const db = this.env.DB;
+    const existing = await db
+      .prepare('SELECT type FROM group_types WHERE project = ? AND type = ?')
+      .bind(ctx.project, spec.type)
+      .first();
+    if (!existing) {
+      const res = await db
+        .prepare(
+          `INSERT INTO group_types (project, type, idx, created_at)
+           SELECT ?1, ?2, (SELECT COALESCE(MAX(idx) + 1, 0) FROM group_types WHERE project = ?1), ?3
+           WHERE (SELECT COUNT(*) FROM group_types WHERE project = ?1) < ${MAX_GROUP_TYPES}`,
+        )
+        .bind(ctx.project, spec.type, Date.now())
+        .run();
+      if (!res.meta.changes)
+        throw new HttpError(409, `A project has at most ${MAX_GROUP_TYPES} group types`);
+    }
+    await db
+      .prepare(
+        'UPDATE group_types SET name_singular = COALESCE(?, name_singular), name_plural = COALESCE(?, name_plural) WHERE project = ? AND type = ?',
+      )
+      .bind(spec.singular ?? null, spec.plural ?? null, ctx.project, spec.type)
+      .run();
+    clearGroupTypeCache();
+    return this.listGroupTypes({ project: ctx.project });
+  }
+
+  async searchGroups(input: unknown) {
+    const spec = inputs.searchGroups.parse(input);
+    const ctx = await this.context(spec.project);
+    const { results } = await this.env.DB.prepare(
+      `SELECT key, props, first_seen, last_seen FROM groups
+       WHERE project = ?1 AND type = ?2 AND (?3 = '' OR instr(lower(key || ' ' || props), lower(?3)) > 0)
+       ORDER BY last_seen DESC LIMIT ?4`,
+    )
+      .bind(ctx.project, spec.type, spec.search ?? '', spec.limit ?? 50)
+      .all<{ key: string; props: string; first_seen: number; last_seen: number }>();
+    const groups = results.map((r) => ({
+      key: r.key,
+      properties: safeParse(r.props),
+      firstSeen: new Date(r.first_seen).toISOString(),
+      lastSeen: new Date(r.last_seen).toISOString(),
+      link: this.link(`groups/${encodeURIComponent(spec.type)}/${encodeURIComponent(r.key)}`, {
+        project: ctx.project,
+      }),
+    }));
+    return {
+      project: ctx.project,
+      type: spec.type,
+      groups,
+      summary: groups.length
+        ? `${groups.length} ${spec.type} groups${spec.search ? ` matching "${spec.search}"` : ''}, most recently active first.`
+        : `No ${spec.type} groups${spec.search ? ` matching "${spec.search}"` : ''}.`,
+    };
+  }
+
+  /** A group: its properties, who in it is active and doing what, and (with revenue) what it pays. */
+  async getGroup(input: unknown) {
+    const spec = inputs.getGroup.parse(input);
+    const ctx = await this.context(spec.project);
+    assertSafeKey(spec.type);
+    const row = await this.env.DB.prepare(
+      'SELECT props, first_seen, last_seen FROM groups WHERE project = ? AND type = ? AND key = ?',
+    )
+      .bind(ctx.project, spec.type, spec.key)
+      .first<{ props: string; first_seen: number; last_seen: number }>();
+    const d = this.store.dialect;
+    const range = resolveRange(spec.from ?? '-30d', spec.to);
+    const filters = [{ property: `group.${spec.type}`, value: spec.key }] as Filter[];
+    const cte = eventsCte(d, { project: ctx.project, ...range, filters });
+    // Bookkeeping events (setting group or person properties) aren't activity.
+    const active = "event NOT IN ('$groupidentify', '$identify', '$set')";
+    const sql = {
+      totals: `WITH ${cte}\nSELECT COUNT(*) AS n, COUNT(DISTINCT pid) AS people, COUNT(DISTINCT session_id) AS sessions FROM ev WHERE ${active}`,
+      events: `WITH ${cte}\nSELECT event, COUNT(*) AS n FROM ev WHERE ${active} GROUP BY event ORDER BY n DESC, event ASC LIMIT 10`,
+      members: `WITH ${cte}\nSELECT pid, COUNT(*) AS n, MAX(ts_ms) AS last_ts FROM ev WHERE ${active} GROUP BY pid ORDER BY n DESC, last_ts DESC LIMIT 20`,
+      recent: `WITH ${cte}\nSELECT event, ts_ms, pid, path FROM ev WHERE ${active} ORDER BY ts_ms DESC LIMIT 20`,
+    };
+    const [totals, events, members, recent] = await Promise.all(
+      Object.values(sql).map((q) => this.store.query(q)),
+    );
+    if (!row && num(totals![0]?.n) === 0) {
+      throw new HttpError(
+        404,
+        `No ${spec.type} "${spec.key}" in project "${ctx.project}"`,
+        'search_groups lists them.',
+      );
+    }
+    let revenue: { net: number; mrr: number; currency: string } | null = null;
+    if (await this.revenueConfigured(ctx.project, ctx.settings)) {
+      const r = await runRevenue(
+        {
+          from: spec.from ?? '-30d',
+          to: spec.to,
+          filters,
+          currency: ctx.settings.baseCurrency ?? 'USD',
+        },
+        {
+          dialect: d,
+          project: ctx.project,
+          execute: (q) => this.store.query(q),
+          timezone: ctx.settings.timezone,
+        },
+      );
+      revenue = { net: r.totals.net, mrr: r.totals.mrr, currency: r.currency };
+    }
+    const t = totals![0] ?? {};
+    return {
+      project: ctx.project,
+      type: spec.type,
+      key: spec.key,
+      properties: row ? safeParse(row.props) : {},
+      firstSeen: row ? new Date(row.first_seen).toISOString() : null,
+      lastSeen: row ? new Date(row.last_seen).toISOString() : null,
+      activity: { events: num(t.n), people: num(t.people), sessions: num(t.sessions) },
+      topEvents: events!.map((r) => ({ event: text(r.event), count: num(r.n) })),
+      members: members!.map((r) => ({
+        person: text(r.pid),
+        events: num(r.n),
+        lastSeen: new Date(num(r.last_ts)).toISOString(),
+        link: this.link(`users/${encodeURIComponent(text(r.pid))}`, { project: ctx.project }),
+      })),
+      recentEvents: recent!.map((r) => ({
+        event: text(r.event),
+        time: new Date(num(r.ts_ms)).toISOString(),
+        person: text(r.pid),
+        path: text(r.path),
+      })),
+      ...(revenue ? { revenue } : {}),
+      summary: `${spec.type} "${spec.key}": ${num(t.n)} events from ${num(t.people)} people in range${revenue ? `, ${revenue.net} ${revenue.currency} net revenue, MRR ${revenue.mrr}` : ''}.`,
+      sql: Object.values(sql),
+      dashboard: this.link(
+        `groups/${encodeURIComponent(spec.type)}/${encodeURIComponent(spec.key)}`,
+        { project: ctx.project },
+      ),
+    };
+  }
+
+  async setGroupProperties(input: unknown) {
+    const spec = inputs.setGroupProperties.parse(input);
+    const ctx = await this.context(spec.project);
+    const row = await this.env.DB.prepare(
+      'SELECT props FROM groups WHERE project = ? AND type = ? AND key = ?',
+    )
+      .bind(ctx.project, spec.type, spec.key)
+      .first<{ props: string }>();
+    const props = row ? (safeParse(row.props) as Record<string, unknown>) : {};
+    for (const [k, v] of Object.entries(spec.properties)) {
+      if (v === null) delete props[k];
+      else props[k] = v;
+    }
+    const now = Date.now();
+    await this.env.DB.prepare(
+      `INSERT INTO groups (project, type, key, props, first_seen, last_seen) VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT (project, type, key) DO UPDATE SET props = excluded.props`,
+    )
+      .bind(ctx.project, spec.type, spec.key, JSON.stringify(props), now, now)
+      .run();
+    return {
+      project: ctx.project,
+      type: spec.type,
+      key: spec.key,
+      properties: props,
+      summary: `Updated ${spec.type} "${spec.key}": events from now on carry these properties.`,
+    };
+  }
+
+  /** Erase a group: its row and properties, and its key and snapshots on stored events. */
+  async deleteGroup(input: unknown) {
+    const spec = inputs.deleteGroup.parse(input);
+    const ctx = await this.context(spec.project);
+    assertSafeKey(spec.type);
+    const res = await this.env.DB.prepare(
+      'DELETE FROM groups WHERE project = ? AND type = ? AND key = ?',
+    )
+      .bind(ctx.project, spec.type, spec.key)
+      .run();
+    const events = await this.store.deleteGroupData(ctx.project, spec.type, spec.key);
+    return {
+      project: ctx.project,
+      deleted: Boolean(res.meta.changes),
+      events,
+      summary:
+        events === 'deleted'
+          ? `Deleted ${spec.type} "${spec.key}" and removed it from its events (the events stay with their people).`
+          : `Deleted ${spec.type} "${spec.key}". Its events lose it when the lake maintenance job next runs (\`dataflare lake maintain\`, daily in CI).`,
     };
   }
 

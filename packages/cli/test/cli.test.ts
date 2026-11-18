@@ -864,7 +864,20 @@ describe('lake maintenance', () => {
         const command = args[args.indexOf('--command') + 1]!;
         sql.push(command);
         const results = command.startsWith('SELECT')
-          ? [{ id: 7, project: 'acme', ids: JSON.stringify(['alice', 'dev-alice']) }]
+          ? [
+              {
+                id: 7,
+                project: 'acme',
+                ids: JSON.stringify(['alice', 'dev-alice']),
+                kind: 'person',
+              },
+              {
+                id: 8,
+                project: 'acme',
+                ids: JSON.stringify(['company', 'acme-inc']),
+                kind: 'group',
+              },
+            ]
           : [];
         return { code: 0, stdout: JSON.stringify([{ results, success: true }]), stderr: '' };
       },
@@ -884,10 +897,18 @@ describe('lake maintenance', () => {
       },
     );
     const left = JSON.parse(python([fixture, 'dump', warehouse])) as {
-      events: { project: string; distinct_id: string; ts_ms: number }[];
-      events_v2: { distinct_id: string }[];
+      events: { project: string; distinct_id: string; ts_ms: number; props: string }[];
+      events_v2: { distinct_id: string; props: string }[];
       identities: { distinct_id: string }[];
     };
+    // The deleted group is gone from its events, which stay (with their other properties).
+    assert.deepEqual(
+      left.events.filter((e) => e.distinct_id === 'dev-bob').map((e) => JSON.parse(e.props)),
+      [{ x: 1 }],
+    );
+    assert.deepEqual(JSON.parse(left.events_v2.find((e) => e.distinct_id === 'dev-carol')!.props), {
+      $groups: { team: 't1' },
+    });
     assert.deepEqual(
       left.events_v2.map((e) => e.distinct_id),
       ['dev-carol'],
@@ -906,7 +927,7 @@ describe('lake maintenance', () => {
     );
     assert.match(
       sql.at(-1)!,
-      /^UPDATE lake_deletions SET done_at = 1790000000000 WHERE id IN \(7\)$/,
+      /^UPDATE lake_deletions SET done_at = 1790000000000 WHERE id IN \(7, 8\)$/,
     );
   });
 

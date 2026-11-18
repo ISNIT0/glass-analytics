@@ -476,6 +476,59 @@ export const TOOLS: ToolDefinition[] = [
     run: (s, a) => s.deleteAnnotation(a),
   },
   {
+    name: 'list_group_types',
+    title: 'List group types',
+    description:
+      'Group types in use (company, workspace…, at most five), with how many groups each has. Group analytics: aggregateBy a type in trends, funnels, retention, experiments and revenue; filter with "group.<type>" or "group.<type>.<property>".',
+    input: inputs.listGroupTypes,
+    scope: 'read',
+    run: (s, a) => s.listGroupTypes(a),
+  },
+  {
+    name: 'set_group_type',
+    title: 'Add or name a group type',
+    description: 'Add a group type before any events use it, or give it display names.',
+    input: inputs.setGroupType,
+    scope: 'admin',
+    run: (s, a) => s.setGroupType(a),
+  },
+  {
+    name: 'search_groups',
+    title: 'Search groups',
+    description:
+      'Groups of a type (e.g. companies), searchable by key or property, most recently active first.',
+    input: inputs.searchGroups,
+    scope: 'read',
+    run: (s, a) => s.searchGroups(a),
+  },
+  {
+    name: 'get_group',
+    title: 'Group detail',
+    description:
+      'One group: its properties, events, people and sessions in the range, top events, most active members, recent events and (when revenue is set up) its revenue and MRR.',
+    input: inputs.getGroup,
+    scope: 'read',
+    run: (s, a) => s.getGroup(a),
+  },
+  {
+    name: 'set_group_properties',
+    title: 'Set group properties',
+    description:
+      'Set or remove properties of a group (e.g. plan, industry); events from now on carry them.',
+    input: inputs.setGroupProperties,
+    scope: 'admin',
+    run: (s, a) => s.setGroupProperties(a),
+  },
+  {
+    name: 'delete_group',
+    title: 'Delete a group',
+    description:
+      'Erase a group: its properties, and its key on stored events (the events stay with their people). Immediate on D1; the lake job does it in lake mode.',
+    input: inputs.deleteGroup,
+    scope: 'admin',
+    run: (s, a) => s.deleteGroup(a),
+  },
+  {
     name: 'connect_stripe',
     title: 'Connect Stripe',
     description:

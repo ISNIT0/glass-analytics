@@ -12,7 +12,7 @@ import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { GLASS_VERSION } from '@dataflare/core/version';
-import { events, person, projects, query, replays, sql } from './commands/data.ts';
+import { events, group, groups, person, projects, query, replays, sql } from './commands/data.ts';
 import { experiments, flags as flagCommands } from './commands/flags.ts';
 import { importEvents } from './commands/import.ts';
 import { init } from './commands/init.ts';
@@ -66,6 +66,10 @@ ${color.bold('Ask questions')}
   dataflare sql "SELECT …"       Read-only SQL against your events
   dataflare events [name]        Tracked events, or one event's properties
     --describe "<text>"            How/when the event fires (document custom events)
+  dataflare groups [type] [--search text]
+                                 Group types, or the groups of a type (companies, workspaces…)
+  dataflare group <type> <key> [--delete]
+                                 A group's properties and members, or erase it
   dataflare person <id> [--delete]   One person's properties and events (or erase them)
   dataflare replays [--errors] [--rage] [--url /checkout] [--not purchase] [--search text] [--sort most_frustrated]
                                  Find recorded sessions
@@ -143,6 +147,7 @@ const STRING_OPTIONS = [
   'api-key',
   'since',
   'person-key',
+  'search',
   'group-type',
   'group-key',
 ];
@@ -290,6 +295,10 @@ export async function main(argv: string[]): Promise<void> {
     case 'person':
     case 'persons':
       return person(sub, flags);
+    case 'groups':
+      return groups(sub, flags);
+    case 'group':
+      return group(sub, arg, flags);
     case 'replays':
       return replays(sub, arg, flags);
     case 'projects':

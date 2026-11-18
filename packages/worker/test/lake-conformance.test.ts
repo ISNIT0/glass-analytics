@@ -162,6 +162,15 @@ function fixture(now: number) {
       props: { flag: 'checkout-v2', variant: u % 2 ? 'test' : 'control' },
     });
   }
+  // Every device belongs to one of four companies (group analytics).
+  for (const e of events) {
+    const m = /^dev-(\d+)/.exec(String(e.distinct_id));
+    if (m)
+      e.props = {
+        ...((e.props as object | undefined) ?? {}),
+        $groups: { company: `co-${Number(m[1]) % 4}` },
+      };
+  }
   return events;
 }
 
@@ -176,6 +185,51 @@ const CART_ERROR = {
 const CART_ISSUE = issueIdFor(await fingerprint(exceptionInfo(CART_ERROR, 'acme.com')));
 
 const READS: [string, string, unknown?][] = [
+  // Group analytics: counted by company instead of person.
+  [
+    'POST',
+    '/api/query',
+    {
+      kind: 'trends',
+      from: '-7d',
+      aggregateBy: 'company',
+      series: [{ event: '$pageview', math: 'dau' }],
+    },
+  ],
+  [
+    'POST',
+    '/api/query',
+    {
+      kind: 'trends',
+      from: '-7d',
+      series: [{ event: '$pageview', math: 'unique_groups', groupType: 'company' }],
+    },
+  ],
+  [
+    'POST',
+    '/api/query',
+    {
+      kind: 'funnel',
+      from: '-7d',
+      aggregateBy: 'company',
+      steps: [{ event: '$pageview' }, { event: 'signup_completed' }],
+    },
+  ],
+  [
+    'POST',
+    '/api/query',
+    {
+      kind: 'retention',
+      from: '-7d',
+      period: 'day',
+      aggregateBy: 'company',
+      cohortEvent: { event: '$pageview' },
+      returnEvent: { event: '$pageview' },
+    },
+  ],
+  ['POST', '/api/query', { kind: 'revenue', from: '-30d', aggregateBy: 'company' }],
+  ['GET', '/api/groups/company/co-1?from=-7d'],
+  ['GET', '/api/groups?type=company'],
   ['POST', '/api/query', { kind: 'revenue', from: '-30d', interval: 'week' }],
   ['POST', '/api/query', { kind: 'revenue', from: '-14d', interval: 'day', breakdown: 'product' }],
   [
