@@ -1,0 +1,59 @@
+# Posts the Quality workflow's report as one comment on the pull request, updated in place on
+# every push. Split from quality.yml so it can have a write token without ever running pull
+# request code: it only downloads the report text and posts it. workflow_run workflows run from
+# the default branch, so changes to this file take effect once they are on main.
+name: Quality comment
+
+on:
+  workflow_run:
+    workflows: [Quality]
+    types: [completed]
+
+permissions:
+  actions: read
+  pull-requests: write
+
+jobs:
+  comment:
+    if: github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download the report
+        id: download
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: quality-report
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+          path: report
+
+      - name: Post or update the comment
+        if: steps.download.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          MEASURED_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          marker='<!-- dataflare-quality-report -->'
+          pr=$(tr -dc '0-9' < report/pr-number || true)
+          if [ -z "$pr" ]; then echo "No pull request number in the report."; exit 0; fi
+          # The report comes from a run that may have executed fork code: only post it on the PR
+          # whose current head is the commit that run measured.
+          pr_head=$(gh api "repos/$REPO/pulls/$pr" --jq .head.sha)
+          if [ "$pr_head" != "$MEASURED_SHA" ]; then
+            echo "PR #$pr is at $pr_head, not the measured $MEASURED_SHA; a newer run will post."
+            exit 0
+          fi
+          head -c 60000 report/report.md > body.md
+          if ! grep -qF "$marker" body.md; then echo "Report is missing its marker."; exit 1; fi
+          existing=$(gh api --paginate "repos/$REPO/issues/$pr/comments" \
+            --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$marker\"))) | .id" | head -n 1)
+          if [ -n "$existing" ]; then
+            gh api -X PATCH "repos/$REPO/issues/comments/$existing" -F body=@body.md > /dev/null
+            echo "Updated comment $existing on #$pr."
+          else
+            gh api -X POST "repos/$REPO/issues/$pr/comments" -F body=@body.md > /dev/null
+            echo "Commented on #$pr."
+          fi
