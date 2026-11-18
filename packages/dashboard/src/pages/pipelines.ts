@@ -5,8 +5,15 @@
 
 import { api } from '../api.ts';
 import { lineChart } from '../components/charts.ts';
+import { cleanFilters, type FilterRow, filterEditor } from '../components/filter-editor.ts';
 import { icon } from '../components/icons.ts';
 import { toggle } from '../components/menu.ts';
+import { eventPicker } from '../components/picker.ts';
+import {
+  cleanTransformationRule,
+  eventListEditor,
+  transformationRuleEditor,
+} from '../components/rich-editors.ts';
 import {
   empty,
   errorState,
@@ -50,9 +57,15 @@ interface Destination {
   secretsSet: string[];
 }
 
+/** A <label> wraps one input (clicking the text focuses it); composite editors get a <div>. */
+const labelable = (control: unknown) =>
+  control instanceof HTMLInputElement ||
+  control instanceof HTMLSelectElement ||
+  control instanceof HTMLTextAreaElement;
+
 const field = (label: string, control: HTMLElement, hint?: string) =>
   h(
-    'label',
+    labelable(control) ? 'label' : 'div',
     { class: 'field' },
     h('span', {}, label),
     control,
@@ -79,16 +92,13 @@ function destinationForm(
   const paint = (templateId: string) => {
     const t = templates.find((x) => x.id === templateId) ?? templates[0]!;
     const name = h('input', { type: 'text', value: existing?.name ?? t.name, required: true });
-    const events = h('input', {
-      type: 'text',
-      value: (existing?.match.events ?? t.defaultEvents ?? []).join(', '),
-      placeholder: 'signup_completed, order_paid (or * for all)',
+    const eventList = [...(existing?.match.events ?? t.defaultEvents ?? [])];
+    if (eventList.length === 0) eventList.push('');
+    const events = eventListEditor(eventList, project, {
+      allLabel: 'All events (except bookkeeping)',
     });
-    const filters = h(
-      'textarea',
-      { rows: 3, spellcheck: false, placeholder: '[{"property":"plan","value":"pro"}]' },
-      existing?.match.filters?.length ? JSON.stringify(existing.match.filters, null, 2) : '',
-    );
+    const filterRows = structuredClone((existing?.match.filters ?? []) as FilterRow[]);
+    const filters = filterEditor(filterRows, () => {}, { project });
     const controls = new Map<string, HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>();
     const inputs = t.inputs.map((i) => {
       const current = existing?.config[i.key] ?? i.default;
@@ -142,12 +152,8 @@ function destinationForm(
             t.description,
           ),
       field('Name', name),
-      field(
-        'Events to send',
-        events,
-        'Comma-separated event names; * sends everything except bookkeeping events.',
-      ),
-      field('Only events matching (optional)', filters, 'Filters as JSON, e.g. paid plans only.'),
+      field('Events to send', events),
+      field('Only events matching (optional)', filters, 'e.g. paid plans only.'),
       inputs,
       error,
       h(
@@ -172,11 +178,8 @@ function destinationForm(
           project,
           name: name.value,
           template: t.id,
-          events: events.value
-            .split(',')
-            .map((x) => x.trim())
-            .filter(Boolean),
-          filters: (parseJson(filters.value, 'Filters') as unknown[] | undefined) ?? [],
+          events: eventList.filter(Boolean),
+          filters: cleanFilters(filterRows) ?? [],
           inputs: values,
         };
         const r = existing
@@ -407,15 +410,6 @@ function destinations(route: Route): Child {
 
 // ── Transformations ────────────────────────────────────────────────────────
 
-const RULE_EXAMPLES: Record<string, string> = {
-  drop_event: '{"kind":"drop_event","events":["debug_log"]}',
-  drop_properties: '{"kind":"drop_properties","properties":["password","/^card_/"]}',
-  rename_property: '{"kind":"rename_property","from":"planName","to":"plan"}',
-  set_property: '{"kind":"set_property","property":"source","value":"web","events":["signup"]}',
-  hash_properties: '{"kind":"hash_properties","properties":["person.email"]}',
-  redact: '{"kind":"redact","patterns":["email","phone"]}',
-};
-
 /** A rule in a few words, e.g. "Rename planName → plan". */
 function describeRule(rule: Record<string, unknown>): string {
   const list = (v: unknown) => (Array.isArray(v) ? v.join(', ') : '');
@@ -450,33 +444,20 @@ function transformations(): Child {
       }[];
       summary: string;
     }>('/api/transformations', { project });
-    const rule = h('textarea', { rows: 4, spellcheck: false }, RULE_EXAMPLES.redact!);
-    const sample = h(
+    const rule: Record<string, unknown> & { kind: string } = {
+      kind: 'redact',
+      patterns: ['email', 'phone'],
+    };
+    let sampleEvent = 'signup';
+    const sampleProps = h(
       'textarea',
-      { rows: 3, spellcheck: false },
-      '{"event":"signup","props":{"note":"mail ann@example.com"}}',
+      { rows: 2, spellcheck: false },
+      '{"note":"mail ann@example.com","plan":"pro"}',
     );
     const out = h('div', {});
-    const examples = h(
-      'div',
-      { class: 'chip-list' },
-      Object.entries(RULE_EXAMPLES).map(([k, v]) =>
-        h(
-          'button',
-          {
-            type: 'button',
-            class: 'chip',
-            onclick: () => {
-              rule.value = v;
-            },
-          },
-          k.replaceAll('_', ' '),
-        ),
-      ),
-    );
     const run = async (save: boolean) => {
       try {
-        const parsed = parseJson(rule.value, 'The rule');
+        const parsed = cleanTransformationRule(rule);
         if (save) {
           await api.post('/api/transformations', {
             project,
@@ -492,7 +473,10 @@ function transformations(): Child {
           {
             project,
             rule: parsed,
-            event: parseJson(sample.value, 'The sample event'),
+            event: {
+              event: sampleEvent,
+              props: parseJson(sampleProps.value, 'The sample properties') ?? {},
+            },
           },
         );
         mount(
@@ -575,9 +559,24 @@ function transformations(): Child {
         h(
           'div',
           { class: 'stack' },
-          examples,
-          field('Rule (JSON)', rule),
-          field('Try it on this event', sample),
+          transformationRuleEditor(rule, project),
+          field(
+            'Try it on a sample event',
+            h(
+              'div',
+              { class: 'stack tight' },
+              eventPicker({
+                value: sampleEvent,
+                project,
+                label: 'Sample event',
+                onChange: (v) => {
+                  sampleEvent = v;
+                },
+              }),
+              sampleProps,
+            ),
+            'The sample’s properties, as JSON.',
+          ),
           h(
             'div',
             { class: 'form-actions' },

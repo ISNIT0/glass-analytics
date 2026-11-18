@@ -1988,6 +1988,9 @@ input[type="search"],
 input[type="password"],
 input[type="number"],
 input[type="date"],
+input[type="datetime-local"],
+input[type="url"],
+input[type="email"],
 select,
 textarea {
   font: inherit;
@@ -5676,4 +5679,66 @@ ol.stack {
 
 .field small {
   overflow-wrap: anywhere;
+}
+
+.flag-detail {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.flag-side {
+  display: grid;
+  gap: 16px;
+}
+
+.flag-side .panel {
+  margin-bottom: 0;
+}
+
+@media (max-width: 1060px) {
+  .flag-detail {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Rich editors (revenue events, event lists, transformation and flag rules). */
+.rich-list {
+  display: grid;
+  gap: 10px;
+}
+
+.rich-card {
+  display: grid;
+  gap: 12px;
+}
+
+.rich-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 16px;
+}
+
+select.short-select {
+  width: auto;
+  flex: none;
+}
+
+@media (max-width: 720px) {
+  .rich-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.push-right {
+  margin-left: auto;
+}
+
+.rich-grid > .field {
+  align-content: start;
+}
+
+.rich-list > .row > .picker {
+  flex: 1;
 }

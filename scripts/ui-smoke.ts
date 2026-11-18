@@ -87,6 +87,7 @@ await call('PATCH', '/api/settings', {
         subscriptionProperty: 'sub',
       },
     ],
+    internalFilters: [{ property: 'person.email', op: 'contains', value: '@demo.test' }],
   },
 });
 const events = [];
@@ -153,6 +154,26 @@ await call('POST', '/api/exports', {
   settings: { url: hook },
 });
 const issues = await call('GET', '/api/issues?project=demo&from=-7d');
+await call('PUT', '/api/flags/new-checkout', {
+  project: 'demo',
+  description: 'The redesigned checkout',
+  rollout: 50,
+  variants: [
+    { key: 'control', weight: 50 },
+    { key: 'test', weight: 50 },
+  ],
+  payloads: { control: { cta: 'Buy now' }, test: { cta: 'Get it today' } },
+  bucketBy: 'person',
+  rules: [
+    { conditions: [{ property: 'person.plan', value: 'pro' }], rollout: 100, variant: 'test' },
+  ],
+  earlyAccess: { name: 'New checkout', stage: 'beta', description: 'A faster checkout' },
+});
+await call('POST', '/api/flags/new-checkout/schedule', {
+  project: 'demo',
+  at: new Date(Date.now() + 86_400_000).toISOString(),
+  change: { rollout: 100 },
+});
 
 const routes: [string, string][] = [
   ['errors', 'errors?project=demo&from=-7d'],
@@ -183,6 +204,7 @@ const routes: [string, string][] = [
     'insights/new/retention?project=demo&from=-7d&spec=%7B%22cohortEvent%22%3A%7B%22event%22%3A%22%24pageview%22%7D%2C%22returnEvent%22%3A%7B%22event%22%3A%22%24pageview%22%7D%2C%22period%22%3A%22day%22%2C%22periods%22%3A6%2C%22retentionType%22%3A%22recurring%22%2C%22cumulative%22%3Atrue%2C%22aggregateBy%22%3A%22company%22%7D',
   ],
   ['people', 'users?project=demo'],
+  ['flag', 'flags/new-checkout?project=demo'],
 ];
 const browser = await chromium.launch({ args: [`--user-agent=${UA}`] });
 const problems: string[] = [];

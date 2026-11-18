@@ -8,7 +8,9 @@
 import { api } from '../api.ts';
 import { type Child, h, mount } from '../dom.ts';
 import { scope } from '../state.ts';
+import { cleanFilters, type FilterRow, filterEditor } from './filter-editor.ts';
 import { toggle } from './menu.ts';
+import { completeRevenueRules, type RevenueRule, revenueEventsEditor } from './rich-editors.ts';
 import { errorState, later, panel, toast } from './ui.ts';
 
 interface Settings {
@@ -27,25 +29,20 @@ interface Settings {
   };
 }
 
+/** A <label> wraps one input (clicking the text focuses it); composite editors get a <div>. */
+const labelable = (control: unknown) =>
+  control instanceof HTMLInputElement ||
+  control instanceof HTMLSelectElement ||
+  control instanceof HTMLTextAreaElement;
+
 const field = (label: string, control: HTMLElement, hint?: Child) =>
   h(
-    'label',
+    labelable(control) ? 'label' : 'div',
     { class: 'field' },
     h('span', {}, label),
     control,
     hint ? h('small', { class: 'muted' }, hint) : null,
   );
-
-const json = (v: unknown) => (v === undefined ? '' : JSON.stringify(v, null, 2));
-
-function parse(text: string, what: string): unknown {
-  if (!text.trim()) return null;
-  try {
-    return JSON.parse(text);
-  } catch {
-    throw new Error(`${what} is not valid JSON`);
-  }
-}
 
 function settingsForm(
   settings: Settings,
@@ -74,25 +71,10 @@ function settingsForm(
     maxlength: 3,
     class: 'short',
   });
-  const internal = h(
-    'textarea',
-    {
-      rows: 3,
-      spellcheck: false,
-      placeholder: '[{"property":"person.email","op":"contains","value":"@acme.com"}]',
-    },
-    json(settings.internalFilters),
-  );
-  const revenue = h(
-    'textarea',
-    {
-      rows: 4,
-      spellcheck: false,
-      placeholder:
-        '[{"event":"order_paid","amountProperty":"amount","currencyProperty":"currency","productProperty":"plan"}]',
-    },
-    json(settings.revenueEvents),
-  );
+  const internalRows = structuredClone((settings.internalFilters ?? []) as FilterRow[]);
+  const internal = filterEditor(internalRows, () => {}, { project });
+  const revenueRules = structuredClone((settings.revenueEvents ?? []) as RevenueRule[]);
+  const revenue = revenueEventsEditor(revenueRules, project);
   const inApp = h('input', {
     type: 'text',
     value: (settings.inAppIncludes ?? []).join(', '),
@@ -144,7 +126,7 @@ function settingsForm(
     field(
       'Internal traffic',
       internal,
-      'Conditions that mark your own or test traffic; queries with "filter test accounts" leave it out.',
+      'Events matching any of these are your own or test traffic; "Filter out internal traffic" leaves them out.',
     ),
     h('h3', { id: 'revenue' }, 'Revenue'),
     field(
@@ -155,7 +137,7 @@ function settingsForm(
     field(
       'Revenue events',
       revenue,
-      'Events that carry money: amount property, optional currency, product and subscription properties, interval, and kind "refund".',
+      'Events that carry money. Amounts are converted to the base currency; a subscription property tracks MRR.',
     ),
     h('h3', {}, 'Error tracking'),
     field(
@@ -222,8 +204,10 @@ function settingsForm(
         settings: {
           timezone: timezone.value.trim() || null,
           baseCurrency: currency.value.trim().toUpperCase() || null,
-          internalFilters: parse(internal.value, 'Internal traffic'),
-          revenueEvents: parse(revenue.value, 'Revenue events'),
+          internalFilters: cleanFilters(internalRows) ?? null,
+          revenueEvents: completeRevenueRules(revenueRules).length
+            ? completeRevenueRules(revenueRules)
+            : null,
           inAppIncludes: inApp.value.trim()
             ? inApp.value
                 .split(',')
