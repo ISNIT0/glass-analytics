@@ -14,6 +14,7 @@ import { createInterface } from 'node:readline';
 import type { Readable, Writable } from 'node:stream';
 import { after, before, describe, it, mock } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { exceptionInfo, fingerprint, issueIdFor } from '@dataflare/core/issues';
 import { LAKE_TABLES, type LakeSchemaChange, lakeFields } from '@dataflare/core/lake';
 import { configureExports, runExports } from '../src/exports.ts';
 import { D1Store } from '../src/stores/d1.ts';
@@ -118,7 +119,7 @@ function fixture(now: number) {
           distinct_id: device,
           session_id: session,
           url: 'https://acme.com/docs',
-          props: { message: 'TypeError: x is undefined' },
+          props: u % 10 === 0 ? CART_ERROR : { message: 'TypeError: x is undefined' },
         });
       add('$web_vitals', {
         ts: ts + 2000,
@@ -164,7 +165,20 @@ function fixture(now: number) {
   return events;
 }
 
+/** An exception with a stack (error tracking groups these into issues). */
+const CART_ERROR = {
+  type: 'TypeError',
+  message: "Cannot read properties of undefined (reading 'price')",
+  stack:
+    "TypeError: Cannot read properties of undefined (reading 'price')\n    at total (https://acme.com/assets/app-BxT8QXh2.js:1:2345)\n    at https://acme.com/assets/app-BxT8QXh2.js:1:99",
+  $release: 'v1.4.0',
+};
+const CART_ISSUE = issueIdFor(await fingerprint(exceptionInfo(CART_ERROR, 'acme.com')));
+
 const READS: [string, string, unknown?][] = [
+  ['GET', '/api/issues?from=-7d'],
+  ['GET', `/api/issues/${CART_ISSUE}?from=-7d`],
+  ['GET', '/api/issues?from=-7d&order=users&filters=[{"property":"browser","value":"Chrome"}]'],
   ['GET', '/api/overview?from=-7d'],
   ['GET', '/api/sites?from=-7d'],
   ['POST', '/api/query', { kind: 'web', from: '-7d' }],

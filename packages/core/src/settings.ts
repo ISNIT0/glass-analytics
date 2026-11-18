@@ -84,6 +84,28 @@ export const projectSettingsSchema = z.object({
     .describe(
       'Error tracking: keep at most this many exceptions per issue per minute. Default 100.',
     ),
+  errorAlerts: z
+    .object({
+      destination: z
+        .string()
+        .describe(
+          'Id of the destination to alert (a Slack, Discord, Teams or webhook destination).',
+        ),
+      onNew: z.boolean().optional().describe('Alert on a new issue. Default true.'),
+      onRegression: z
+        .boolean()
+        .optional()
+        .describe('Alert when a resolved issue happens again. Default true.'),
+      spike: z
+        .object({
+          count: z.number().int().min(2).describe('Exceptions of one issue…'),
+          minutes: z.number().int().min(1).max(1440).describe('…within this many minutes.'),
+        })
+        .optional()
+        .describe('Alert when one issue happens this often, at most once per window.'),
+    })
+    .optional()
+    .describe('Error tracking alerts, sent through a destination.'),
 });
 
 export type ProjectSettings = z.infer<typeof projectSettingsSchema>;

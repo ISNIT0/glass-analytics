@@ -86,6 +86,8 @@ export interface EnrichContext {
   now: number;
   /** An import or a server SDK with a key, rather than public ingest. */
   trusted: boolean;
+  /** The Worker's public base URL (for links in alerts). */
+  base: string;
 }
 
 /** Registered enrichers, in order. Each may change, drop or add rows. */
@@ -100,6 +102,7 @@ export async function handleIngest(
   env: Env,
   store: EventStore,
   now = Date.now(),
+  base?: string,
 ): Promise<IngestResult> {
   const info = requestInfo(request);
   const batch = await readJson<Partial<WireBatch>>(request, 1_000_000);
@@ -114,7 +117,7 @@ export async function handleIngest(
   // Server-side senders often have no user agent; only browsers that look like bots are dropped.
   if (info.userAgent && isBot(info.userAgent))
     return { accepted: 0, dropped: batch.events!.length };
-  return ingestBatch(batch as WireBatch, project, info, env, store, now, { trusted: false });
+  return ingestBatch(batch as WireBatch, project, info, env, store, now, { trusted: false, base });
 }
 
 /**
@@ -126,7 +129,7 @@ export async function handleImport(
   env: Env,
   store: EventStore,
   now = Date.now(),
-  options: { skipDestinations?: boolean } = {},
+  options: { skipDestinations?: boolean; base?: string } = {},
 ): Promise<IngestResult & { project: string }> {
   const info = requestInfo(request);
   const batch = await readJson<Partial<WireBatch> & { skip_destinations?: boolean }>(
@@ -144,6 +147,7 @@ export async function handleImport(
   const result = await ingestBatch(batch as WireBatch, project, info, env, store, now, {
     trusted: true,
     skipDestinations: options.skipDestinations ?? batch.skip_destinations !== false,
+    base: options.base,
   });
   return { ...result, project: project.id };
 }
@@ -170,7 +174,7 @@ export async function ingestBatch(
   env: Env,
   store: EventStore,
   now: number,
-  options: { trusted: boolean; skipDestinations?: boolean },
+  options: { trusted: boolean; skipDestinations?: boolean; base?: string },
 ): Promise<IngestResult> {
   const limit = options.trusted ? MAX_IMPORT_EVENTS : MAX_EVENTS;
   const events = batch.events.slice(0, limit).filter(isWellFormed);
@@ -187,7 +191,14 @@ export async function ingestBatch(
     store,
   };
   let rows = await toRows(events, ctx);
-  const enrich: EnrichContext = { project, env, store, now, trusted: options.trusted };
+  const enrich: EnrichContext = {
+    project,
+    env,
+    store,
+    now,
+    trusted: options.trusted,
+    base: options.base ?? env.GLASS_PUBLIC_URL?.replace(/\/+$/, '') ?? '',
+  };
   for (const enricher of ENRICHERS) rows = await enricher(rows, enrich);
   await store.write(rows);
   if (!options.skipDestinations) {

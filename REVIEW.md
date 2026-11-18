@@ -40,10 +40,22 @@ Run: `pnpm install && pnpm typecheck && pnpm lint && pnpm test` (lake conformanc
   queue operations in `usage_and_cost`. Exports are checked against DataFusion in the lake
   conformance suite.
 
+- **Error tracking**: `captureException` and `release` in both SDKs (`data-release` on the
+  script tag); Chrome/V8, Firefox and Safari stack parsing; fingerprints from type, message
+  with variable parts removed, and top three in-app frames (bundle hashes and minified names
+  ignored, `$fingerprint` overrides); issues in D1 with `$issue_id` on every exception (so the
+  lake groups by issue too); resolve/suppress/assign/merge, regressions, a per-issue minute
+  limit; alerts for new issues, regressions and spikes through a destination; source map
+  upload (`dataflare sourcemaps upload`, `PUT /api/sourcemaps`, server key allowed) with an
+  in-house VLQ decoder checked against esbuild, symbolication at read time with code context;
+  `list_issues`, `get_issue`, `update_issue`, `merge_issues`, `list_sourcemaps`;
+  `site_health` lists top issues (migration 0015). Issue reads are checked against DataFusion.
+
 ## Not done yet
 
-- Phase 8 error tracking + source maps, Phase 9 revenue + Stripe, Phase 10 dashboard UI for
-  everything above, docs, comparison pages, e2e tests, upgrade dry-run.
+- Phase 9 revenue + Stripe, Phase 10 dashboard UI for everything above (including an Errors
+  page), docs, comparison pages, e2e tests (SDK `captureException`, web experiments, early
+  access, overrides), upgrade dry-run.
 
 ## Decisions to confirm
 
@@ -59,5 +71,11 @@ Run: `pnpm install && pnpm typecheck && pnpm lint && pnpm test` (lake conformanc
   already stored, so `/e` still succeeds and the delivery goes to the outbox.
 - Phone numbers for ad platforms drop a "(0)" and "00" prefix; Meta gets digits, TikTok E.164
   with "+"; an optional `phoneCountryCode` input fixes national numbers.
+- Error fingerprints are computed at ingest from unsymbolicated frames (symbolicating at ingest
+  would not fit the Free plan's 10 ms CPU), so frames are keyed on file (hash stripped) and
+  function name (minified names ignored). Two builds can still split an issue when the
+  top frames' real names change; merging covers that.
+- The per-issue rate limit is counted per Worker isolate (free, approximate), not globally.
+- An exception that happened before its issue was resolved (a late batch) doesn't reopen it.
 - BigQuery uses streaming inserts (`insertAll`), not load jobs: simpler, and rows dedupe on the
   event id for about a minute; a load-job path would need a GCS bucket.

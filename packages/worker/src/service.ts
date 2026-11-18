@@ -31,6 +31,7 @@ import {
   actorSelection,
   aggregationOf,
 } from '@dataflare/core/insights/actors';
+import { issueCounts, issueDetail, issueSeries } from '@dataflare/core/insights/errors';
 import { planExperiment, runExperiment } from '@dataflare/core/insights/experiment';
 import {
   type EventRole,
@@ -130,6 +131,16 @@ import {
 import { HttpError } from './http.ts';
 import { upsertPerson } from './ingest.ts';
 import { DEFAULT_INSIGHTS } from './insight-defaults.ts';
+import {
+  deleteSourcemaps,
+  getIssueRow,
+  listIssueRows,
+  listSourcemaps,
+  mergeIssues,
+  symbolicatedFrames,
+  updateIssue,
+  uploadSourcemap,
+} from './issues.ts';
 import { fetchLatestVersion } from './latest.ts';
 import {
   createProject,
@@ -905,6 +916,48 @@ export const inputs = {
       .union([z.string(), z.number()])
       .describe('Re-export everything received since, e.g. "-30d".'),
   }),
+  listIssues: z.object({
+    ...reportRange,
+    status: z
+      .enum(['active', 'resolved', 'suppressed', 'all'])
+      .optional()
+      .describe('Default "active" (which includes regressions).'),
+    search: z.string().optional().describe('Text in the error type or message.'),
+    order: z
+      .enum(['last_seen', 'first_seen', 'events', 'users'])
+      .optional()
+      .describe('Default "events".'),
+    limit: z.number().int().min(1).max(200).optional().describe('Default 25.'),
+    filterTestAccounts: z.boolean().optional(),
+  }),
+  getIssue: z.object({
+    ...reportRange,
+    id: z.string().describe('Issue id, from list_issues.'),
+    filterTestAccounts: z.boolean().optional(),
+  }),
+  updateIssue: z.object({
+    project,
+    id: z.string(),
+    status: z
+      .enum(['active', 'resolved', 'suppressed'])
+      .optional()
+      .describe(
+        '"resolved": if it happens again it comes back as a regression. "suppressed": new occurrences are dropped at ingest.',
+      ),
+    assignee: z
+      .string()
+      .max(200)
+      .nullable()
+      .optional()
+      .describe('Who is on it (free text); null clears it.'),
+  }),
+  mergeIssues: z.object({
+    project,
+    into: z.string().describe('The issue to keep.'),
+    ids: z.array(z.string()).min(1).describe('Issues to merge into it.'),
+  }),
+  listSourcemaps: z.object({ project, release: z.string().optional() }),
+  deleteSourcemaps: z.object({ project, release: z.string(), path: z.string().optional() }),
   getSettings: z.object({ project }),
   updateSettings: z.object({
     project,
@@ -1468,7 +1521,44 @@ GROUP BY event ORDER BY cur DESC, event ASC LIMIT 50`;
         .bind(ctx.project, range.from, range.to)
         .first();
     }
-    return { project: ctx.project, ...r, replays: frustration };
+    // Issue names and status for the top issues (error tracking).
+    const { issues: known, merged } = r.topIssues.length
+      ? await listIssueRows(this.env, ctx.project, { status: 'all' })
+      : { issues: [], merged: new Map<string, string>() };
+    const byId = new Map(known.map((i) => [i.id, i]));
+    const folded = new Map<string, { errors: number; visitors: number }>();
+    for (const t of r.topIssues) {
+      const id = merged.get(t.issue) ?? t.issue;
+      const f = folded.get(id) ?? { errors: 0, visitors: 0 };
+      f.errors += t.errors;
+      f.visitors += t.visitors;
+      folded.set(id, f);
+    }
+    const topIssues = [...folded]
+      .map(([id, f]) => {
+        const i = byId.get(id);
+        return {
+          id,
+          type: i?.type ?? '',
+          message: i?.message ?? '',
+          status: i?.status ?? 'active',
+          regressed: Boolean(i?.regressedAt),
+          ...f,
+          link: this.link(`errors/${id}`, { project: ctx.project }),
+        };
+      })
+      .sort((a, b) => b.errors - a.errors);
+    const { topIssues: _, ...rest } = r;
+    const issueLine = topIssues.length
+      ? ` Top issue: ${topIssues[0]!.type}: ${topIssues[0]!.message.slice(0, 100)} (${topIssues[0]!.errors}×); get_issue has its stack.`
+      : '';
+    return {
+      project: ctx.project,
+      ...rest,
+      topIssues,
+      summary: `${r.summary}${issueLine}`,
+      replays: frustration,
+    };
   }
 
   // ── Usage and cost ──────────────────────────────────────────────────────
@@ -3537,6 +3627,230 @@ WHERE project = ${d.str(project)} AND session_id = ${d.str(row.session_id)} AND 
     return {
       project: ctx.project,
       summary: `The export will re-send everything received since ${new Date(from).toISOString()}, a few thousand rows every five minutes.`,
+    };
+  }
+
+  // ── Error tracking ───────────────────────────────────────────────────────
+
+  /** Issues (exceptions grouped by fingerprint) with counts and a series for the range. */
+  async listIssues(input: unknown) {
+    const spec = inputs.listIssues.parse(input);
+    const { ctx, filters } = await this.reportContext(
+      this.withProjectOptions(spec, (await this.context(spec.project)).settings),
+    );
+    const range = { from: spec.from ?? '-14d', to: spec.to, filters };
+    const { issues, merged } = await listIssueRows(this.env, ctx.project, {
+      status: spec.status,
+      search: spec.search,
+    });
+    const counts = await issueCounts(range, ctx);
+    // Exceptions of merged issues count towards the issue they were merged into.
+    const totals = new Map<string, { events: number; users: number; sessions: number }>();
+    for (const c of counts.rows) {
+      const id = merged.get(c.issue) ?? c.issue;
+      const t = totals.get(id) ?? { events: 0, users: 0, sessions: 0 };
+      t.events += c.events;
+      t.users += c.users;
+      t.sessions += c.sessions;
+      totals.set(id, t);
+    }
+    const order = spec.order ?? 'events';
+    const rows = issues
+      .filter((i) => totals.has(i.id))
+      .map((i) => ({ ...i, ...totals.get(i.id)! }))
+      .sort((a, b) =>
+        order === 'last_seen'
+          ? b.lastSeen.localeCompare(a.lastSeen)
+          : order === 'first_seen'
+            ? b.firstSeen.localeCompare(a.firstSeen)
+            : order === 'users'
+              ? b.users - a.users || b.events - a.events
+              : b.events - a.events || b.lastSeen.localeCompare(a.lastSeen),
+      )
+      .slice(0, spec.limit ?? 25);
+    const ids = rows.map((r) => r.id);
+    const withMerged = [
+      ...ids,
+      ...[...merged].filter(([, into]) => ids.includes(into)).map(([id]) => id),
+    ];
+    const series = await issueSeries(range, ctx, withMerged);
+    const seriesFor = (id: string) => {
+      const out = [...(series.series[id] ?? [])];
+      for (const [m, into] of merged) {
+        if (into !== id) continue;
+        series.series[m]?.forEach((n, i) => {
+          out[i] = (out[i] ?? 0) + n;
+        });
+      }
+      return out;
+    };
+    const total = [...totals.values()].reduce((n, t) => n + t.events, 0);
+    return {
+      project: ctx.project,
+      interval: series.interval,
+      buckets: series.buckets,
+      issues: rows.map((r) => ({
+        ...r,
+        series: seriesFor(r.id),
+        link: this.link(`errors/${r.id}`, { project: ctx.project }),
+      })),
+      summary: rows.length
+        ? `${totals.size} issue${totals.size === 1 ? '' : 's'} with ${total} exceptions in range. Top: ${rows
+            .slice(0, 3)
+            .map(
+              (r) =>
+                `${r.type}: ${r.message.slice(0, 80)} (${r.events}×, ${r.users} people${r.status === 'active' && r.regressedAt ? ', regressed' : ''})`,
+            )
+            .join('; ')}.`
+        : 'No exceptions in this range.',
+      sql: [counts.sql, series.sql],
+      dashboard: this.link('errors', { project: ctx.project }),
+    };
+  }
+
+  /** One issue: its symbolicated stack, trend, where and for whom it happens, and replays at the moment. */
+  async getIssue(input: unknown) {
+    const spec = inputs.getIssue.parse(input);
+    const settings = (await this.context(spec.project)).settings;
+    const { ctx, filters } = await this.reportContext(this.withProjectOptions(spec, settings));
+    const range = { from: spec.from ?? '-14d', to: spec.to, filters };
+    const row = await getIssueRow(this.env, ctx.project, spec.id);
+    const ids = [row.issue.id, ...row.merged];
+    const [counts, series, detail] = await Promise.all([
+      issueCounts(range, ctx, ids),
+      issueSeries(range, ctx, ids),
+      issueDetail(range, ctx, ids),
+    ]);
+    const stack = row.sample
+      ? await symbolicatedFrames(
+          this.env,
+          ctx.project,
+          row.issue.id,
+          row.sample,
+          row.symbolicated,
+          settings.inAppIncludes,
+        )
+      : { frames: [], mapped: 0 };
+    const summed = series.buckets.map((_, i) =>
+      ids.reduce((n, id) => n + (series.series[id]?.[i] ?? 0), 0),
+    );
+    // Replays of sessions with the error, opened a few seconds before it.
+    let replays = new Map<string, number>();
+    if (replaysEnabled(this.env) && detail.occurrences.length) {
+      const { results } = await this.env.DB.prepare(
+        'SELECT session_id, started_at FROM replays WHERE project = ?1 AND session_id IN (SELECT value FROM json_each(?2))',
+      )
+        .bind(ctx.project, JSON.stringify(detail.occurrences.map((o) => o.session)))
+        .all<{ session_id: string; started_at: number }>();
+      replays = new Map(results.map((r) => [r.session_id, r.started_at]));
+    }
+    const events = counts.rows.reduce((n, c) => n + c.events, 0);
+    const users = counts.rows.reduce((n, c) => n + c.users, 0);
+    const top = stack.frames.find((f) => f.inApp) ?? stack.frames[0];
+    const where = top
+      ? top.original
+        ? `${top.original.source}:${top.original.line}${top.original.name ? ` in ${top.original.name}` : ''}`
+        : `${top.file}:${top.line ?? '?'}`
+      : 'no stack';
+    return {
+      project: ctx.project,
+      issue: row.issue,
+      merged: row.merged,
+      fingerprints: row.fingerprints,
+      range: { events, users, sessions: counts.rows.reduce((n, c) => n + c.sessions, 0) },
+      interval: series.interval,
+      buckets: series.buckets,
+      series: summed,
+      sample: row.sample
+        ? {
+            eventId: row.sample.event_id,
+            at: new Date(row.sample.ts).toISOString(),
+            url: row.sample.url,
+            release: row.sample.release,
+            handled: row.sample.handled,
+            level: row.sample.level,
+            browser: row.sample.browser,
+            os: row.sample.os,
+            person: row.sample.person_id,
+          }
+        : null,
+      stack: { frames: stack.frames, mapped: stack.mapped },
+      breakdowns: detail.breakdowns,
+      people: detail.people,
+      occurrences: detail.occurrences.map((o) => {
+        const started = replays.get(o.session);
+        return {
+          ...o,
+          at: new Date(o.ts).toISOString(),
+          replay:
+            started === undefined
+              ? null
+              : this.replayLink(ctx.project, o.session, Math.max(0, o.ts - started - 5000)),
+        };
+      }),
+      summary: `${row.issue.type}: ${row.issue.message.slice(0, 160)} — ${row.issue.status}${row.issue.regressedAt ? ' (regressed)' : ''}, ${events} exceptions from ${users} people in range, ${row.issue.occurrences} in all since ${row.issue.firstSeen.slice(0, 10)}. Top frame: ${where}${stack.mapped ? ` (${stack.mapped} frames mapped with source maps)` : ''}.`,
+      sql: [counts.sql, series.sql, ...detail.sql],
+      dashboard: this.link(`errors/${row.issue.id}`, { project: ctx.project }),
+    };
+  }
+
+  async updateIssue(input: unknown) {
+    const spec = inputs.updateIssue.parse(input);
+    const ctx = await this.context(spec.project);
+    const issue = await updateIssue(this.env, ctx.project, spec.id, {
+      status: spec.status,
+      assignee: spec.assignee,
+    });
+    return {
+      project: ctx.project,
+      issue,
+      summary: `${issue.type}: ${issue.message.slice(0, 80)} is ${issue.status}${issue.assignee ? `, assigned to ${issue.assignee}` : ''}.${issue.status === 'suppressed' ? ' New occurrences are dropped at ingest.' : issue.status === 'resolved' ? ' If it happens again it comes back as a regression.' : ''}`,
+    };
+  }
+
+  async mergeIssues(input: unknown) {
+    const spec = inputs.mergeIssues.parse(input);
+    const ctx = await this.context(spec.project);
+    const issue = await mergeIssues(this.env, ctx.project, spec.into, spec.ids);
+    return {
+      project: ctx.project,
+      issue,
+      summary: `Merged ${spec.ids.length} issue${spec.ids.length === 1 ? '' : 's'} into ${issue.id}: ${issue.occurrences} occurrences in all. New exceptions with their fingerprints join it.`,
+    };
+  }
+
+  async uploadSourcemap(project: string | undefined, release: string, path: string, text: string) {
+    const ctx = await this.context(project);
+    const r = await uploadSourcemap(this.env, ctx.project, release, path, text);
+    return {
+      project: ctx.project,
+      ...r,
+      summary: `Stored the source map for ${r.path} (release ${r.release}, ${r.sources} sources).`,
+    };
+  }
+
+  async listSourcemaps(input: unknown) {
+    const spec = inputs.listSourcemaps.parse(input);
+    const ctx = await this.context(spec.project);
+    const maps = await listSourcemaps(this.env, ctx.project, spec.release);
+    const releases = [...new Set(maps.map((m) => m.release))];
+    return {
+      project: ctx.project,
+      sourcemaps: maps,
+      summary: maps.length
+        ? `${maps.length} source maps across ${releases.length} release${releases.length === 1 ? '' : 's'} (latest ${releases[0]}).`
+        : 'No source maps uploaded. Upload them with `npx dataflare-cli sourcemaps upload <dir> --release <version>`.',
+    };
+  }
+
+  async deleteSourcemaps(input: unknown) {
+    const spec = inputs.deleteSourcemaps.parse(input);
+    const ctx = await this.context(spec.project);
+    const n = await deleteSourcemaps(this.env, ctx.project, spec.release, spec.path);
+    return {
+      project: ctx.project,
+      deleted: n,
+      summary: `Deleted ${n} source map${n === 1 ? '' : 's'}.`,
     };
   }
 

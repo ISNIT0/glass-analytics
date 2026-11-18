@@ -58,6 +58,8 @@ export interface DataflareOptions {
   fetch?: typeof fetch;
   /** Called when a request fails, instead of failing silently. */
   onError?: (error: unknown) => void;
+  /** Your app's version (a git SHA, say), attached to exceptions so their stacks map to source. */
+  release?: string;
 }
 
 export interface CaptureInput {
@@ -146,6 +148,7 @@ export class Dataflare {
   private readonly sendExposures: boolean;
   private readonly fetcher: typeof fetch;
   private readonly onError: (error: unknown) => void;
+  private readonly release: string | undefined;
   private queue: WireEvent[] = [];
   private imports: WireEvent[] = [];
   private timer: ReturnType<typeof setTimeout> | null = null;
@@ -173,6 +176,7 @@ export class Dataflare {
     // Not `this.fetcher = fetch`: Workers throw "Illegal invocation" when fetch is called as a method.
     this.fetcher = options.fetch ?? ((input, init) => fetch(input, init));
     this.onError = options.onError ?? (() => {});
+    this.release = options.release;
   }
 
   // ── Events ───────────────────────────────────────────────────────────────
@@ -264,6 +268,7 @@ export class Dataflare {
         handled: input.handled ?? true,
         level: input.level ?? 'error',
         $lib: 'node',
+        ...(this.release ? { $release: this.release } : {}),
         ...(input.properties ?? {}),
       },
     });

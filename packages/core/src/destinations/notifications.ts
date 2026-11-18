@@ -17,6 +17,9 @@ const DEFAULT_MESSAGE = '{event} by {who} on {url}';
 
 /** The message for chat destinations: the template with {who} filled in too. */
 function message(event: DeliveryEvent, template: unknown): string {
+  // Alerts (error tracking) carry their own text.
+  if (event.event.startsWith('$') && typeof event.props.$alert_text === 'string')
+    return event.props.$alert_text;
   const t = str(template) || DEFAULT_MESSAGE;
   return interpolate(t.replaceAll('{who}', whoIs(event)), event);
 }

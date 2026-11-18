@@ -362,6 +362,8 @@ export interface HealthResult {
   };
   /** Pages where errors happen most. */
   errorPages: { path: string; errors: number; visitors: number }[];
+  /** The issues (error tracking) with the most errors in the range. */
+  topIssues: { issue: string; errors: number; visitors: number }[];
   /** Pages whose title or path looks like a "not found" page, with how people got there. */
   notFound: { path: string; title: string; views: number; visitors: number; referrer: string }[];
   /** p75 Largest Contentful Paint per page (pages with 5+ samples). */
@@ -394,6 +396,10 @@ SELECT ${bucket} AS bucket, COUNT(*) AS n FROM ev GROUP BY ${bucket} ORDER BY bu
     pages: `WITH ${cte(range, [ERR])}
 SELECT COALESCE(NULLIF(path, ''), '(none)') AS path, COUNT(*) AS n, COUNT(DISTINCT distinct_id) AS visitors
 FROM ev GROUP BY COALESCE(NULLIF(path, ''), '(none)') ORDER BY n DESC, path ASC LIMIT 10`,
+    issues: `WITH ${cte(range, [ERR])}
+SELECT ${d.jsonText('props', ['$issue_id'])} AS issue, COUNT(*) AS n, COUNT(DISTINCT distinct_id) AS visitors
+FROM ev WHERE ${d.jsonText('props', ['$issue_id'])} IS NOT NULL
+GROUP BY ${d.jsonText('props', ['$issue_id'])} ORDER BY n DESC, issue ASC LIMIT 10`,
     notFound: `WITH ${cte(range, [PV])}
 SELECT path, MIN(title) AS title, COUNT(*) AS views, COUNT(DISTINCT distinct_id) AS visitors,
   MIN(COALESCE(NULLIF(referrer_host, ''), 'Direct / None')) AS referrer
@@ -405,11 +411,12 @@ SELECT COALESCE(NULLIF(path, ''), '(none)') AS path, ${d.jsonNumber('props', ['v
 FROM ev WHERE ${d.jsonText('props', ['metric'])} = 'LCP'
 ORDER BY ts_ms DESC LIMIT 5000`,
   };
-  const [errors, prev, series, pages, notFound, vitals] = await Promise.all([
+  const [errors, prev, series, pages, issues, notFound, vitals] = await Promise.all([
     ctx.execute(sql.errors),
     ctx.execute(sql.previous),
     ctx.execute(sql.series),
     ctx.execute(sql.pages),
+    ctx.execute(sql.issues),
     ctx.execute(sql.notFound),
     ctx.execute(sql.vitals),
   ]);
@@ -449,6 +456,11 @@ ORDER BY ts_ms DESC LIMIT 5000`,
     },
     errorPages: pages.map((r) => ({
       path: text(r.path),
+      errors: num(r.n),
+      visitors: num(r.visitors),
+    })),
+    topIssues: issues.map((r) => ({
+      issue: text(r.issue),
       errors: num(r.n),
       visitors: num(r.visitors),
     })),

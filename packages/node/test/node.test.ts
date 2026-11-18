@@ -79,8 +79,8 @@ describe('events', () => {
     assert.equal(result.accepted, 1);
   });
 
-  it('captures exceptions', async () => {
-    const df = client();
+  it('captures exceptions, with the release, into an issue', async () => {
+    const df = client({ release: 'api@1.2.3' });
     df.captureException(new TypeError('boom'), { distinctId: 'u1', properties: { route: '/pay' } });
     await df.flush();
     const [row] = rows(`SELECT props FROM events WHERE event = '$exception'`);
@@ -88,7 +88,11 @@ describe('events', () => {
     assert.equal(props.type, 'TypeError');
     assert.equal(props.message, 'boom');
     assert.equal(props.route, '/pay');
+    assert.equal(props.$release, 'api@1.2.3');
+    assert.equal(props.handled, true);
     assert.match(props.stack, /node\.test\.ts/);
+    // Error tracking grouped it: server frames (paths, not URLs) count as in-app.
+    assert.match(props.$issue_id, /^[0-9a-f]{16}$/);
   });
 
   it('keeps events queued when the Worker is down, and retries', async () => {

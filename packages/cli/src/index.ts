@@ -18,6 +18,7 @@ import { importEvents } from './commands/import.ts';
 import { init } from './commands/init.ts';
 import { lakeMaintain } from './commands/lake.ts';
 import { mcpBridge } from './commands/mcp.ts';
+import { sourcemaps } from './commands/sourcemaps.ts';
 import { ci, key, status, upgrade } from './commands/upgrade.ts';
 import { UsageError } from './config.ts';
 import { color, fail, line } from './output.ts';
@@ -85,6 +86,8 @@ ${color.bold('Flags and experiments')}
 ${color.bold('Agents')}
   dataflare import <file> [--preset posthog|mixpanel|amplitude|segment|ga4] [--format ndjson|json|csv] [--dry-run]
                                  Import a history of events, keeping their timestamps
+  dataflare sourcemaps upload <dir> --release <version> [--url-prefix /assets]
+                                 Upload a build's source maps for error tracking (also: list, delete)
   dataflare mcp                  MCP server over stdio (what .mcp.json runs)
 
 Environment: GLASS_HOST, GLASS_API_KEY and GLASS_PROJECT override .glass/ settings.
@@ -130,6 +133,8 @@ const STRING_OPTIONS = [
   'retention-days',
   'format',
   'preset',
+  'release',
+  'url-prefix',
 ];
 const BOOLEAN_OPTIONS = [
   'json',
@@ -228,6 +233,14 @@ export async function main(argv: string[]): Promise<void> {
       return importEvents(sub, {
         format: typeof flags.format === 'string' ? flags.format : undefined,
         preset: typeof flags.preset === 'string' ? flags.preset : undefined,
+        project: typeof flags.project === 'string' ? flags.project : undefined,
+        json: Boolean(flags.json),
+        dryRun: Boolean(flags['dry-run']),
+      });
+    case 'sourcemaps':
+      return sourcemaps(sub, arg, {
+        release: typeof flags.release === 'string' ? flags.release : undefined,
+        urlPrefix: typeof flags['url-prefix'] === 'string' ? flags['url-prefix'] : undefined,
         project: typeof flags.project === 'string' ? flags.project : undefined,
         json: Boolean(flags.json),
         dryRun: Boolean(flags['dry-run']),

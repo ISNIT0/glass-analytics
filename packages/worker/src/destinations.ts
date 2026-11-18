@@ -368,6 +368,11 @@ export async function enqueueDeliveries(
     for (const d of destinations)
       if (matches(d, e)) messages.push({ v: 1, project, destination: d.id, event: e });
   }
+  return sendMessages(env, messages);
+}
+
+/** Queue deliveries (or put them in the outbox when there's no queue, or it refuses them). */
+export async function sendMessages(env: Env, messages: DeliveryMessage[]): Promise<number> {
   if (messages.length === 0) return 0;
   if (env.DELIVERIES) {
     try {

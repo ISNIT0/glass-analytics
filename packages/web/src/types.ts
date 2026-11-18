@@ -128,6 +128,8 @@ export interface GlassOptions {
   flushIntervalMs?: number;
   /** Log every event to the console. */
   debug?: boolean;
+  /** Your app's version (a git SHA, say), attached to errors so their stacks map to source. */
+  release?: string;
 }
 
 /** The interface implemented by `replay.js`, loaded on demand from the Worker. */

@@ -204,6 +204,16 @@ export async function apiRouter(
         'DELETE /api/exports/:id': 'Delete an export (admin)',
         'GET /api/exports/:id/runs': 'Recent export runs',
         'POST /api/exports/:id/backfill': 'Re-export from a time: { "from": "-30d" } (admin)',
+        'GET /api/issues': 'Error tracking: issues with counts, people and a series for the range',
+        'GET /api/issues/:id':
+          'An issue: symbolicated stack, trend, breakdowns, people, replays at the moment',
+        'PATCH /api/issues/:id': 'Resolve, suppress, reopen or assign an issue (admin)',
+        'POST /api/issues/:id/merge': 'Merge issues into this one: { "ids": [...] } (admin)',
+        'PUT /api/sourcemaps?release=&path=':
+          'Upload a source map for a minified file (server or admin key)',
+        'GET /api/sourcemaps?release=': 'Uploaded source maps',
+        'DELETE /api/sourcemaps?release=&path=':
+          "Delete a release's source maps (server or admin key)",
         'GET /api/projects': 'Projects',
         'POST /api/projects': 'Create a project (admin)',
         'GET /api/instrument?event=&framework=': 'Tracking code for an event',
@@ -228,7 +238,7 @@ export async function apiRouter(
 
   r.post('/api/import', async () => {
     server();
-    return json(await handleImport(request, env, service.store, now));
+    return json(await handleImport(request, env, service.store, now, { base: service.baseUrl }));
   });
 
   r.post('/api/actors', async ({ url }) => {
@@ -326,6 +336,43 @@ export async function apiRouter(
   r.post('/api/exports/:id/backfill', async ({ url, params: p }) => {
     admin();
     return json(await service.backfillExport({ ...params(url), ...(await body()), id: p.id }));
+  });
+
+  r.get('/api/issues', async ({ url }) => json(await service.listIssues(params(url))));
+  r.get('/api/issues/:id', async ({ url, params: p }) =>
+    json(await service.getIssue({ ...params(url), id: p.id })),
+  );
+  r.patch('/api/issues/:id', async ({ url, params: p }) => {
+    admin();
+    return json(await service.updateIssue({ ...params(url), ...(await body()), id: p.id }));
+  });
+  r.post('/api/issues/:id/merge', async ({ url, params: p }) => {
+    admin();
+    return json(await service.mergeIssues({ ...params(url), ...(await body()), into: p.id }));
+  });
+  // Source maps: the raw map as the body, `release` and `path` (the minified file's served path)
+  // in the query. The server key can upload, so a CI job doesn't need the admin key.
+  r.put('/api/sourcemaps', async ({ url }) => {
+    server();
+    const release = url.searchParams.get('release') ?? '';
+    const path = url.searchParams.get('path') ?? '';
+    const text = await request.text();
+    return json(
+      await service.uploadSourcemap(
+        url.searchParams.get('project') ?? undefined,
+        release,
+        path,
+        text,
+      ),
+      {
+        status: 201,
+      },
+    );
+  });
+  r.get('/api/sourcemaps', async ({ url }) => json(await service.listSourcemaps(params(url))));
+  r.delete('/api/sourcemaps', async ({ url }) => {
+    server();
+    return json(await service.deleteSourcemaps(params(url)));
   });
 
   r.get('/api/settings', async ({ url }) => json(await service.getSettings(params(url))));

@@ -252,7 +252,7 @@ export const TOOLS: ToolDefinition[] = [
     name: 'site_health',
     title: 'Site health',
     description:
-      'Errors over time and the share of sessions they affect, pages where errors happen, pages that look like "not found" pages (with where visitors came from), the slowest pages by LCP, and frustration signals from replays. Start here to find what is broken.',
+      'Errors over time and the share of sessions they affect, the top error issues (open one with get_issue), pages where errors happen, pages that look like "not found" pages (with where visitors came from), the slowest pages by LCP, and frustration signals from replays. Start here to find what is broken.',
     input: inputs.reportHealth,
     scope: 'read',
     run: (s, a) => s.reportHealth(a),
@@ -474,6 +474,50 @@ export const TOOLS: ToolDefinition[] = [
     input: inputs.deleteAnnotation,
     scope: 'admin',
     run: (s, a) => s.deleteAnnotation(a),
+  },
+  {
+    name: 'list_issues',
+    title: 'List error issues',
+    description:
+      'Error tracking: exceptions grouped into issues (same type, message pattern and top in-app frames), with exceptions, people and sessions in the range, a series, status (active, resolved, suppressed) and regressions. Start here for "what is breaking?".',
+    input: inputs.listIssues,
+    scope: 'read',
+    run: (s, a) => s.listIssues(a),
+  },
+  {
+    name: 'get_issue',
+    title: 'Error issue detail',
+    description:
+      'One issue: the latest stack trace mapped to source (when source maps were uploaded), its trend, breakdowns by browser, OS, device, country, page, release and handled/unhandled, the people affected, and replay links opened just before the error.',
+    input: inputs.getIssue,
+    scope: 'read',
+    run: (s, a) => s.getIssue(a),
+  },
+  {
+    name: 'update_issue',
+    title: 'Resolve, suppress or assign an issue',
+    description:
+      'Set an issue’s status (resolved issues that recur come back as regressions; suppressed issues are dropped at ingest) or its assignee.',
+    input: inputs.updateIssue,
+    scope: 'admin',
+    run: (s, a) => s.updateIssue(a),
+  },
+  {
+    name: 'merge_issues',
+    title: 'Merge issues',
+    description:
+      'Merge issues that are the same bug into one; new exceptions with any of their fingerprints join it.',
+    input: inputs.mergeIssues,
+    scope: 'admin',
+    run: (s, a) => s.mergeIssues(a),
+  },
+  {
+    name: 'list_sourcemaps',
+    title: 'List source maps',
+    description: 'Source maps uploaded for error tracking, by release and file.',
+    input: inputs.listSourcemaps,
+    scope: 'read',
+    run: (s, a) => s.listSourcemaps(a),
   },
   {
     name: 'list_destination_templates',

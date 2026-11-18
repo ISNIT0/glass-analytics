@@ -171,6 +171,9 @@ export class Dataflare {
   capture(event: string, props: Record<string, unknown> = {}): string | null {
     const store = this.store;
     if (!store || !this.transport) return null;
+    const release = this.options?.release;
+    if (event === '$exception' && release && props.$release === undefined)
+      props = { ...props, $release: release };
     const groups = this.groupsNow();
     if (Object.keys(groups).length && props.$groups === undefined)
       props = { ...props, $groups: groups };
@@ -195,6 +198,29 @@ export class Dataflare {
     if (this.options?.debug) console.debug('[glass]', final.event, final);
     this.transport.push(final);
     return final.id;
+  }
+
+  /**
+   * Record an error you caught, e.g. in a `catch` block or an error boundary. It groups into an
+   * issue with uncaught errors of the same kind. Returns the event id.
+   */
+  captureException(
+    error: unknown,
+    props: Record<string, unknown> & { level?: 'fatal' | 'error' | 'warning' | 'info' } = {},
+  ): string | null {
+    const e =
+      error instanceof Error
+        ? error
+        : new Error(typeof error === 'string' ? error : JSON.stringify(error));
+    this.replay?.noteError();
+    return this.capture('$exception', {
+      type: e.name || 'Error',
+      message: String(e.message).slice(0, 500),
+      stack: e.stack?.slice(0, 4000),
+      handled: true,
+      level: 'error',
+      ...props,
+    });
   }
 
   // ── Groups ─────────────────────────────────────────────────────────────
