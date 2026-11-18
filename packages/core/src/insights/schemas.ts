@@ -327,11 +327,11 @@ export const retentionSpec = z
   .object({
     ...common,
     cohortEvent: stepSchema.describe(
-      'The event that puts a person in a cohort (their first one in the range).',
+      'The event that puts a person in a cohort ("*" for any event). With retentionType "first_time", their first one in the range.',
     ),
-    returnEvent: stepSchema.describe('The event that counts as coming back.'),
+    returnEvent: stepSchema.describe('The event that counts as coming back ("*" for any event).'),
     period: z
-      .enum(['day', 'week', 'month'])
+      .enum(['hour', 'day', 'week', 'month'])
       .optional()
       .describe('Cohort and return period. Default "week".'),
     periods: z
@@ -341,6 +341,33 @@ export const retentionSpec = z
       .max(52)
       .optional()
       .describe('How many periods after the cohort to measure. Default 8.'),
+    retentionType: z
+      .enum(['first_time', 'recurring'])
+      .optional()
+      .describe(
+        '"first_time" (default): a person joins the cohort of their first cohortEvent in the range. "recurring": they join every period in which they did it, so returning users count again.',
+      ),
+    cumulative: z
+      .boolean()
+      .optional()
+      .describe(
+        'Count a person in period k if they came back in period k or any later one ("on or after"), instead of exactly in period k.',
+      ),
+    meanMethod: z
+      .enum(['weighted', 'simple'])
+      .optional()
+      .describe(
+        'The average row: "weighted" (default) by cohort size, or "simple", the plain mean of each cohort’s rate.',
+      ),
+    aggregateBy,
+    breakdown: z
+      .union([z.string(), z.array(z.string()).min(1).max(4)])
+      .optional()
+      .describe(
+        'One retention table per value of a property of the cohort event, e.g. "utm_source", "person.plan", or "cohort" with breakdownCohorts.',
+      ),
+    breakdownLimit: breakdownExtras.breakdownLimit,
+    breakdownCohorts: breakdownExtras.breakdownCohorts,
   })
   .describe('How many people come back after their first event.');
 

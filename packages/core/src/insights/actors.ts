@@ -11,6 +11,7 @@
 import { z } from 'zod/v4';
 import { type Aggregation, parseAggregation } from '../sql/source.ts';
 import { compileFunnelActors } from './funnel.ts';
+import { compileRetentionActors } from './retention.ts';
 import { compileTrendsActors } from './trends.ts';
 import type { QueryContext } from './types.ts';
 
@@ -71,6 +72,19 @@ export const ACTOR_COMPILERS: Record<string, ActorCompiler> = {
       { step: sel.step, status: sel.status, breakdown: sel.breakdown },
       page,
     ),
+  retention: (spec, ctx, sel, page) => {
+    if (sel.cohort === undefined)
+      throw new TypeError(
+        'Retention drill-down needs selection.cohort (a cohort start from the result).',
+      );
+    const cohort = typeof sel.cohort === 'string' ? Date.parse(sel.cohort) : sel.cohort;
+    return compileRetentionActors(
+      spec as Parameters<typeof compileRetentionActors>[0],
+      ctx,
+      { cohort, period: sel.period ?? 0, breakdown: sel.breakdown },
+      page,
+    );
+  },
 };
 
 /** The aggregation a spec counts (its `aggregateBy`). */
