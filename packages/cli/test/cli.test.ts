@@ -45,6 +45,8 @@ import type { GlassConfig } from '../src/config.ts';
 const HOST = 'https://glass.test-account.workers.dev';
 
 interface FakeOptions {
+  /** false: the token can't create queues (destinations fall back to the outbox). */
+  queues?: boolean;
   r2Enabled?: boolean;
 }
 
@@ -87,6 +89,11 @@ function fakeWrangler(worker: ReturnType<typeof testApp>, options: FakeOptions =
       if (cmd.startsWith('pipelines create')) {
         state.pipelines.push({ id: `p-${args[2]}`, name: args[2]! });
         return ok();
+      }
+      if (cmd.startsWith('queues create')) {
+        return options.queues === false
+          ? { code: 1, stdout: '', stderr: 'Authentication error [code: 10000]' }
+          : ok('Created queue');
       }
       if (cmd.startsWith('d1 migrations apply')) return ok('Migrations applied');
       if (args[0] === 'deploy')
@@ -182,12 +189,22 @@ describe('dataflare init', () => {
         'd1 create',
         'd1 list',
         'r2 bucket',
+        'queues create',
+        'queues create',
         'd1 migrations',
         'deploy --config',
         'secret bulk',
       ],
     );
     const config = JSON.parse(readFileSync(join(root, '.glass', 'config.json'), 'utf8'));
+    assert.deepEqual(config.queues, {
+      deliveries: 'glass-web-app-deliveries',
+      dlq: 'glass-web-app-deliveries-dlq',
+    });
+    const queuesConfig = readFileSync(join(root, '.glass', 'wrangler.jsonc'), 'utf8');
+    assert.match(queuesConfig, /"binding": "DELIVERIES"/);
+    assert.match(queuesConfig, /"dead_letter_queue": "glass-web-app-deliveries-dlq"/);
+    assert.match(queuesConfig, /"\*\/5 \* \* \* \*"/);
     assert.equal(config.host, HOST);
     assert.equal(config.project, 'web-app');
     // Named after the project, so another site in the same account gets its own Worker.

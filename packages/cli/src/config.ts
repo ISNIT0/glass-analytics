@@ -53,6 +53,12 @@ export interface GlassConfig {
   } | null;
   /** Optional route on your own domain, e.g. "acme.com/_glass/*". */
   route: string | null;
+  /**
+   * Cloudflare Queues for destination deliveries, with a dead-letter queue. Absent or null: not
+   * set up (the token lacked Queues › Edit), and deliveries go through the five-minute outbox;
+   * `dataflare upgrade` tries again.
+   */
+  queues?: { deliveries: string; dlq: string } | null;
   /** Delete events older than this many days (D1 store). Unset keeps them. */
   retentionDays?: number | null;
   eu: boolean;

@@ -191,7 +191,15 @@ export async function ingestBatch(
   for (const enricher of ENRICHERS) rows = await enricher(rows, enrich);
   await store.write(rows);
   if (!options.skipDestinations) {
-    for (const hook of AFTER_WRITE) await hook(rows, enrich);
+    // The events are stored: a hook that fails (a destination queue, say) must not fail the
+    // request, or the SDK would resend events that were written.
+    for (const hook of AFTER_WRITE) {
+      try {
+        await hook(rows, enrich);
+      } catch (err) {
+        console.error('[glass] after-write hook failed', err);
+      }
+    }
   }
   return { accepted: rows.length, dropped: batch.events.length - rows.length };
 }
@@ -251,7 +259,7 @@ async function toRows(events: WireEvent[], ctx: RowContext): Promise<StoredEvent
 
   return withIds.map(({ e, ts, distinct, user, session, groups }) => {
     const page = parsePage(e.url);
-    const person = personOf.get(distinct + '\u0000' + (user ?? ''))!;
+    const person = personOf.get(`${distinct}\u0000${user ?? ''}`)!;
     const known = Object.fromEntries(Object.entries(groups).filter(([type]) => types.has(type)));
     const c = ctx.trusted && e.context && typeof e.context === 'object' ? e.context : {};
     return {
@@ -617,7 +625,7 @@ async function resolvePersons(ctx: RowContext, events: WithIds[]): Promise<Map<s
     for (const r of results) links.set(r.distinct_id, r.person_id);
   }
   for (const { distinct, user } of events) {
-    out.set(distinct + '\u0000' + (user ?? ''), user ?? links.get(distinct) ?? distinct);
+    out.set(`${distinct}\u0000${user ?? ''}`, user ?? links.get(distinct) ?? distinct);
   }
   return out;
 }

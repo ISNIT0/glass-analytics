@@ -21,6 +21,7 @@ import {
   ensureBucket,
   ensureD1,
   ensureLake,
+  ensureQueues,
   installWorkerFiles,
   listAccounts,
   migrate,
@@ -297,6 +298,7 @@ export async function init(options: InitOptions, deps: InitDeps = {}): Promise<v
         }
       : null;
 
+    const queues = existing?.queues ?? (await ensureQueues(wrangler, name, report));
     const config: GlassConfig = {
       name,
       accountId: account.id,
@@ -307,6 +309,7 @@ export async function init(options: InitOptions, deps: InitDeps = {}): Promise<v
       replay,
       lake: lakeConfig,
       route,
+      queues,
       retentionDays,
       eu,
       version: GLASS_VERSION,

@@ -15,7 +15,10 @@ import type { Readable, Writable } from 'node:stream';
 import { after, before, describe, it, mock } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { LAKE_TABLES, type LakeSchemaChange, lakeFields } from '@dataflare/core/lake';
+import { configureExports, runExports } from '../src/exports.ts';
+import { D1Store } from '../src/stores/d1.ts';
 import { LakeStore } from '../src/stores/lake.ts';
+import type { EventStore } from '../src/stores/types.ts';
 import { type TestApp, testApp } from './harness.ts';
 
 const DATAFUSION = 'datafusion==55.0.0';
@@ -496,6 +499,7 @@ function conformance(name: string, split: boolean) {
     let df: DataFusion;
     let d1: TestApp;
     let lake: TestApp;
+    let stores: Map<TestApp, EventStore>;
 
     before(async () => {
       // One frozen clock, so both Workers resolve `-7d` to the same instant.
@@ -543,6 +547,10 @@ function conformance(name: string, split: boolean) {
         },
         { createStore: (e) => new LakeStore(e, basin, split ? V2 : []) },
       );
+      stores = new Map<TestApp, EventStore>([
+        [d1, new D1Store(d1.db)],
+        [lake, new LakeStore(lake.env, basin, split ? V2 : [])],
+      ]);
       const events = fixture(Date.now());
       for (const app of [d1, lake]) {
         await app.json('POST', '/api/projects', { body: { id: 'acme' } });
@@ -636,6 +644,37 @@ function conformance(name: string, split: boolean) {
         assert.deepEqual(normalise(b), normalise(a));
       });
     }
+
+    it('batch exports send the same rows from both stores', async () => {
+      const exported = new Map<TestApp, Record<string, unknown>[]>();
+      for (const app of [d1, lake]) {
+        const rows: Record<string, unknown>[] = [];
+        configureExports({
+          fetch: async (_url, init) => {
+            for (const line of String(init?.body).trim().split('\n')) rows.push(JSON.parse(line));
+            return new Response('{}');
+          },
+        });
+        await app.json('POST', '/api/exports', {
+          body: {
+            project: 'acme',
+            target: 'http',
+            settings: { url: 'https://etl.test/in' },
+            from: '-30d',
+          },
+        });
+        // Pages of 2,000, five a tick: enough ticks to finish the window.
+        for (let i = 0; i < 5; i++)
+          await runExports(app.env, stores.get(app)!, Date.now() + 2 * 3_600_000);
+        exported.set(
+          app,
+          rows.sort((x, y) => String(x.id).localeCompare(String(y.id))),
+        );
+      }
+      const fromD1 = exported.get(d1)!;
+      assert.ok(fromD1.length > 100, `${fromD1.length} rows`);
+      assert.deepEqual(normalise(exported.get(lake)), normalise(fromD1));
+    });
   });
 }
 

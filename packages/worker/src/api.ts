@@ -182,6 +182,28 @@ export async function apiRouter(
         'POST /api/annotations':
           'Pin a note: { "at": "2026-11-03", "text": "Launched v2" } (admin)',
         'DELETE /api/annotations/:id': 'Delete an annotation (admin)',
+        'GET /api/destinations/templates':
+          'What events can be forwarded to: Slack, webhooks, Meta CAPI, GA4, CRMs…',
+        'GET /api/destinations': 'Destinations',
+        'POST /api/destinations':
+          'Create a destination: { template, events, filters, inputs } (admin)',
+        'GET /api/destinations/:id': 'A destination with deliveries per hour and recent failures',
+        'PUT /api/destinations/:id': 'Change a destination (admin)',
+        'DELETE /api/destinations/:id': 'Delete a destination (admin)',
+        'POST /api/destinations/:id/test': 'Send a sample event now (admin)',
+        'POST /api/destinations/:id/retry': 'Retry failed deliveries (admin)',
+        'GET /api/transformations': 'Rules applied to events at ingest',
+        'POST /api/transformations':
+          'Add a rule: drop events, drop/rename/set/hash properties, redact personal data (admin)',
+        'PUT /api/transformations/:id': 'Change a rule (admin)',
+        'DELETE /api/transformations/:id': 'Delete a rule (admin)',
+        'POST /api/transformations/test': 'Try a rule on a sample event',
+        'GET /api/exports': 'Batch exports (S3/R2, BigQuery, HTTP)',
+        'POST /api/exports': 'Create a batch export (admin)',
+        'PUT /api/exports/:id': 'Change an export (admin)',
+        'DELETE /api/exports/:id': 'Delete an export (admin)',
+        'GET /api/exports/:id/runs': 'Recent export runs',
+        'POST /api/exports/:id/backfill': 'Re-export from a time: { "from": "-30d" } (admin)',
         'GET /api/projects': 'Projects',
         'POST /api/projects': 'Create a project (admin)',
         'GET /api/instrument?event=&framework=': 'Tracking code for an event',
@@ -234,6 +256,76 @@ export async function apiRouter(
   r.delete('/api/annotations/:id', async ({ url, params: p }) => {
     admin();
     return json(await service.deleteAnnotation({ ...params(url), id: p.id }));
+  });
+
+  r.get('/api/destinations/templates', () => json(service.listDestinationTemplates()));
+  r.get('/api/destinations', async ({ url }) => json(await service.listDestinations(params(url))));
+  r.post('/api/destinations', async ({ url }) => {
+    admin();
+    return json(await service.saveDestination({ ...params(url), ...(await body()) }), {
+      status: 201,
+    });
+  });
+  r.get('/api/destinations/:id', async ({ url, params: p }) =>
+    json(await service.getDestination({ ...params(url), id: p.id })),
+  );
+  r.put('/api/destinations/:id', async ({ url, params: p }) => {
+    admin();
+    return json(await service.saveDestination({ ...params(url), ...(await body()), id: p.id }));
+  });
+  r.delete('/api/destinations/:id', async ({ url, params: p }) => {
+    admin();
+    return json(await service.deleteDestination({ ...params(url), id: p.id }));
+  });
+  r.post('/api/destinations/:id/test', async ({ url, params: p }) => {
+    admin();
+    return json(await service.testDestination({ ...params(url), ...(await body()), id: p.id }));
+  });
+  r.post('/api/destinations/:id/retry', async ({ url, params: p }) => {
+    admin();
+    return json(await service.retryDestination({ ...params(url), ...(await body()), id: p.id }));
+  });
+
+  r.get('/api/transformations', async ({ url }) =>
+    json(await service.listTransformations(params(url))),
+  );
+  r.post('/api/transformations/test', async ({ url }) =>
+    json(await service.testTransformation({ ...params(url), ...(await body()) })),
+  );
+  r.post('/api/transformations', async ({ url }) => {
+    admin();
+    return json(await service.saveTransformation({ ...params(url), ...(await body()) }), {
+      status: 201,
+    });
+  });
+  r.put('/api/transformations/:id', async ({ url, params: p }) => {
+    admin();
+    return json(await service.saveTransformation({ ...params(url), ...(await body()), id: p.id }));
+  });
+  r.delete('/api/transformations/:id', async ({ url, params: p }) => {
+    admin();
+    return json(await service.deleteTransformation({ ...params(url), id: p.id }));
+  });
+
+  r.get('/api/exports', async ({ url }) => json(await service.listExports(params(url))));
+  r.post('/api/exports', async ({ url }) => {
+    admin();
+    return json(await service.saveExport({ ...params(url), ...(await body()) }), { status: 201 });
+  });
+  r.put('/api/exports/:id', async ({ url, params: p }) => {
+    admin();
+    return json(await service.saveExport({ ...params(url), ...(await body()), id: p.id }));
+  });
+  r.delete('/api/exports/:id', async ({ url, params: p }) => {
+    admin();
+    return json(await service.deleteExport({ ...params(url), id: p.id }));
+  });
+  r.get('/api/exports/:id/runs', async ({ url, params: p }) =>
+    json(await service.exportRuns({ ...params(url), id: p.id })),
+  );
+  r.post('/api/exports/:id/backfill', async ({ url, params: p }) => {
+    admin();
+    return json(await service.backfillExport({ ...params(url), ...(await body()), id: p.id }));
   });
 
   r.get('/api/settings', async ({ url }) => json(await service.getSettings(params(url))));

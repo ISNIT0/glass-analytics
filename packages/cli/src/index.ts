@@ -14,6 +14,7 @@ import { parseArgs } from 'node:util';
 import { GLASS_VERSION } from '@dataflare/core/version';
 import { events, person, projects, query, replays, sql } from './commands/data.ts';
 import { experiments, flags as flagCommands } from './commands/flags.ts';
+import { importEvents } from './commands/import.ts';
 import { init } from './commands/init.ts';
 import { lakeMaintain } from './commands/lake.ts';
 import { mcpBridge } from './commands/mcp.ts';
@@ -82,6 +83,8 @@ ${color.bold('Flags and experiments')}
   dataflare experiments results <key>
 
 ${color.bold('Agents')}
+  dataflare import <file> [--preset posthog|mixpanel|amplitude|segment|ga4] [--format ndjson|json|csv] [--dry-run]
+                                 Import a history of events, keeping their timestamps
   dataflare mcp                  MCP server over stdio (what .mcp.json runs)
 
 Environment: GLASS_HOST, GLASS_API_KEY and GLASS_PROJECT override .glass/ settings.
@@ -125,6 +128,8 @@ const STRING_OPTIONS = [
   'hypothesis',
   'variant',
   'retention-days',
+  'format',
+  'preset',
 ];
 const BOOLEAN_OPTIONS = [
   'json',
@@ -219,6 +224,14 @@ export async function main(argv: string[]): Promise<void> {
     case 'status':
     case 'doctor':
       return status({ json: Boolean(flags.json) });
+    case 'import':
+      return importEvents(sub, {
+        format: typeof flags.format === 'string' ? flags.format : undefined,
+        preset: typeof flags.preset === 'string' ? flags.preset : undefined,
+        project: typeof flags.project === 'string' ? flags.project : undefined,
+        json: Boolean(flags.json),
+        dryRun: Boolean(flags['dry-run']),
+      });
     case 'key':
       return key({
         read: Boolean(flags.read),

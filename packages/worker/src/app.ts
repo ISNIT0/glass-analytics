@@ -16,7 +16,9 @@
 import { apiRouter } from './api.ts';
 import { requireScope } from './auth.ts';
 import { isHourlyTick, runMaintenance } from './cron.ts';
-import type { Assets, Env } from './env.ts';
+import { consumeDeliveries, type DeliveryMessage } from './destinations.ts';
+import type { Assets, Env, MessageBatch } from './env.ts';
+import { registerExtensions } from './extensions.ts';
 import { handleFlagEvaluation } from './flags.ts';
 import { CORS_HEADERS, errorResponse, HttpError, json } from './http.ts';
 import { handleIngest } from './ingest.ts';
@@ -74,6 +76,7 @@ const DASHBOARD_CSP =
   "default-src 'self'; img-src * data: blob:; style-src * 'unsafe-inline'; font-src * data:; frame-src 'self' blob: about:; connect-src 'self'; script-src 'self'";
 
 export function createApp(options: AppOptions) {
+  registerExtensions();
   const makeStore = options.createStore ?? createStore;
 
   async function fetch(request: Request, env: Env): Promise<Response> {
@@ -164,7 +167,12 @@ export function createApp(options: AppOptions) {
     console.log('[glass] maintenance', JSON.stringify(result));
   }
 
-  return { fetch, scheduled };
+  /** Destination deliveries (Cloudflare Queues consumer). */
+  async function queue(batch: MessageBatch<DeliveryMessage>, env: Env): Promise<void> {
+    await consumeDeliveries(batch, env);
+  }
+
+  return { fetch, scheduled, queue };
 }
 
 function script(source: string, maxAge: number): Response {

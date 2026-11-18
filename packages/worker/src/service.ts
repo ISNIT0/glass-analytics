@@ -13,6 +13,7 @@ import {
   describeCohort,
   normaliseCohort,
 } from '@dataflare/core/cohorts';
+import { TEMPLATES } from '@dataflare/core/destinations/index';
 import { COHORT_PROPERTY, type CohortMembers, type Filter, toList } from '@dataflare/core/filters';
 import { evaluateFlagsDetailed, payloadsFor } from '@dataflare/core/flags';
 import {
@@ -69,6 +70,7 @@ import { propertyText } from '@dataflare/core/sql/filters';
 import { assertReadOnlySql } from '@dataflare/core/sql/guard';
 import { eventsCte, num, text } from '@dataflare/core/sql/source';
 import { DAY_MS, parseTime, resolveRange } from '@dataflare/core/time';
+import { applyTransformations, transformationSchema } from '@dataflare/core/transformations';
 import { estimateUsage } from '@dataflare/core/usage';
 import {
   GLASS_VERSION,
@@ -84,6 +86,16 @@ import {
   materialise,
   membershipSql,
 } from './cohorts.ts';
+import {
+  type DestinationInput,
+  deleteDestination,
+  destinationActivity,
+  getDestination,
+  listDestinations,
+  retryFailures,
+  saveDestination,
+  testDestination,
+} from './destinations.ts';
 import type { Env } from './env.ts';
 import { continueErasure, ERASURE_SLICES_PER_REQUEST, startErasure } from './erasure.ts';
 import {
@@ -101,6 +113,7 @@ import {
   transitionExperiment,
   updateExperimentDefinition,
 } from './experiments.ts';
+import { backfillExport, deleteExport, exportRuns, listExports, saveExport } from './exports.ts';
 import {
   cancelFlagSchedule,
   deleteFlag,
@@ -141,6 +154,12 @@ import {
   writeCachedSummary,
 } from './replays.ts';
 import type { EventStore } from './stores/types.ts';
+import {
+  deleteTransformation,
+  hashSalt,
+  listTransformations,
+  saveTransformation,
+} from './transformations.ts';
 
 const project = z.string().optional();
 /** Most people a static cohort can hold. */
@@ -802,6 +821,90 @@ export const inputs = {
     author: z.string().max(60).optional(),
   }),
   deleteAnnotation: z.object({ project, id: z.string() }),
+  saveDestination: z.object({
+    project,
+    id: z.string().optional().describe('Omit to create; pass to update.'),
+    name: z.string().optional(),
+    template: z
+      .string()
+      .optional()
+      .describe(
+        'Template id (list_destination_templates): webhook, slack, meta-capi, ga4, hubspot, mixpanel…',
+      ),
+    enabled: z.boolean().optional(),
+    events: z
+      .array(z.string())
+      .optional()
+      .describe('Events to send, e.g. ["signup_completed"]; ["*"] for all.'),
+    filters: z
+      .array(filterSchema)
+      .optional()
+      .describe('Only events matching these, e.g. paid plans.'),
+    inputs: z
+      .record(z.string(), z.unknown())
+      .optional()
+      .describe(
+        'Template inputs, e.g. {"url":"https://hooks.slack.com/…","message":"{event} by {who}"}. Secrets are encrypted and never shown; null clears one.',
+      ),
+  }),
+  destinationId: z.object({ project, id: z.string() }),
+  testDestination: z.object({
+    project,
+    id: z.string(),
+    event: z
+      .record(z.string(), z.unknown())
+      .optional()
+      .describe('Fields to override on the sample event.'),
+  }),
+  retryDestination: z.object({ project, id: z.string(), failures: z.array(z.string()).optional() }),
+  saveTransformation: z.object({
+    project,
+    id: z.string().optional(),
+    enabled: z.boolean().optional(),
+    position: z.number().int().optional().describe('Order: lower runs first.'),
+    rule: transformationSchema,
+  }),
+  transformationId: z.object({ project, id: z.string() }),
+  testTransformation: z.object({
+    project,
+    rule: transformationSchema,
+    event: z
+      .object({
+        event: z.string(),
+        props: z.record(z.string(), z.unknown()).optional(),
+        person: z.record(z.string(), z.unknown()).optional(),
+        url: z.string().optional(),
+        title: z.string().optional(),
+      })
+      .describe('A sample event to try the rule on.'),
+  }),
+  saveExport: z.object({
+    project,
+    id: z.string().optional(),
+    name: z.string().optional(),
+    target: z.enum(['s3', 'bigquery', 'http']).optional().describe('Required when creating.'),
+    format: z.enum(['jsonl', 'csv']).optional(),
+    frequency: z.enum(['hour', 'day']).optional(),
+    enabled: z.boolean().optional(),
+    settings: z
+      .record(z.string(), z.unknown())
+      .optional()
+      .describe(
+        's3: endpoint (e.g. https://<account>.r2.cloudflarestorage.com), bucket, region ("auto" for R2), prefix, accessKeyId, secretAccessKey. bigquery: projectId, dataset, table, serviceAccount (key JSON). http: url, headers. Secrets are encrypted.',
+      ),
+    from: z
+      .union([z.string(), z.number()])
+      .optional()
+      .describe('When creating: export events received from this time. Default now.'),
+  }),
+  exportId: z.object({ project, id: z.string() }),
+  backfillExport: z.object({
+    project,
+    id: z.string(),
+    from: z
+      .union([z.string(), z.number()])
+      .describe('Re-export everything received since, e.g. "-30d".'),
+  }),
   getSettings: z.object({ project }),
   updateSettings: z.object({
     project,
@@ -1377,7 +1480,7 @@ GROUP BY event ORDER BY cur DESC, event ASC LIMIT 50`;
     const since = Date.now() - days * DAY_MS;
     const d = this.store.dialect;
     const PV = "'$pageview'";
-    const [perProject, topEvents, replayRows, storedReplays, storedEvents, sizeProbe] =
+    const [perProject, topEvents, replayRows, storedReplays, storedEvents, sizeProbe, deliveries] =
       await Promise.all([
         this.store.query(`SELECT project, COUNT(*) AS n, SUM(CASE WHEN event = ${PV} THEN 1 ELSE 0 END) AS pv, COUNT(DISTINCT session_id) AS sessions
 FROM ${d.table('events')} WHERE ts_ms >= ${since} GROUP BY project`),
@@ -1402,6 +1505,11 @@ FROM ${d.table('events')} WHERE ts_ms >= ${since} GROUP BY project`),
           ? this.env.DB.prepare('SELECT COUNT(*) AS n FROM events').first<{ n: number }>()
           : Promise.resolve({ n: 0 }),
         this.env.DB.prepare('SELECT 1 AS one').run(),
+        this.env.DB.prepare(
+          'SELECT COALESCE(SUM(delivered + failed + skipped), 0) AS n FROM destination_stats WHERE hour >= ?',
+        )
+          .bind(since)
+          .first<{ n: number }>(),
       ]);
     const replays = new Map(replayRows.results.map((r) => [r.project, r]));
     const projects = new Set([...perProject.map((r) => text(r.project)), ...replays.keys()]);
@@ -1431,6 +1539,7 @@ FROM ${d.table('events')} WHERE ts_ms >= ${since} GROUP BY project`),
       retentionDays:
         Number(this.env.GLASS_RETENTION_DAYS) > 0 ? Number(this.env.GLASS_RETENTION_DAYS) : null,
       replayRetentionDays: Number(this.env.GLASS_REPLAY_RETENTION_DAYS ?? 30) || 30,
+      deliveries: { messages: Number(deliveries?.n ?? 0), queue: Boolean(this.env.DELIVERIES) },
     });
     return { store: this.store.kind, ...report, dashboard: this.link('usage') };
   }
@@ -3086,12 +3195,12 @@ WHERE project = ${d.str(project)} AND session_id = ${d.str(row.session_id)} AND 
       project: ctx.project,
       holdouts: out,
       summary: out.length
-        ? out
+        ? `${out
             .map(
               (h) =>
                 `${h.name}: ${h.percentage}% held out of ${h.experiments.length} experiment${h.experiments.length === 1 ? '' : 's'}`,
             )
-            .join('; ') + '.'
+            .join('; ')}.`
         : 'No holdouts. Create one with save_holdout, then pass holdout when creating experiments.',
     };
   }
@@ -3179,6 +3288,258 @@ WHERE project = ${d.str(project)} AND session_id = ${d.str(row.session_id)} AND 
     };
   }
 
+  // ── Destinations ─────────────────────────────────────────────────────────
+
+  listDestinationTemplates() {
+    const templates = Object.values(TEMPLATES).map((t) => ({
+      id: t.id,
+      name: t.name,
+      description: t.description,
+      category: t.category,
+      inputs: t.inputs,
+      ...(t.defaultEvents ? { defaultEvents: t.defaultEvents } : {}),
+    }));
+    return {
+      templates,
+      summary: `${templates.length} destination templates: ${templates.map((t) => t.name).join(', ')}.`,
+    };
+  }
+
+  async listDestinations(input: unknown) {
+    const ctx = await this.context(z.object({ project }).parse(input).project);
+    const destinations = await listDestinations(this.env, ctx.project);
+    const queue = this.env.DELIVERIES
+      ? 'Cloudflare Queues'
+      : 'the five-minute outbox (no queue bound)';
+    return {
+      project: ctx.project,
+      destinations,
+      delivery: this.env.DELIVERIES ? 'queue' : 'outbox',
+      summary: destinations.length
+        ? `${destinations.length} destination${destinations.length === 1 ? '' : 's'}: ${destinations.map((d) => `${d.name} (${d.template}${d.enabled ? '' : ', off'})`).join(', ')}. Delivered through ${queue}.`
+        : 'No destinations. Add one with save_destination (list_destination_templates shows what is available).',
+      dashboard: this.link('data/destinations', { project: ctx.project }),
+    };
+  }
+
+  async getDestination(input: unknown) {
+    const spec = inputs.destinationId.parse(input);
+    const ctx = await this.context(spec.project);
+    const destination = await getDestination(this.env, ctx.project, spec.id);
+    const activity = await destinationActivity(this.env.DB, ctx.project, spec.id);
+    return {
+      project: ctx.project,
+      destination,
+      activity,
+      summary: `${destination.name}: ${activity.totals.delivered} delivered, ${activity.totals.failed} failed, ${activity.totals.skipped} skipped in ${activity.hours}h; ${activity.pending} waiting.`,
+    };
+  }
+
+  async saveDestination(input: unknown) {
+    const spec = inputs.saveDestination.parse(input);
+    const ctx = await this.context(spec.project);
+    const { project: _, ...rest } = spec;
+    const destination = await saveDestination(this.env, ctx.project, rest as DestinationInput);
+    return {
+      project: ctx.project,
+      destination,
+      summary: `Saved destination "${destination.name}" (${destination.template}): ${destination.enabled ? 'on' : 'off'}, sending ${destination.match.events?.join(', ') || 'its default events'}. Try it with test_destination.`,
+    };
+  }
+
+  async deleteDestination(input: unknown) {
+    const spec = inputs.destinationId.parse(input);
+    const ctx = await this.context(spec.project);
+    await deleteDestination(this.env, ctx.project, spec.id);
+    return { project: ctx.project, deleted: spec.id, summary: 'Destination deleted.' };
+  }
+
+  async testDestination(input: unknown) {
+    const spec = inputs.testDestination.parse(input);
+    const ctx = await this.context(spec.project);
+    const result = await testDestination(this.env, ctx.project, spec.id, spec.event as never);
+    return {
+      project: ctx.project,
+      ...result,
+      summary: result.ok
+        ? result.skipped
+          ? `The template skipped the sample "${result.event.event}" event (e.g. it isn't in the event map).`
+          : `Sent a sample "${result.event.event}" event: OK.`
+        : `The test send failed: ${result.error}.`,
+    };
+  }
+
+  async retryDestination(input: unknown) {
+    const spec = inputs.retryDestination.parse(input);
+    const ctx = await this.context(spec.project);
+    const n = await retryFailures(this.env, ctx.project, spec.id, spec.failures);
+    return {
+      project: ctx.project,
+      retried: n,
+      summary: `Queued ${n} failed deliveries for another try.`,
+    };
+  }
+
+  // ── Transformations ──────────────────────────────────────────────────────
+
+  async listTransformations(input: unknown) {
+    const ctx = await this.context(z.object({ project }).parse(input).project);
+    const transformations = await listTransformations(this.env, ctx.project, true);
+    return {
+      project: ctx.project,
+      transformations,
+      summary: transformations.length
+        ? transformations
+            .map(
+              (t) =>
+                `${t.position}. ${t.rule.name ?? t.rule.kind}${t.enabled ? '' : ' (off)'}: ${t.applied} applied`,
+            )
+            .join('; ')
+        : 'No transformations: events are stored as sent.',
+    };
+  }
+
+  async saveTransformation(input: unknown) {
+    const spec = inputs.saveTransformation.parse(input);
+    const ctx = await this.context(spec.project);
+    const t = await saveTransformation(this.env, ctx.project, spec);
+    return {
+      project: ctx.project,
+      transformation: t,
+      summary: `Saved ${t.rule.kind} rule${t.rule.name ? ` "${t.rule.name}"` : ''} (position ${t.position}); it applies to events from now on.`,
+    };
+  }
+
+  async deleteTransformation(input: unknown) {
+    const spec = inputs.transformationId.parse(input);
+    const ctx = await this.context(spec.project);
+    await deleteTransformation(this.env, ctx.project, spec.id);
+    return { project: ctx.project, deleted: spec.id, summary: 'Transformation deleted.' };
+  }
+
+  /** Try a rule on a sample event without saving it. */
+  async testTransformation(input: unknown) {
+    const spec = inputs.testTransformation.parse(input);
+    const ctx = await this.context(spec.project);
+    const now = Date.now();
+    const row = {
+      id: 'sample',
+      project: ctx.project,
+      event: spec.event.event,
+      ts_ms: now,
+      distinct_id: 'd',
+      user_id: null,
+      person_id: 'd',
+      session_id: 's',
+      url: spec.event.url ?? '',
+      host: '',
+      path: '',
+      referrer: '',
+      referrer_host: '',
+      title: spec.event.title ?? '',
+      utm_source: '',
+      utm_medium: '',
+      utm_campaign: '',
+      utm_term: '',
+      utm_content: '',
+      country: '',
+      region: '',
+      city: '',
+      device: '',
+      browser: '',
+      os: '',
+      flags: '{}',
+      props: JSON.stringify(spec.event.props ?? {}),
+      person_props: JSON.stringify(spec.event.person ?? {}),
+      lib: '',
+      received_ms: now,
+    };
+    const result = await applyTransformations([row], [spec.rule], hashSalt(this.env, ctx.project));
+    const after = result.rows[0];
+    return {
+      project: ctx.project,
+      dropped: !after,
+      after: after
+        ? {
+            props: JSON.parse(after.props),
+            person: JSON.parse(after.person_props),
+            url: after.url,
+            title: after.title,
+          }
+        : null,
+      summary: !after
+        ? 'The rule drops this event.'
+        : result.counts[0]
+          ? 'The rule changes this event.'
+          : 'The rule leaves this event as it is.',
+    };
+  }
+
+  // ── Batch exports ────────────────────────────────────────────────────────
+
+  async listExports(input: unknown) {
+    const ctx = await this.context(z.object({ project }).parse(input).project);
+    const exports = await listExports(this.env, ctx.project);
+    return {
+      project: ctx.project,
+      exports,
+      summary: exports.length
+        ? exports
+            .map(
+              (e) =>
+                `${e.name} (${e.target}, ${e.frequency}, ${e.enabled ? 'on' : 'off'}) up to ${e.watermark}`,
+            )
+            .join('; ')
+        : 'No batch exports. Add one with save_export (S3/R2, BigQuery or an HTTP endpoint).',
+    };
+  }
+
+  async saveExport(input: unknown) {
+    const spec = inputs.saveExport.parse(input);
+    const ctx = await this.context(spec.project);
+    const { project: _, from, ...rest } = spec;
+    const saved = await saveExport(this.env, ctx.project, {
+      ...rest,
+      ...(from !== undefined ? { from: parseTime(from) } : {}),
+    });
+    return {
+      project: ctx.project,
+      export: saved,
+      summary: `Saved ${saved.target} export "${saved.name}": every ${saved.frequency}, events received since ${saved.watermark}. Files appear after the first full ${saved.frequency}.`,
+    };
+  }
+
+  async deleteExport(input: unknown) {
+    const spec = inputs.exportId.parse(input);
+    const ctx = await this.context(spec.project);
+    await deleteExport(this.env, ctx.project, spec.id);
+    return { project: ctx.project, deleted: spec.id, summary: 'Export deleted.' };
+  }
+
+  async exportRuns(input: unknown) {
+    const spec = inputs.exportId.parse(input);
+    const ctx = await this.context(spec.project);
+    const runs = await exportRuns(this.env, ctx.project, spec.id);
+    return {
+      project: ctx.project,
+      runs,
+      summary: runs.length
+        ? `Last run: ${runs[0]!.status}, ${runs[0]!.rows} rows in ${runs[0]!.files} files${runs[0]!.error ? ` (${runs[0]!.error})` : ''}.`
+        : 'No runs yet.',
+    };
+  }
+
+  async backfillExport(input: unknown) {
+    const spec = inputs.backfillExport.parse(input);
+    const ctx = await this.context(spec.project);
+    const from = parseTime(spec.from);
+    await backfillExport(this.env, ctx.project, spec.id, from);
+    return {
+      project: ctx.project,
+      summary: `The export will re-send everything received since ${new Date(from).toISOString()}, a few thousand rows every five minutes.`,
+    };
+  }
+
   // ── Settings ─────────────────────────────────────────────────────────────
 
   private settingsView(p: Project) {
@@ -3186,17 +3547,16 @@ WHERE project = ${d.str(project)} AND session_id = ${d.str(row.session_id)} AND 
     return {
       project: p.id,
       settings: s,
-      summary:
-        [
-          `Time zone ${s.timezone ?? 'UTC (default)'}`,
-          s.internalFilters?.length
-            ? `${s.internalFilters.length} internal-traffic filter${s.internalFilters.length === 1 ? '' : 's'} (applied with filterTestAccounts: true)`
-            : 'no internal-traffic filters',
-          `base currency ${s.baseCurrency ?? 'USD (default)'}`,
-          s.revenueEvents?.length
-            ? `revenue from ${s.revenueEvents.map((r) => r.event).join(', ')}`
-            : 'no revenue events',
-        ].join('; ') + '.',
+      summary: `${[
+        `Time zone ${s.timezone ?? 'UTC (default)'}`,
+        s.internalFilters?.length
+          ? `${s.internalFilters.length} internal-traffic filter${s.internalFilters.length === 1 ? '' : 's'} (applied with filterTestAccounts: true)`
+          : 'no internal-traffic filters',
+        `base currency ${s.baseCurrency ?? 'USD (default)'}`,
+        s.revenueEvents?.length
+          ? `revenue from ${s.revenueEvents.map((r) => r.event).join(', ')}`
+          : 'no revenue events',
+      ].join('; ')}.`,
       dashboard: this.link('settings', { project: p.id }),
     };
   }

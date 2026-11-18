@@ -81,7 +81,7 @@ export function parseFormula(input: string, series: number): FormulaNode {
   const peek = () => tokens[pos];
   const expect = (value: string) => {
     const t = tokens[pos];
-    if (!t || t.kind !== 'op' || t.value !== value)
+    if (t?.kind !== 'op' || t.value !== value)
       throw new FormulaError(`Expected "${value}" in formula "${input}"`);
     pos++;
   };

@@ -258,7 +258,13 @@ describe('maintenance ticks', () => {
     const app = testApp();
     const calls: string[] = [];
     FREQUENT_TASKS.push(
-      { name: 'test-ok', run: async () => (calls.push('ok'), 3) },
+      {
+        name: 'test-ok',
+        run: async () => {
+          calls.push('ok');
+          return 3;
+        },
+      },
       {
         name: 'test-broken',
         run: async () => {

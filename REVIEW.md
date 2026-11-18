@@ -4,6 +4,7 @@ Branch `deepen-coverage`, off `origin/main` (0.8.4). Nothing pushed, released or
 Run: `pnpm install && pnpm typecheck && pnpm lint && pnpm test` (lake conformance needs `uv`).
 
 ## Done (one commit each)
+
 - **Foundations**: `/api/import` (keeps old timestamps; public `/e` still clamps to 7 days),
   per-key props truncation, server key (derived from the admin key; `dataflare key --server`),
   project settings (migration 0008), DST-aware IANA time zones, `filterTestAccounts`,
@@ -22,23 +23,41 @@ Run: `pnpm install && pnpm typecheck && pnpm lint && pnpm test` (lake conformanc
 - **Flags + dataflare-node**: payloads, `flag.<key>` dependencies, bucketBy person/group,
   early access, bootstrap/overrides, debug reasons, history + schedules (migration 0012),
   usage, local-evaluation definitions; Node SDK with local evaluation checked against `/f`.
-- **Experiments (core only)**: metric kinds conversion/mean/ratio/funnel/retention,
-  Bayesian + frequentist, probability to be best, winsorising, minimum runtime/exposures,
-  timeline, secondary metrics computed. Old `goal` form still works.
+- **Experiments**: metric kinds conversion/mean/ratio/funnel/retention, Bayesian +
+  frequentist, probability to be best, winsorising, minimum runtime/exposures, timeline,
+  secondary metrics computed (old `goal` form still works); lifecycle pause/resume/reset/
+  archive/duplicate, holdouts (migration 0013; flags return `"holdout"`, which the SDKs treat
+  as off), `plan_experiment` running-time calculator, web-experiment transforms applied by the
+  SDK. Stats checked against SciPy reference values.
+- **Destinations, transformations, exports, import**: 16 destination templates (webhook, Slack,
+  Discord, Teams, Meta CAPI, GA4, TikTok, Customer.io, Loops, HubSpot, Mixpanel, Amplitude,
+  PostHog, Zapier, Make, n8n) delivered through Cloudflare Queues with a D1 outbox fallback,
+  backoff, failure logs, retry and test sends; AES-GCM encrypted secrets; ingest
+  transformations (drop event, drop/rename/set/hash properties, redact); hourly/daily batch
+  exports to S3/R2 (SigV4), BigQuery and HTTP NDJSON with backfill (migration 0014);
+  `dataflare import` with PostHog/Mixpanel/Amplitude/Segment/GA4 presets; `init`/`upgrade`
+  create the queue and its dead-letter queue and fall back to the outbox when the token can't;
+  queue operations in `usage_and_cost`. Exports are checked against DataFusion in the lake
+  conformance suite.
 
 ## Not done yet
-- Experiments, service side: store `metrics`/engine options, lifecycle (pause/resume/reset/
-  archive/duplicate), holdouts (flags return `"holdout"`; SDK `isEnabled` must treat it as off),
-  running-time calculator tool, web-experiment transforms in the SDK, stats tests against the
-  scipy values in the session scratchpad.
-- Phase 7 destinations/transformations/batch exports/import CLI (Queues), Phase 8 error
-  tracking + source maps, Phase 9 revenue + Stripe, Phase 10 dashboard UI for everything
-  above, docs, comparison pages, e2e tests, upgrade dry-run.
+
+- Phase 8 error tracking + source maps, Phase 9 revenue + Stripe, Phase 10 dashboard UI for
+  everything above, docs, comparison pages, e2e tests, upgrade dry-run.
 
 ## Decisions to confirm
+
 - Groups live in `props.$groups` / `props.$group_props` rather than new columns, so no lake
   schema version is needed.
 - Static cohorts in lake mode are inlined (up to 10,000 people) instead of a new Pipelines stream.
 - Server and encryption keys are derived from existing secrets (CI upgrades can't add secrets).
 - Cohorts may now reference other cohorts (loop-checked), reversing the 2026-11-04 decision.
-- Script-tag SDK grew (now ~5.2 KB gzip); check against the "about 4 KB" claim.
+- Script-tag SDK grew (now ~5.8 KB gzip); check against the "about 4 KB" claim.
+- Destination work per invocation is capped for the Free plan's 50 subrequests: queue batches
+  of 25, 20 outbox deliveries per 5-minute tick, 10 export requests per tick (2,000 rows a page).
+- A failing after-write hook (e.g. the queue is over quota) logs and moves on: the events are
+  already stored, so `/e` still succeeds and the delivery goes to the outbox.
+- Phone numbers for ad platforms drop a "(0)" and "00" prefix; Meta gets digits, TikTok E.164
+  with "+"; an optional `phoneCountryCode` input fixes national numbers.
+- BigQuery uses streaming inserts (`insertAll`), not load jobs: simpler, and rows dedupe on the
+  event id for about a minute; a load-job path would need a GCS bucket.

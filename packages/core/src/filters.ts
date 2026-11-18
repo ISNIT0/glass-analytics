@@ -170,9 +170,56 @@ export function matchFilter(filter: Filter, ctx: EvaluationContext): boolean {
     const member = toList(filter.value).some((key) => ctx.cohorts?.includes(key) ?? false);
     return op === 'neq' || op === 'not_in' ? !member : member;
   }
-  const actual = lookup(ctx, parseProperty(filter.property));
+  return compare(op, lookup(ctx, parseProperty(filter.property)), filter.value);
+}
+
+/** An event as stream processing sees it (destinations, transformations): JSON already parsed. */
+export interface EventLike {
+  props: Record<string, unknown>;
+  person: Record<string, unknown>;
+  flags?: Record<string, string>;
+  [column: string]: unknown;
+}
+
+function walk(value: unknown, path: readonly string[]): unknown {
+  let v = value;
+  for (const key of path) {
+    if (v === null || typeof v !== 'object') return undefined;
+    v = (v as Record<string, unknown>)[key];
+  }
+  return v;
+}
+
+/**
+ * Evaluate a filter against one event, with query semantics: `plan` is the event property,
+ * `person.plan` the person property, `group.company.plan` the group snapshot. Mirrors
+ * `sql/filters.ts` so a destination or transformation matches what a query would.
+ * Cohort filters can't be evaluated per event here and never match.
+ */
+export function matchEventFilter(filter: Filter, ev: EventLike): boolean {
+  if (filter.property === COHORT_PROPERTY) return false;
+  const ref = parseProperty(filter.property);
+  const actual =
+    ref.kind === 'column'
+      ? ev[ref.column]
+      : ref.kind === 'event'
+        ? walk(ev.props, ref.path)
+        : ref.kind === 'person'
+          ? walk(ev.person, ref.path)
+          : ref.kind === 'flag'
+            ? ev.flags?.[ref.key]
+            : ref.path.length === 0
+              ? walk(ev.props, ['$groups', ref.type])
+              : walk(ev.props, ['$group_props', ref.type, ...ref.path]);
+  return compare(
+    filter.op ?? 'eq',
+    actual === '' && ref.kind === 'column' ? undefined : actual,
+    filter.value,
+  );
+}
+
+function compare(op: FilterOp, actual: unknown, value: FilterValue | undefined): boolean {
   const text = asText(actual);
-  const value = filter.value;
   switch (op) {
     case 'is_set':
       return text !== null;
@@ -183,7 +230,7 @@ export function matchFilter(filter: Filter, ctx: EvaluationContext): boolean {
     case 'neq':
       return text === null || text !== asText(value);
     case 'contains':
-      return text !== null && text.toLowerCase().includes(String(value ?? '').toLowerCase());
+      return text?.toLowerCase().includes(String(value ?? '').toLowerCase()) ?? false;
     case 'not_contains':
       return text === null || !text.toLowerCase().includes(String(value ?? '').toLowerCase());
     case 'in':
