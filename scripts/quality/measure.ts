@@ -5,7 +5,7 @@
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, globSync, mkdirSync, readFileSync } from 'node:fs';
-import { join, relative, sep } from 'node:path';
+import { join, relative, resolve, sep } from 'node:path';
 import { analyzeFile, type FileComplexity, type FunctionMetrics } from './complexity.ts';
 
 export const SOURCES = 'packages/*/src/**/*.ts';
@@ -109,7 +109,7 @@ function parseLcov(text: string, root: string): Map<string, LcovFile> {
         branches: { hit: 0, total: 0 },
         functions: { hit: 0, total: 0 },
       };
-      files.set(relative(root, value).split(sep).join('/'), current);
+      files.set(relative(root, resolve(root, value)).split(sep).join('/'), current);
       continue;
     }
     if (!current) continue;
