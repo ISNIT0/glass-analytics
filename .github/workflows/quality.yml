@@ -1,9 +1,10 @@
 # Coverage and complexity ratchet (scripts/quality.ts against quality-baseline.json).
 #
 # Fails when a change lowers line coverage or adds complexity debt, writes a before/after report
-# to the job summary, and uploads it for quality-comment.yml to post on the pull request. This
-# job has a read-only token, so it is safe on pull requests from forks; the comment is posted by
-# the separate workflow_run job, which never checks out or runs pull request code.
+# to the job summary, and comments it on the pull request. Pull requests from branches in this
+# repo comment from this job. Fork pull requests get a read-only token here, so they upload the
+# report instead and quality-comment.yml posts it from a workflow_run job that never runs fork
+# code.
 name: Quality
 
 on:
@@ -17,6 +18,8 @@ concurrency:
 
 permissions:
   contents: read
+  # Only usable on same-repo pull requests: GitHub downgrades fork pull requests to read-only.
+  pull-requests: write
 
 jobs:
   quality:
@@ -79,6 +82,13 @@ jobs:
           name: quality-report
           path: ${{ runner.temp }}/quality-report/
           retention-days: 7
+
+      - name: Comment on the pull request
+        if: always() && github.event_name == 'pull_request' && steps.head.outcome == 'success' && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: .github/scripts/post-quality-comment.sh "$GITHUB_REPOSITORY" "$PR_NUMBER" "$RUNNER_TEMP/quality-report/report.md"
 
       - name: Upload coverage
         if: always() && steps.head.outcome == 'success'
