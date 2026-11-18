@@ -162,6 +162,72 @@ function isLogical(node: ts.Node): node is ts.BinaryExpression {
   return ts.isBinaryExpression(node) && LOGICAL.has(node.operatorToken.kind);
 }
 
+/** What one control-flow structure costs, and how deep each of its children sits. */
+interface Structure {
+  /** Whether the structure costs 1 + the current nesting level. */
+  nested: boolean;
+  /** Cognitive cost on top of that, regardless of nesting (`else`, labelled jumps). */
+  flat: number;
+  paths: number;
+  /** Children and how many nesting levels each adds. */
+  children: [ts.Node | undefined, number][];
+}
+
+const isLoop = (node: ts.Node): node is ts.IterationStatement =>
+  ts.isForStatement(node) ||
+  ts.isForInStatement(node) ||
+  ts.isForOfStatement(node) ||
+  ts.isWhileStatement(node) ||
+  ts.isDoStatement(node);
+
+function ifStructure(node: ts.IfStatement): Structure {
+  // A chain `if … else if … else` costs 1 + nesting for the first `if`, then 1 per branch.
+  const isElseIf = ts.isIfStatement(node.parent) && node.parent.elseStatement === node;
+  const otherwise = node.elseStatement;
+  const plainElse = otherwise && !ts.isIfStatement(otherwise);
+  return {
+    nested: !isElseIf,
+    flat: (isElseIf ? 1 : 0) + (plainElse ? 1 : 0),
+    paths: 1,
+    children: [
+      [node.expression, 0],
+      [node.thenStatement, 1],
+      [otherwise, plainElse ? 1 : 0],
+    ],
+  };
+}
+
+function structureOf(node: ts.Node): Structure | null {
+  if (ts.isIfStatement(node)) return ifStructure(node);
+  if (ts.isConditionalExpression(node)) {
+    const children: Structure['children'] = [
+      [node.condition, 0],
+      [node.whenTrue, 1],
+      [node.whenFalse, 1],
+    ];
+    return { nested: true, flat: 0, paths: 1, children };
+  }
+  if (ts.isSwitchStatement(node)) {
+    const clauses = node.caseBlock.clauses;
+    const children: Structure['children'] = [[node.expression, 0]];
+    for (const clause of clauses) children.push([clause, 1]);
+    return { nested: true, flat: 0, paths: clauses.filter(ts.isCaseClause).length, children };
+  }
+  if (isLoop(node)) {
+    const children: Structure['children'] = [];
+    ts.forEachChild(node, (child) => {
+      children.push([child, child === node.statement ? 1 : 0]);
+    });
+    return { nested: true, flat: 0, paths: 1, children };
+  }
+  if (ts.isCatchClause(node))
+    return { nested: true, flat: 0, paths: 1, children: [[node.block, 1]] };
+  if ((ts.isBreakStatement(node) || ts.isContinueStatement(node)) && node.label) {
+    return { nested: false, flat: 1, paths: 0, children: [] };
+  }
+  return null;
+}
+
 /** Score one function body. Nested functions that are reported on their own are skipped. */
 function score(unit: FunctionLike, isUnit: (n: ts.Node) => boolean) {
   let cognitive = 0;
@@ -169,61 +235,11 @@ function score(unit: FunctionLike, isUnit: (n: ts.Node) => boolean) {
 
   const visit = (node: ts.Node, nesting: number): void => {
     if (node !== unit && isUnit(node)) return;
-
-    if (ts.isIfStatement(node)) {
-      // A chain `if … else if … else` costs 1 + nesting for the first `if`, then 1 per branch.
-      const isElseIf = ts.isIfStatement(node.parent) && node.parent.elseStatement === node;
-      cognitive += isElseIf ? 1 : 1 + nesting;
-      cyclomatic += 1;
-      visit(node.expression, nesting);
-      visit(node.thenStatement, nesting + 1);
-      const otherwise = node.elseStatement;
-      if (otherwise && ts.isIfStatement(otherwise)) visit(otherwise, nesting);
-      else if (otherwise) {
-        cognitive += 1;
-        visit(otherwise, nesting + 1);
-      }
-      return;
-    }
-    if (ts.isConditionalExpression(node)) {
-      cognitive += 1 + nesting;
-      cyclomatic += 1;
-      visit(node.condition, nesting);
-      visit(node.whenTrue, nesting + 1);
-      visit(node.whenFalse, nesting + 1);
-      return;
-    }
-    if (ts.isSwitchStatement(node)) {
-      cognitive += 1 + nesting;
-      visit(node.expression, nesting);
-      for (const clause of node.caseBlock.clauses) {
-        if (ts.isCaseClause(clause)) cyclomatic += 1;
-        visit(clause, nesting + 1);
-      }
-      return;
-    }
-    if (
-      ts.isForStatement(node) ||
-      ts.isForInStatement(node) ||
-      ts.isForOfStatement(node) ||
-      ts.isWhileStatement(node) ||
-      ts.isDoStatement(node)
-    ) {
-      cognitive += 1 + nesting;
-      cyclomatic += 1;
-      ts.forEachChild(node, (child) => {
-        visit(child, child === node.statement ? nesting + 1 : nesting);
-      });
-      return;
-    }
-    if (ts.isCatchClause(node)) {
-      cognitive += 1 + nesting;
-      cyclomatic += 1;
-      visit(node.block, nesting + 1);
-      return;
-    }
-    if ((ts.isBreakStatement(node) || ts.isContinueStatement(node)) && node.label) {
-      cognitive += 1;
+    const structure = structureOf(node);
+    if (structure) {
+      cognitive += (structure.nested ? 1 + nesting : 0) + structure.flat;
+      cyclomatic += structure.paths;
+      for (const [child, deeper] of structure.children) if (child) visit(child, nesting + deeper);
       return;
     }
     if (isLogical(node) && !isLogical(bindingParentExpr(node))) {
@@ -233,12 +249,9 @@ function score(unit: FunctionLike, isUnit: (n: ts.Node) => boolean) {
       cyclomatic += ops.length;
       cognitive += ops.filter((op, i) => op !== ops[i - 1]).length;
     }
-    if (node !== unit && isFunctionLike(node)) {
-      // An inline callback: its structures count toward this function, one level deeper.
-      ts.forEachChild(node, (child) => visit(child, nesting + 1));
-      return;
-    }
-    ts.forEachChild(node, (child) => visit(child, nesting));
+    // An inline callback: its structures count toward this function, one level deeper.
+    const inner = node !== unit && isFunctionLike(node) ? 1 : 0;
+    ts.forEachChild(node, (child) => visit(child, nesting + inner));
   };
 
   visit(unit, 0);

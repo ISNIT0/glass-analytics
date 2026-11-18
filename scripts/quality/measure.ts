@@ -6,7 +6,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, globSync, mkdirSync, readFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
-import { analyzeFile, type FunctionMetrics } from './complexity.ts';
+import { analyzeFile, type FileComplexity, type FunctionMetrics } from './complexity.ts';
 
 export const SOURCES = 'packages/*/src/**/*.ts';
 export const TESTS = 'packages/*/test/**/*.test.ts';
@@ -163,71 +163,73 @@ export interface MeasureOptions {
   quiet?: boolean;
 }
 
+/** Run the tests with coverage and parse the result, or null when coverage is off. */
+function collectCoverage(root: string, quiet: boolean) {
+  const dir = join(root, 'coverage');
+  mkdirSync(dir, { recursive: true });
+  const path = join(dir, 'lcov.info');
+  const python = hasUv() || process.env.DATAFLARE_REQUIRE_PYTHON === '1';
+  runTests(root, path, quiet);
+  const lcov = existsSync(path) ? parseLcov(readFileSync(path, 'utf8'), root) : new Map();
+  return { lcov: lcov as Map<string, LcovFile>, python };
+}
+
+/** Share of a function's lines that ran, 0–100; a file no test loaded counts as 0. */
+function functionCoverage(fn: FunctionMetrics, hits: LcovFile | undefined): number {
+  if (!hits) return 0;
+  let hit = 0;
+  let total = 0;
+  for (let n = fn.line; n <= fn.endLine; n++) {
+    const h = hits.lines.get(n);
+    if (h === undefined) continue;
+    total++;
+    if (h > 0) hit++;
+  }
+  return total === 0 ? 100 : Math.round((hit / total) * 1000) / 10;
+}
+
+function fileCoverage(info: FileComplexity, hits: LcovFile | undefined): FileCoverage {
+  if (!hits) {
+    // Node counts every line of a loaded file, so an unloaded one counts every line too.
+    return {
+      loaded: false,
+      lines: { hit: 0, total: info.lines },
+      branches: { hit: 0, total: 0 },
+      functions: { hit: 0, total: info.functions.length },
+      uncovered: info.lines > 0 ? `1-${info.lines}` : '',
+    };
+  }
+  const uncovered = [...hits.lines].filter(([, h]) => h === 0).map(([n]) => n);
+  uncovered.sort((a, b) => a - b);
+  return {
+    loaded: true,
+    lines: { hit: hits.lines.size - uncovered.length, total: hits.lines.size },
+    branches: hits.branches,
+    functions: hits.functions,
+    uncovered: toRanges(uncovered),
+  };
+}
+
 export function measure({ root, coverage, quiet = false }: MeasureOptions): Metrics {
   const sources = globSync(SOURCES, { cwd: root })
     .map((f) => f.split(sep).join('/'))
     .filter((f) => !f.endsWith('.d.ts'))
     .sort();
-
   const analysed = new Map(sources.map((f) => [f, analyzeFile(join(root, f), f)]));
-
-  let lcov: Map<string, LcovFile> | null = null;
-  let python = false;
-  if (coverage) {
-    const dir = join(root, 'coverage');
-    mkdirSync(dir, { recursive: true });
-    const path = join(dir, 'lcov.info');
-    python = hasUv() || process.env.DATAFLARE_REQUIRE_PYTHON === '1';
-    runTests(root, path, quiet);
-    lcov = existsSync(path) ? parseLcov(readFileSync(path, 'utf8'), root) : new Map();
-  }
-
+  const run = coverage ? collectCoverage(root, quiet) : null;
+  const cov: Coverage | null = run
+    ? { python: run.python, total: zero(), packages: {}, files: {} }
+    : null;
   const functions: MeasuredFunction[] = [];
-  let cov: Coverage | null = null;
-  if (lcov) cov = { python, total: zero(), packages: {}, files: {} };
 
   for (const [file, info] of analysed) {
-    const hits = lcov?.get(file);
+    const hits = run?.lcov.get(file);
     for (const fn of info.functions) {
-      let coverage: number | null = null;
-      if (lcov) {
-        let hit = 0;
-        let total = 0;
-        for (let n = fn.line; n <= fn.endLine; n++) {
-          const h = hits ? hits.lines.get(n) : 0;
-          if (h === undefined) continue;
-          total++;
-          if (h > 0) hit++;
-        }
-        coverage = total === 0 ? 100 : Math.round((hit / total) * 1000) / 10;
-      }
-      functions.push({ ...fn, coverage });
+      functions.push({ ...fn, coverage: run ? functionCoverage(fn, hits) : null });
     }
-
     // A file with no runtime code never loads under test, and that is not a coverage gap.
     if (!cov || (info.typeOnly && !hits)) continue;
-    const uncovered: number[] = [];
-    let entry: FileCoverage;
-    if (hits) {
-      for (const [n, h] of hits.lines) if (h === 0) uncovered.push(n);
-      uncovered.sort((a, b) => a - b);
-      entry = {
-        loaded: true,
-        lines: { hit: hits.lines.size - uncovered.length, total: hits.lines.size },
-        branches: hits.branches,
-        functions: hits.functions,
-        uncovered: toRanges(uncovered),
-      };
-    } else {
-      // Node counts every line of a loaded file, so an unloaded one counts every line too.
-      entry = {
-        loaded: false,
-        lines: { hit: 0, total: info.lines },
-        branches: { hit: 0, total: 0 },
-        functions: { hit: 0, total: info.functions.length },
-        uncovered: info.lines > 0 ? `1-${info.lines}` : '',
-      };
-    }
+    const entry = fileCoverage(info, hits);
     cov.files[file] = entry;
     add(cov.total, entry);
     const pkg = packageOf(file);

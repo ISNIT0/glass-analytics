@@ -7,7 +7,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { fromRanges, type Metrics, pct } from './measure.ts';
+import { fromRanges, type MeasuredFunction, type Metrics, pct } from './measure.ts';
 
 export const BASELINE_FILE = 'quality-baseline.json';
 
@@ -63,58 +63,64 @@ export interface CheckResult {
   improvements: string[];
 }
 
-export function check(metrics: Metrics, baseline: Baseline): CheckResult {
-  const result: CheckResult = { failures: [], warnings: [], improvements: [] };
-  const { tolerance } = baseline.coverage;
+const NO_UV =
+  'uv is not installed, so the Python-backed lake tests were skipped and coverage reads ' +
+  'low. Coverage drops below are warnings here; CI runs those tests and enforces them. ' +
+  'Install uv (https://docs.astral.sh/uv/) for an exact local check.';
 
+function checkCoverage(metrics: Metrics, baseline: Baseline, result: CheckResult): void {
   const lines = coverageLines(metrics);
   if (!lines) {
     result.warnings.push('Coverage not measured (--fast); only complexity was checked.');
-  } else {
-    const soft = !metrics.coverage?.python;
-    if (soft) {
-      result.warnings.push(
-        'uv is not installed, so the Python-backed lake tests were skipped and coverage reads ' +
-          'low. Coverage drops below are warnings here; CI runs those tests and enforces them. ' +
-          'Install uv (https://docs.astral.sh/uv/) for an exact local check.',
-      );
-    }
-    for (const [name, floor] of Object.entries(baseline.coverage.lines)) {
-      const now = lines[name];
-      if (now === undefined) continue;
-      const label = name === 'total' ? 'Total line coverage' : `Line coverage of ${name}`;
-      if (now < floor - tolerance) {
-        const message =
-          `${label} fell from ${floor}% to ${now}%. Add tests for the code you added or ` +
-          'changed (`pnpm quality:hotspots` lists the least-covered files).';
-        (soft ? result.warnings : result.failures).push(message);
-      } else if (now > floor && !soft) {
-        result.improvements.push(`${label} rose from ${floor}% to ${now}%.`);
-      }
+    return;
+  }
+  const soft = !metrics.coverage?.python;
+  if (soft) result.warnings.push(NO_UV);
+  for (const [name, floor] of Object.entries(baseline.coverage.lines)) {
+    const now = lines[name];
+    if (now === undefined) continue;
+    const label = name === 'total' ? 'Total line coverage' : `Line coverage of ${name}`;
+    if (now < floor - baseline.coverage.tolerance) {
+      const message =
+        `${label} fell from ${floor}% to ${now}%. Add tests for the code you added or ` +
+        'changed (`pnpm quality:hotspots` lists the least-covered files).';
+      (soft ? result.warnings : result.failures).push(message);
+    } else if (now > floor && !soft) {
+      result.improvements.push(`${label} rose from ${floor}% to ${now}%.`);
     }
   }
+}
 
-  const { threshold, functions: debt } = baseline.complexity;
-  const current = new Map(metrics.functions.map((fn) => [key(fn), fn]));
-  for (const fn of metrics.functions) {
-    if (fn.cognitive <= threshold) continue;
-    const before = debt[key(fn)];
-    const where = `\`${fn.name}\` (${fn.file}:${fn.line})`;
-    if (before === undefined) {
-      result.failures.push(
-        `${where} has cognitive complexity ${fn.cognitive}, over the threshold of ${threshold}. ` +
-          'Split it into smaller functions, flatten nesting with early returns, or move ' +
-          'branches into a lookup table.',
-      );
-    } else if (fn.cognitive > before) {
-      result.failures.push(
-        `${where} got more complex: cognitive ${before} → ${fn.cognitive}. It is already over ` +
-          `the threshold of ${threshold}; leave it simpler than you found it, not more complex.`,
-      );
-    } else if (fn.cognitive < before) {
-      result.improvements.push(`\`${fn.name}\` cognitive ${before} → ${fn.cognitive}.`);
-    }
+/** Compare one function over the threshold with its baseline entry. */
+function checkDebt(
+  fn: MeasuredFunction,
+  before: number | undefined,
+  threshold: number,
+  result: CheckResult,
+): void {
+  const where = `\`${fn.name}\` (${fn.file}:${fn.line})`;
+  if (before === undefined) {
+    result.failures.push(
+      `${where} has cognitive complexity ${fn.cognitive}, over the threshold of ${threshold}. ` +
+        'Split it into smaller functions, flatten nesting with early returns, or move ' +
+        'branches into a lookup table.',
+    );
+  } else if (fn.cognitive > before) {
+    result.failures.push(
+      `${where} got more complex: cognitive ${before} → ${fn.cognitive}. It is already over ` +
+        `the threshold of ${threshold}; leave it simpler than you found it, not more complex.`,
+    );
+  } else if (fn.cognitive < before) {
+    result.improvements.push(`\`${fn.name}\` cognitive ${before} → ${fn.cognitive}.`);
   }
+}
+
+function checkComplexity(metrics: Metrics, baseline: Baseline, result: CheckResult): void {
+  const { threshold, functions: debt } = baseline.complexity;
+  for (const fn of metrics.functions) {
+    if (fn.cognitive > threshold) checkDebt(fn, debt[key(fn)], threshold, result);
+  }
+  const current = new Map(metrics.functions.map((fn) => [key(fn), fn]));
   for (const [k, before] of Object.entries(debt)) {
     const fn = current.get(k);
     if (!fn) result.improvements.push(`\`${k}\` (was ${before}) no longer exists.`);
@@ -124,6 +130,12 @@ export function check(metrics: Metrics, baseline: Baseline): CheckResult {
       );
     }
   }
+}
+
+export function check(metrics: Metrics, baseline: Baseline): CheckResult {
+  const result: CheckResult = { failures: [], warnings: [], improvements: [] };
+  checkCoverage(metrics, baseline, result);
+  checkComplexity(metrics, baseline, result);
   return result;
 }
 
@@ -183,21 +195,8 @@ export function defaultBase(root: string): string | null {
   }
 }
 
-/**
- * Source lines added or changed since `base`, per file, including uncommitted edits and new
- * untracked files. Blank and comment-only lines are left out.
- */
-export function changedLines(root: string, base: string): Map<string, Set<number>> {
-  const out = new Map<string, Set<number>>();
-  const diff = git(root, [
-    'diff',
-    '--unified=0',
-    '--no-color',
-    '--no-ext-diff',
-    base,
-    '--',
-    SOURCE_PATHSPEC,
-  ]);
+/** Added or edited line numbers per file, from a `git diff --unified=0`. */
+function parseDiff(diff: string, out: Map<string, Set<number>>): void {
   let file: string | null = null;
   for (const line of diff.split('\n')) {
     if (line.startsWith('+++ ')) {
@@ -212,6 +211,28 @@ export function changedLines(root: string, base: string): Map<string, Set<number
     for (let n = start; n < start + count; n++) set.add(n);
     if (set.size) out.set(file, set);
   }
+}
+
+const isCode = (src: string) =>
+  !!src && !src.startsWith('//') && !src.startsWith('/*') && !src.startsWith('*');
+
+/** Keep only lines with code on them, in files that still exist. */
+function codeLines(root: string, file: string, lines: Set<number>): Set<number> {
+  if (file.endsWith('.d.ts') || !existsSync(join(root, file))) return new Set();
+  const text = readFileSync(join(root, file), 'utf8').split('\n');
+  return new Set([...lines].filter((n) => isCode((text[n - 1] ?? '').trim())));
+}
+
+/**
+ * Source lines added or changed since `base`, per file, including uncommitted edits and new
+ * untracked files. Blank and comment-only lines are left out.
+ */
+export function changedLines(root: string, base: string): Map<string, Set<number>> {
+  const raw = new Map<string, Set<number>>();
+  parseDiff(
+    git(root, ['diff', '--unified=0', '--no-color', '--no-ext-diff', base, '--', SOURCE_PATHSPEC]),
+    raw,
+  );
   const untracked = git(root, [
     'ls-files',
     '--others',
@@ -221,21 +242,12 @@ export function changedLines(root: string, base: string): Map<string, Set<number
   ]);
   for (const f of untracked.split('\n').filter(Boolean)) {
     const count = readFileSync(join(root, f), 'utf8').split('\n').length;
-    out.set(f, new Set(Array.from({ length: count }, (_, i) => i + 1)));
+    raw.set(f, new Set(Array.from({ length: count }, (_, i) => i + 1)));
   }
-
-  for (const [f, set] of out) {
-    if (f.endsWith('.d.ts') || !existsSync(join(root, f))) {
-      out.delete(f);
-      continue;
-    }
-    const text = readFileSync(join(root, f), 'utf8').split('\n');
-    for (const n of set) {
-      const src = (text[n - 1] ?? '').trim();
-      if (!src || src.startsWith('//') || src.startsWith('/*') || src.startsWith('*'))
-        set.delete(n);
-    }
-    if (!set.size) out.delete(f);
+  const out = new Map<string, Set<number>>();
+  for (const [f, lines] of raw) {
+    const code = codeLines(root, f, lines);
+    if (code.size) out.set(f, code);
   }
   return out;
 }
