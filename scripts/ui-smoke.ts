@@ -317,6 +317,7 @@ const routes: [string, string][] = [
   ['destination-new', 'pipelines/destinations/new?project=demo&template=meta-capi'],
   ['destination-pick', 'pipelines/destinations/new?project=demo'],
   ['transformations', 'pipelines/transformations?project=demo'],
+  ['imports', 'pipelines/imports?project=demo'],
   ['exports', 'pipelines/exports?project=demo'],
   ['settings', 'settings?project=demo'],
   [
@@ -552,6 +553,42 @@ const actions: Record<string, (p: Page) => Promise<void>> = {
   'insights-trendline': async (p) => {
     await p.getByRole('button', { name: 'Add a note' }).click();
     await p.waitForTimeout(300);
+  },
+  imports: async (p) => {
+    // A small PostHog export: two pageviews and a signup, one record without a time.
+    const rows = [
+      {
+        uuid: 'ph-1',
+        event: '$pageview',
+        timestamp: new Date(now - 86_400_000).toISOString(),
+        distinct_id: 'ph-user',
+        properties: { $current_url: 'https://demo.test/pricing', $browser: 'Firefox' },
+      },
+      {
+        uuid: 'ph-2',
+        event: '$pageview',
+        timestamp: new Date(now - 80_000_000).toISOString(),
+        distinct_id: 'ph-user',
+        properties: { $current_url: 'https://demo.test/' },
+      },
+      {
+        uuid: 'ph-3',
+        event: 'signed_up',
+        timestamp: new Date(now - 79_000_000).toISOString(),
+        distinct_id: 'ph-user',
+        properties: { plan: 'pro' },
+      },
+      { uuid: 'ph-4', event: 'broken' },
+    ];
+    await p.locator('input[type=file]').setInputFiles({
+      name: 'posthog-events.ndjson',
+      mimeType: 'application/x-ndjson',
+      buffer: Buffer.from(rows.map((r) => JSON.stringify(r)).join('\n')),
+    });
+    await p.waitForTimeout(700);
+    await p.screenshot({ path: `${out}/imports-preview.png`, fullPage: true });
+    await p.getByRole('button', { name: /^Import \d/ }).click();
+    await p.waitForTimeout(1200);
   },
   cohorts: async (p) => {
     await p

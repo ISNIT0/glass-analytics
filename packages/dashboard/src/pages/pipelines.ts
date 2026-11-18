@@ -3,6 +3,13 @@
  * (rules applied at ingest) and batch exports (hourly or daily files or rows).
  */
 
+import type { WireEvent } from '@dataflare/core/events';
+import {
+  csvRecord,
+  type ImportPreset,
+  mapRecord,
+  parseCsvLine,
+} from '@dataflare/core/import-presets';
 import { api } from '../api.ts';
 import { lineChart } from '../components/charts.ts';
 import { cleanFilters, type FilterRow, filterEditor } from '../components/filter-editor.ts';
@@ -18,6 +25,7 @@ import {
   empty,
   errorState,
   later,
+  loading,
   pageHeader,
   panel,
   table,
@@ -28,7 +36,7 @@ import { type Child, h, mount } from '../dom.ts';
 import { ago, count, dateTime } from '../format.ts';
 import { go, href, type Route, scope } from '../state.ts';
 
-type Tab = 'destinations' | 'transformations' | 'exports';
+type Tab = 'destinations' | 'transformations' | 'exports' | 'imports';
 
 interface TemplateInput {
   key: string;
@@ -824,24 +832,243 @@ function exports(): Child {
         icon: 'plus',
         subtitle: 'Credentials are encrypted and never shown again.',
       }),
-      panel(
-        'Import history',
-        [
-          h(
-            'p',
-            { class: 'muted' },
-            'Bring events from another tool, with their timestamps (ids de-duplicate re-runs):',
-          ),
-          h(
-            'pre',
-            { class: 'code-inline' },
-            'npx dataflare-cli import export.ndjson --preset posthog   # or mixpanel, amplitude, segment, ga4',
-          ),
-        ],
-        { icon: 'inbox' },
-      ),
     ];
   });
+}
+
+// ── Imports ────────────────────────────────────────────────────────────────
+
+const SOURCES: { value: ImportPreset; label: string; hint: string }[] = [
+  { value: 'posthog', label: 'PostHog', hint: 'Event export (JSON lines or CSV).' },
+  { value: 'mixpanel', label: 'Mixpanel', hint: 'Raw event export (JSON lines).' },
+  { value: 'amplitude', label: 'Amplitude', hint: 'Export API files, unzipped (JSON lines).' },
+  { value: 'segment', label: 'Segment', hint: 'Track, page and identify messages (JSON lines).' },
+  { value: 'ga4', label: 'Google Analytics 4', hint: 'The BigQuery export, as JSON lines.' },
+  {
+    value: 'raw',
+    label: 'Dataflare events',
+    hint: 'Events in Dataflare’s own shape: event, ts, distinct_id, props…',
+  },
+];
+const IMPORT_BATCH = 1000;
+/** Bigger files go through the CLI, which streams them. */
+const MAX_BROWSER_BYTES = 50 * 1024 * 1024;
+
+/** Records from a file: a JSON array, JSON lines, or CSV with a header row. */
+function readRecords(
+  text: string,
+  name: string,
+): { records: Record<string, unknown>[]; bad: number } {
+  const trimmed = text.trimStart();
+  if (name.endsWith('.json') || trimmed.startsWith('[')) {
+    const all = JSON.parse(text) as unknown;
+    return { records: (Array.isArray(all) ? all : [all]) as Record<string, unknown>[], bad: 0 };
+  }
+  const lines = text.split(/\r?\n/).filter((l) => l.trim());
+  if (name.endsWith('.csv')) {
+    const header = parseCsvLine(lines[0] ?? '').map((x) => x.trim());
+    return {
+      records: lines.slice(1).map((l) => csvRecord(header, parseCsvLine(l))),
+      bad: 0,
+    };
+  }
+  let bad = 0;
+  const records: Record<string, unknown>[] = [];
+  for (const line of lines) {
+    try {
+      records.push(JSON.parse(line) as Record<string, unknown>);
+    } catch {
+      bad++;
+    }
+  }
+  return { records, bad };
+}
+
+function imports(): Child {
+  const project = scope().project;
+  let preset: ImportPreset = 'posthog';
+  let events: WireEvent[] = [];
+  let skipped = 0;
+  let fileName = '';
+  const preview = h('div', { class: 'import-preview' });
+  const file = h('input', {
+    type: 'file',
+    accept: '.ndjson,.jsonl,.json,.csv,application/json,text/csv',
+    class: 'visually-hidden',
+  });
+  const sourceHint = h('small', { class: 'muted' }, SOURCES[0]!.hint);
+  const source = h(
+    'select',
+    { 'aria-label': 'Where the file comes from' },
+    SOURCES.map((x) => h('option', { value: x.value, selected: x.value === preset }, x.label)),
+  );
+  const paintPreview = () => {
+    if (!fileName) {
+      mount(preview);
+      return;
+    }
+    const button = h(
+      'button',
+      { type: 'button', class: 'primary', disabled: !events.length },
+      icon('arrowUp', 15),
+      `Import ${count(events.length)} event${events.length === 1 ? '' : 's'}`,
+    );
+    const progress = h('p', { class: 'muted small', 'aria-live': 'polite' });
+    button.addEventListener('click', async () => {
+      button.disabled = true;
+      let accepted = 0;
+      let dropped = 0;
+      try {
+        for (let i = 0; i < events.length; i += IMPORT_BATCH) {
+          const r = await api.post<{ accepted: number; dropped: number }>('/api/import', {
+            project,
+            events: events.slice(i, i + IMPORT_BATCH),
+          });
+          accepted += r.accepted;
+          dropped += r.dropped;
+          progress.textContent = `Imported ${count(accepted)} of ${count(events.length)}…`;
+        }
+        progress.textContent = '';
+        toast(
+          `Imported ${count(accepted)} events${dropped ? ` (${count(dropped)} rejected)` : ''}`,
+        );
+        mount(
+          preview,
+          h(
+            'div',
+            { class: 'notice good' },
+            icon('check', 16),
+            h(
+              'span',
+              {},
+              `Imported ${count(accepted)} events from ${fileName}${dropped ? `; ${count(dropped)} were rejected` : ''}. Importing the same file again won’t double count.`,
+            ),
+          ),
+        );
+      } catch (err) {
+        mount(progress, errorState(err));
+        button.disabled = false;
+      }
+    });
+    mount(
+      preview,
+      h(
+        'p',
+        {},
+        h('strong', {}, fileName),
+        `: ${count(events.length)} event${events.length === 1 ? '' : 's'} to import`,
+        skipped
+          ? h(
+              'span',
+              { class: 'muted' },
+              `, ${count(skipped)} ${skipped === 1 ? 'record' : 'records'} skipped (no event, time or id the ${SOURCES.find((x) => x.value === preset)?.label ?? preset} format could read)`,
+            )
+          : null,
+        '.',
+      ),
+      events.length
+        ? table(
+            ['Time', 'Event', 'Person', 'Page'],
+            events
+              .slice(0, 5)
+              .map((e) => [
+                h('span', { class: 'nowrap muted' }, dateTime(Number(e.ts))),
+                h('span', { class: 'event-pill' }, e.event),
+                h('span', { class: 'cell-clip' }, e.user_id ?? e.distinct_id ?? ''),
+                h('span', { class: 'cell-clip' }, e.url ?? ''),
+              ]),
+          )
+        : null,
+      events.length > 5
+        ? h('p', { class: 'muted small' }, `The first 5 of ${count(events.length)}.`)
+        : null,
+      h('div', { class: 'form-actions' }, button, progress),
+    );
+  };
+  const load = async () => {
+    const f = file.files?.[0];
+    if (!f) return;
+    if (f.size > MAX_BROWSER_BYTES) {
+      fileName = '';
+      mount(
+        preview,
+        h(
+          'div',
+          { class: 'notice' },
+          icon('alert', 16),
+          h(
+            'span',
+            {},
+            `${f.name} is over 50 MB: import it with the CLI below, which streams the file.`,
+          ),
+        ),
+      );
+      return;
+    }
+    mount(preview, loading('Reading the file', 'table'));
+    try {
+      const { records, bad } = readRecords(await f.text(), f.name.toLowerCase());
+      const mapped = await Promise.all(records.map((r) => mapRecord(preset, r)));
+      events = mapped.filter((e): e is WireEvent => e !== null);
+      skipped = bad + mapped.length - events.length;
+      fileName = f.name;
+      paintPreview();
+    } catch (err) {
+      fileName = '';
+      mount(preview, errorState(err));
+    }
+  };
+  file.addEventListener('change', () => void load());
+  source.addEventListener('change', () => {
+    preset = source.value as ImportPreset;
+    sourceHint.textContent = SOURCES.find((x) => x.value === preset)?.hint ?? '';
+    if (file.files?.[0]) void load();
+  });
+  return [
+    panel(
+      'Import events',
+      h(
+        'div',
+        { class: 'stack' },
+        h('label', { class: 'field' }, h('span', {}, 'From'), source, sourceHint),
+        h(
+          'div',
+          { class: 'field' },
+          h('span', {}, 'File'),
+          h(
+            'div',
+            { class: 'row' },
+            h('label', { class: 'button' }, icon('arrowUp', 14), 'Choose a file', file),
+            h('span', { class: 'muted small' }, 'JSON lines, a JSON array or CSV, up to 50 MB.'),
+          ),
+        ),
+        preview,
+      ),
+      {
+        icon: 'inbox',
+        subtitle:
+          'Events keep their timestamps. Each record gets a stable id, so importing the same file twice doesn’t double count. Nothing is sent to destinations.',
+      },
+    ),
+    panel(
+      'From the command line',
+      [
+        h(
+          'p',
+          { class: 'muted' },
+          'For big files, or to script it. The CLI streams the file in batches:',
+        ),
+        h(
+          'pre',
+          { class: 'code-inline' },
+          'npx dataflare-cli import export.ndjson --preset posthog   # mixpanel, amplitude, segment, ga4, raw',
+        ),
+        h('p', { class: 'muted' }, 'Payments from Stripe have their own importer:'),
+        h('pre', { class: 'code-inline' }, 'npx dataflare-cli stripe import --api-key rk_live_…'),
+      ],
+      { icon: 'code' },
+    ),
+  ];
 }
 
 export function pipelinesPage(route: Route): Node[] {
@@ -856,6 +1083,7 @@ export function pipelinesPage(route: Route): Node[] {
         { value: 'destinations', label: 'Destinations', icon: 'zap' },
         { value: 'transformations', label: 'Transformations', icon: 'filter' },
         { value: 'exports', label: 'Exports', icon: 'database' },
+        { value: 'imports', label: 'Imports', icon: 'inbox' },
       ],
       tab,
       (v) => go(`pipelines/${v}`),
@@ -868,7 +1096,9 @@ export function pipelinesPage(route: Route): Node[] {
         ? transformations()
         : tab === 'exports'
           ? exports()
-          : destinations(route),
+          : tab === 'imports'
+            ? imports()
+            : destinations(route),
     ),
   ];
 }
