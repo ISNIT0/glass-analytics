@@ -2552,25 +2552,19 @@ textarea.prose {
 }
 
 .notice .icon {
-  color: var(--warn);
+  color: var(--notice-accent, var(--warn));
 }
 
 .notice.good {
+  --notice-accent: var(--good);
   background: color-mix(in srgb, var(--good) 10%, transparent);
   border-color: color-mix(in srgb, var(--good) 25%, transparent);
 }
 
-.notice.good .icon {
-  color: var(--good);
-}
-
 .notice.bad {
+  --notice-accent: var(--bad);
   background: color-mix(in srgb, var(--bad) 9%, transparent);
   border-color: color-mix(in srgb, var(--bad) 25%, transparent);
-}
-
-.notice.bad .icon {
-  color: var(--bad);
 }
 
 .upgrade-banner {
