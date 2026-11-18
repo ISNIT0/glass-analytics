@@ -214,6 +214,12 @@ export async function apiRouter(
         'GET /api/sourcemaps?release=': 'Uploaded source maps',
         'DELETE /api/sourcemaps?release=&path=':
           "Delete a release's source maps (server or admin key)",
+        'GET /api/stripe': 'Stripe connection: webhook URL, events received, customers linked',
+        'POST /api/stripe':
+          'Connect Stripe: { webhookSecret, apiKey?, personKey?, groupType?, groupKey?, linkByEmail? } (admin)',
+        'DELETE /api/stripe': 'Disconnect Stripe (admin)',
+        'POST /api/fx-rates': 'Store exchange rates (what `dataflare revenue rates` sends) (admin)',
+        'POST /hooks/stripe/:project': 'Stripe webhook endpoint (signed by Stripe; no API key)',
         'GET /api/projects': 'Projects',
         'POST /api/projects': 'Create a project (admin)',
         'GET /api/instrument?event=&framework=': 'Tracking code for an event',
@@ -373,6 +379,20 @@ export async function apiRouter(
   r.delete('/api/sourcemaps', async ({ url }) => {
     server();
     return json(await service.deleteSourcemaps(params(url)));
+  });
+
+  r.get('/api/stripe', async ({ url }) => json(await service.stripeStatus(params(url))));
+  r.post('/api/stripe', async ({ url }) => {
+    admin();
+    return json(await service.connectStripe({ ...params(url), ...(await body()) }));
+  });
+  r.delete('/api/stripe', async ({ url }) => {
+    admin();
+    return json(await service.disconnectStripe(params(url)));
+  });
+  r.post('/api/fx-rates', async () => {
+    admin();
+    return json(await service.importFxRates(await readJson(request, 5_000_000)));
   });
 
   r.get('/api/settings', async ({ url }) => json(await service.getSettings(params(url))));

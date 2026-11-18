@@ -476,6 +476,32 @@ export const TOOLS: ToolDefinition[] = [
     run: (s, a) => s.deleteAnnotation(a),
   },
   {
+    name: 'connect_stripe',
+    title: 'Connect Stripe',
+    description:
+      'Record revenue from Stripe: paid invoices, one-off charges, refunds and subscription changes (for MRR) arrive through a signed webhook. Pass the webhook signing secret; optionally a restricted key (customers: read) and how customers map to people (metadata key, or email) and accounts (group type). Returns the webhook URL to add in Stripe and the events it should send.',
+    input: inputs.connectStripe,
+    scope: 'admin',
+    run: (s, a) => s.connectStripe(a),
+  },
+  {
+    name: 'stripe_status',
+    title: 'Stripe status',
+    description:
+      'Whether Stripe is connected, the webhook URL, webhooks received, and how many customers are linked to people.',
+    input: inputs.stripeStatus,
+    scope: 'read',
+    run: (s, a) => s.stripeStatus(a),
+  },
+  {
+    name: 'disconnect_stripe',
+    title: 'Disconnect Stripe',
+    description: 'Stop recording revenue from Stripe (revenue already recorded stays).',
+    input: inputs.stripeStatus,
+    scope: 'admin',
+    run: (s, a) => s.disconnectStripe(a),
+  },
+  {
     name: 'list_issues',
     title: 'List error issues',
     description:

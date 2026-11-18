@@ -11,10 +11,12 @@ import type { z } from 'zod/v4';
 import { runFunnelCorrelation } from './correlation.ts';
 import { runFunnel } from './funnel.ts';
 import { runRetention } from './retention.ts';
+import { runRevenue } from './revenue.ts';
 import {
   funnelCorrelationSpec,
   funnelSpec,
   retentionSpec,
+  revenueSpec,
   trendsSpec,
   webSpec,
 } from './schemas.ts';
@@ -69,6 +71,12 @@ export const INSIGHTS = {
     schema: retentionSpec,
     run: runRetention,
   }),
+  revenue: define({
+    description:
+      'Revenue and recurring revenue per period: gross, refunds, net, paying customers, ARPU, MRR/ARR and its movements (new, expansion, contraction, churned, reactivated), churn and LTV, by product or first-touch channel, and the top customers or accounts. Reads revenue events and Stripe.',
+    schema: revenueSpec,
+    run: runRevenue,
+  }),
 } as const;
 
 export type InsightKind = keyof typeof INSIGHTS;
@@ -81,6 +89,7 @@ export * from './correlation.ts';
 export * from './experiment.ts';
 export * from './funnel.ts';
 export * from './retention.ts';
+export * from './revenue.ts';
 export * from './schemas.ts';
 export * from './trends.ts';
 export * from './types.ts';

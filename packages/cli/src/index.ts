@@ -19,6 +19,7 @@ import { init } from './commands/init.ts';
 import { lakeMaintain } from './commands/lake.ts';
 import { mcpBridge } from './commands/mcp.ts';
 import { sourcemaps } from './commands/sourcemaps.ts';
+import { revenueRates, stripeImport } from './commands/stripe.ts';
 import { ci, key, status, upgrade } from './commands/upgrade.ts';
 import { UsageError } from './config.ts';
 import { color, fail, line } from './output.ts';
@@ -88,6 +89,10 @@ ${color.bold('Agents')}
                                  Import a history of events, keeping their timestamps
   dataflare sourcemaps upload <dir> --release <version> [--url-prefix /assets]
                                  Upload a build's source maps for error tracking (also: list, delete)
+  dataflare stripe import --api-key rk_… [--since 2024-01-01]
+                                 Import Stripe revenue history (invoices, charges, refunds, subscriptions)
+  dataflare revenue rates [--since 2024-01-01]
+                                 Load older ECB exchange rates, for imported revenue in other currencies
   dataflare mcp                  MCP server over stdio (what .mcp.json runs)
 
 Environment: GLASS_HOST, GLASS_API_KEY and GLASS_PROJECT override .glass/ settings.
@@ -135,6 +140,11 @@ const STRING_OPTIONS = [
   'preset',
   'release',
   'url-prefix',
+  'api-key',
+  'since',
+  'person-key',
+  'group-type',
+  'group-key',
 ];
 const BOOLEAN_OPTIONS = [
   'json',
@@ -236,6 +246,26 @@ export async function main(argv: string[]): Promise<void> {
         project: typeof flags.project === 'string' ? flags.project : undefined,
         json: Boolean(flags.json),
         dryRun: Boolean(flags['dry-run']),
+      });
+    case 'stripe':
+      if (sub !== 'import')
+        throw new UsageError('Usage: dataflare stripe import --api-key rk_… [--since 2024-01-01]');
+      return stripeImport({
+        apiKey: typeof flags['api-key'] === 'string' ? flags['api-key'] : undefined,
+        since: typeof flags.since === 'string' ? flags.since : undefined,
+        project: typeof flags.project === 'string' ? flags.project : undefined,
+        personKey: typeof flags['person-key'] === 'string' ? flags['person-key'] : undefined,
+        groupType: typeof flags['group-type'] === 'string' ? flags['group-type'] : undefined,
+        groupKey: typeof flags['group-key'] === 'string' ? flags['group-key'] : undefined,
+        json: Boolean(flags.json),
+        dryRun: Boolean(flags['dry-run']),
+      });
+    case 'revenue':
+      if (sub !== 'rates')
+        throw new UsageError('Usage: dataflare revenue rates [--since 2024-01-01]');
+      return revenueRates({
+        since: typeof flags.since === 'string' ? flags.since : undefined,
+        json: Boolean(flags.json),
       });
     case 'sourcemaps':
       return sourcemaps(sub, arg, {

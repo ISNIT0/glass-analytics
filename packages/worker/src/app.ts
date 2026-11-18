@@ -25,6 +25,7 @@ import { handleIngest } from './ingest.ts';
 import { llmsTxt } from './llms.ts';
 import { handleMcp } from './mcp/server.ts';
 import { handleReplayChunk } from './replays.ts';
+import { handleStripeWebhook } from './revenue.ts';
 import { GlassService } from './service.ts';
 import { D1Store } from './stores/d1.ts';
 import { LakeStore } from './stores/lake.ts';
@@ -147,6 +148,11 @@ export function createApp(options: AppOptions) {
           service.actor = actorName ? `${actorName} (MCP, ${scope} key)` : `MCP, ${scope} key`;
           return withCors(await handleMcp(request, service, scope));
         }
+      }
+      // Stripe webhooks: authenticated by their signature, not an API key.
+      const stripe = /^\/hooks\/stripe\/([A-Za-z0-9_-]{1,64})\/?$/.exec(path);
+      if (stripe && request.method === 'POST') {
+        return json(await handleStripeWebhook(request, env, store, stripe[1]!, base, now));
       }
       if (path === '/api' || path.startsWith('/api/')) {
         const router = await apiRouter(service, env, request, now);

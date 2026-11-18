@@ -164,6 +164,7 @@ import {
   replaysEnabled,
   writeCachedSummary,
 } from './replays.ts';
+import { connectStripe, disconnectStripe, storeRates, stripeStatus } from './revenue.ts';
 import type { EventStore } from './stores/types.ts';
 import {
   deleteTransformation,
@@ -957,6 +958,52 @@ export const inputs = {
     ids: z.array(z.string()).min(1).describe('Issues to merge into it.'),
   }),
   listSourcemaps: z.object({ project, release: z.string().optional() }),
+  connectStripe: z.object({
+    project,
+    webhookSecret: z
+      .string()
+      .optional()
+      .describe('The webhook endpoint’s signing secret (whsec_…). Required the first time.'),
+    apiKey: z
+      .string()
+      .nullable()
+      .optional()
+      .describe(
+        'Optional restricted key (rk_…) with read access to Customers, to look up who a customer is. null removes it.',
+      ),
+    personKey: z
+      .string()
+      .optional()
+      .describe(
+        'customer.metadata key holding your user id (what you pass to glass.identify). Default "dataflare_id"; "user_id" is also tried.',
+      ),
+    groupType: z
+      .string()
+      .optional()
+      .describe('Report revenue per account: the group type, e.g. "company".'),
+    groupKey: z
+      .string()
+      .optional()
+      .describe('customer.metadata key holding the account id. Default: the Stripe customer id.'),
+    linkByEmail: z
+      .boolean()
+      .optional()
+      .describe(
+        'Match customers without an id in their metadata to people by email (the email is not stored).',
+      ),
+  }),
+  stripeStatus: z.object({ project }),
+  importFxRates: z.object({
+    rates: z
+      .array(
+        z.object({
+          day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          currency: z.string().length(3),
+          rate: z.number().positive(),
+        }),
+      )
+      .max(10_000),
+  }),
   deleteSourcemaps: z.object({ project, release: z.string(), path: z.string().optional() }),
   getSettings: z.object({ project }),
   updateSettings: z.object({
@@ -1061,6 +1108,8 @@ export class GlassService {
     const spec = def.schema.parse(input) as { project?: string } & Record<string, unknown>;
     const ctx = await this.context(spec.project);
     const effective: Record<string, unknown> = this.withProjectOptions(spec, ctx.settings);
+    if (kind === 'revenue' && !effective.currency)
+      effective.currency = ctx.settings.baseCurrency ?? 'USD';
     const breakdown = effective.breakdown;
     if (breakdown === 'cohort' || (Array.isArray(breakdown) && breakdown[0] === 'cohort')) {
       const keys = (effective.breakdownCohorts as string[] | undefined) ?? [];
@@ -1480,6 +1529,7 @@ GROUP BY event ORDER BY cur DESC, event ASC LIMIT 50`;
         dimension: spec.dimension ?? 'channel',
         conversions,
         limit: spec.limit,
+        revenue: await this.revenueConfigured(ctx.project, ctx.settings),
       },
       ctx,
     );
@@ -2006,6 +2056,36 @@ ORDER BY ts_ms DESC LIMIT 100`;
       : [];
     if (!person && events.length === 0)
       throw new HttpError(404, `No person or device "${id}" in project "${ctx.project}"`);
+    // Lifetime revenue (two years), when the project records revenue.
+    let revenue: {
+      net: number;
+      gross: number;
+      orders: number;
+      firstAt: string | null;
+      lastAt: string | null;
+      currency: string;
+    } | null = null;
+    if (await this.revenueConfigured(ctx.project, ctx.settings)) {
+      const rev = d.jsonNumber('props', ['$revenue_base']);
+      const revSql = `WITH ${eventsCte(d, {
+        project: ctx.project,
+        from: now - 730 * DAY_MS,
+        to: now + 60_000,
+        filters: [{ property: 'props.$revenue_base', op: 'is_set' }],
+      })}
+SELECT SUM(r) AS net, SUM(CASE WHEN r > 0 THEN r ELSE 0 END) AS gross, SUM(CASE WHEN r > 0 THEN 1 ELSE 0 END) AS orders,
+  MIN(ts_ms) AS first_ts, MAX(ts_ms) AS last_ts
+FROM (SELECT ts_ms, ${rev} AS r FROM ev WHERE pid = ${d.str(id)} OR distinct_id = ${d.str(id)}) x`;
+      const [r] = await this.store.query(revSql);
+      revenue = {
+        net: Math.round(num(r?.net) * 100) / 100,
+        gross: Math.round(num(r?.gross) * 100) / 100,
+        orders: num(r?.orders),
+        firstAt: r?.first_ts ? new Date(num(r.first_ts)).toISOString() : null,
+        lastAt: r?.last_ts ? new Date(num(r.last_ts)).toISOString() : null,
+        currency: ctx.settings.baseCurrency ?? 'USD',
+      };
+    }
     return {
       project: ctx.project,
       id,
@@ -2014,6 +2094,7 @@ ORDER BY ts_ms DESC LIMIT 100`;
       firstSeen: person ? new Date(person.first_seen).toISOString() : (events.at(-1)?.time ?? null),
       lastSeen: person ? new Date(person.last_seen).toISOString() : (events[0]?.time ?? null),
       devices: devices.results.map((r) => r.distinct_id),
+      ...(revenue ? { revenue } : {}),
       recentEvents: events,
       replays: replays.map((r) => ({
         session: r.session_id,
@@ -2021,7 +2102,7 @@ ORDER BY ts_ms DESC LIMIT 100`;
         errors: r.errors,
         url: r.start_url,
       })),
-      summary: `${person ? 'Identified person' : 'Anonymous device'} "${id}": ${events.length} events in 90 days${replays.length ? `, ${replays.length} recorded sessions` : ''}.`,
+      summary: `${person ? 'Identified person' : 'Anonymous device'} "${id}": ${events.length} events in 90 days${replays.length ? `, ${replays.length} recorded sessions` : ''}${revenue?.orders ? `, ${revenue.orders} payments worth ${revenue.net} ${revenue.currency} net` : ''}.`,
       sql: [sql],
       dashboard: this.link(`users/${encodeURIComponent(id)}`, { project: ctx.project }),
     };
@@ -3851,6 +3932,68 @@ WHERE project = ${d.str(project)} AND session_id = ${d.str(row.session_id)} AND 
       project: ctx.project,
       deleted: n,
       summary: `Deleted ${n} source map${n === 1 ? '' : 's'}.`,
+    };
+  }
+
+  // ── Revenue ──────────────────────────────────────────────────────────────
+
+  /** Whether a project records revenue (revenue events set, or Stripe connected). */
+  private async revenueConfigured(project: string, settings: ProjectSettings): Promise<boolean> {
+    if (settings.revenueEvents?.length) return true;
+    const row = await this.env.DB.prepare('SELECT 1 AS yes FROM stripe_accounts WHERE project = ?')
+      .bind(project)
+      .first();
+    return Boolean(row);
+  }
+
+  async connectStripe(input: unknown) {
+    const spec = inputs.connectStripe.parse(input);
+    const ctx = await this.context(spec.project);
+    const { project: _, ...rest } = spec;
+    const status = await connectStripe(this.env, ctx.project, rest, this.baseUrl);
+    return {
+      project: ctx.project,
+      ...status,
+      summary: `Stripe is connected. In Stripe, the webhook endpoint ${status.webhookUrl} should send: ${status.events.join(', ')}. Backfill history with \`npx dataflare-cli stripe import --api-key rk_…\`.`,
+    };
+  }
+
+  async stripeStatus(input: unknown) {
+    const ctx = await this.context(inputs.stripeStatus.parse(input).project);
+    const status = await stripeStatus(this.env, ctx.project, this.baseUrl);
+    return {
+      project: ctx.project,
+      ...status,
+      summary: status.connected
+        ? `Stripe connected: ${status.received} webhooks received${status.lastEventAt ? `, the last at ${status.lastEventAt}` : ''}; ${status.customers?.linked ?? 0} of ${status.customers?.known ?? 0} known customers linked to people.`
+        : `Stripe is not connected. Add a webhook endpoint at ${status.webhookUrl} in Stripe, then call connect_stripe with its signing secret.`,
+    };
+  }
+
+  async disconnectStripe(input: unknown) {
+    const ctx = await this.context(inputs.stripeStatus.parse(input).project);
+    await disconnectStripe(this.env, ctx.project);
+    return {
+      project: ctx.project,
+      summary: 'Stripe disconnected. Revenue events already recorded stay.',
+    };
+  }
+
+  /** Exchange rates from the CLI (`dataflare revenue rates`), for history older than the Worker fetched. */
+  async importFxRates(input: unknown) {
+    const spec = inputs.importFxRates.parse(input);
+    const n = await storeRates(this.env, spec.rates);
+    const span = await this.env.DB.prepare(
+      'SELECT MIN(day) AS first, MAX(day) AS last, COUNT(DISTINCT day) AS days FROM fx_rates',
+    ).first<{
+      first: string;
+      last: string;
+      days: number;
+    }>();
+    return {
+      stored: n,
+      rates: span,
+      summary: `Stored ${n} rates; exchange rates now cover ${span?.first} to ${span?.last} (${span?.days} days).`,
     };
   }
 

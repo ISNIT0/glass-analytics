@@ -31,7 +31,17 @@ export const revenueEventSchema = z.object({
   subscriptionProperty: z
     .string()
     .optional()
-    .describe('Property with a subscription id, so recurring revenue (MRR) can be tracked.'),
+    .describe(
+      'Property with a subscription id: each event then sets that subscription’s MRR to its amount (0 cancels it), so recurring revenue can be tracked.',
+    ),
+  interval: z
+    .enum(['month', 'year'])
+    .optional()
+    .describe('Billing interval of subscription payments, for MRR. Default "month".'),
+  kind: z
+    .enum(['sale', 'refund'])
+    .optional()
+    .describe('"refund": the amount is money returned (counted as negative). Default "sale".'),
 });
 
 export type RevenueEvent = z.infer<typeof revenueEventSchema>;
@@ -56,7 +66,9 @@ export const projectSettingsSchema = z.object({
     .string()
     .length(3)
     .optional()
-    .describe('ISO code revenue is converted to for reporting, e.g. "GBP". Default "USD".'),
+    .describe(
+      'ISO code revenue is converted to for reporting, e.g. "GBP". Default "USD". Changing it affects new events only.',
+    ),
   revenueEvents: z
     .array(revenueEventSchema)
     .optional()

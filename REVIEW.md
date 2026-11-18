@@ -51,11 +51,25 @@ Run: `pnpm install && pnpm typecheck && pnpm lint && pnpm test` (lake conformanc
   `list_issues`, `get_issue`, `update_issue`, `merge_issues`, `list_sourcemaps`;
   `site_health` lists top issues (migration 0015). Issue reads are checked against DataFusion.
 
+- **Revenue**: revenue events (settings) and Stripe events are normalised at ingest to
+  `$revenue_base` in the base currency with the day's ECB rates (fetched by maintenance; older
+  ones with `dataflare revenue rates`), plus `$subscription_id`/`$mrr` for recurring revenue.
+  Stripe: signed webhook `POST /hooks/stripe/<project>` (invoices, one-off charges, refunds,
+  subscription changes; payments keyed on the Stripe object so retries and imports
+  de-duplicate), customers linked to people by metadata or email (email not stored), accounts
+  via a group type; `connect_stripe`/`stripe_status`; `dataflare stripe import` for history.
+  New `revenue` kind (`query_revenue`): gross, refunds, net, orders, customers, ARPU, MRR/ARR
+  with new/expansion/contraction/churned/reactivated, revenue and customer churn, LTV, by
+  product, first-touch channel/UTM or any property, top customers or accounts. Sources report
+  adds revenue per first touch; person detail adds lifetime revenue (migration 0016). Revenue
+  reads are checked against DataFusion.
+
 ## Not done yet
 
-- Phase 9 revenue + Stripe, Phase 10 dashboard UI for everything above (including an Errors
-  page), docs, comparison pages, e2e tests (SDK `captureException`, web experiments, early
-  access, overrides), upgrade dry-run.
+- Phase 10: dashboard UI for everything above (Errors, Revenue, Data › Destinations/
+  Transformations/Exports, Groups, experiment and flag depth, insight options), docs,
+  comparison pages, e2e tests (SDK `captureException`, web experiments, early access,
+  overrides), upgrade dry-run.
 
 ## Decisions to confirm
 
@@ -77,5 +91,9 @@ Run: `pnpm install && pnpm typecheck && pnpm lint && pnpm test` (lake conformanc
   top frames' real names change; merging covers that.
 - The per-issue rate limit is counted per Worker isolate (free, approximate), not globally.
 - An exception that happened before its issue was resolved (a late batch) doesn't reopen it.
+- MRR comes from subscription state (Stripe subscription events, or payments of a revenue event
+  with `subscriptionProperty`, where no payment within 35/370 days counts as churned). Trials
+  are not MRR. Stripe plan changes older than Stripe's 30 days of events can't be imported.
+- Subscription state is read from 400 days before the range (a yearly plan renews within it).
 - BigQuery uses streaming inserts (`insertAll`), not load jobs: simpler, and rows dedupe on the
   event id for about a minute; a load-job path would need a GCS bucket.

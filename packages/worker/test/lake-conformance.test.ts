@@ -151,7 +151,7 @@ function fixture(now: number) {
           distinct_id: device,
           session_id: session,
           url: 'https://acme.com/pricing',
-          props: { value: 49 + u },
+          props: { value: 49 + u, plan: u % 12 ? 'pro' : 'team', sub: `sub-${u}` },
         });
     }
     add('$exposure', {
@@ -176,6 +176,14 @@ const CART_ERROR = {
 const CART_ISSUE = issueIdFor(await fingerprint(exceptionInfo(CART_ERROR, 'acme.com')));
 
 const READS: [string, string, unknown?][] = [
+  ['POST', '/api/query', { kind: 'revenue', from: '-30d', interval: 'week' }],
+  ['POST', '/api/query', { kind: 'revenue', from: '-14d', interval: 'day', breakdown: 'product' }],
+  [
+    'POST',
+    '/api/query',
+    { kind: 'revenue', from: '-30d', breakdown: 'channel', aggregateBy: 'session' },
+  ],
+  ['POST', '/api/reports/sources?from=-7d', { dimension: 'utm_source' }],
   ['GET', '/api/issues?from=-7d'],
   ['GET', `/api/issues/${CART_ISSUE}?from=-7d`],
   ['GET', '/api/issues?from=-7d&order=users&filters=[{"property":"browser","value":"Chrome"}]'],
@@ -568,6 +576,23 @@ function conformance(name: string, split: boolean) {
       const events = fixture(Date.now());
       for (const app of [d1, lake]) {
         await app.json('POST', '/api/projects', { body: { id: 'acme' } });
+        // Purchases are revenue (and subscription payments, for MRR).
+        await app.json('PATCH', '/api/settings', {
+          body: {
+            project: 'acme',
+            settings: {
+              baseCurrency: 'GBP',
+              revenueEvents: [
+                {
+                  event: 'purchase',
+                  amountProperty: 'value',
+                  productProperty: 'plan',
+                  subscriptionProperty: 'sub',
+                },
+              ],
+            },
+          },
+        });
         await app.json('POST', '/api/experiments', {
           body: { key: 'checkout-v2', goal: { event: 'purchase' } },
         });
@@ -658,6 +683,20 @@ function conformance(name: string, split: boolean) {
         assert.deepEqual(normalise(b), normalise(a));
       });
     }
+
+    it('compares revenue that is really there', async () => {
+      const r = await d1.json<{ totals: { net: number; mrr: number; customers: number } }>(
+        'POST',
+        '/api/query',
+        {
+          body: { kind: 'revenue', from: '-30d' },
+        },
+      );
+      assert.ok(
+        r.totals.net > 0 && r.totals.mrr > 0 && r.totals.customers > 1,
+        JSON.stringify(r.totals),
+      );
+    });
 
     it('batch exports send the same rows from both stores', async () => {
       const exported = new Map<TestApp, Record<string, unknown>[]>();

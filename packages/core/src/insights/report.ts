@@ -289,9 +289,13 @@ export interface SourceRow {
   converted: number;
   rate: number;
   bounceRate: number;
+  /** With revenue: net revenue from people first touched by this value, and per visitor. */
+  revenue?: number;
+  payers?: number;
+  revenuePerVisitor?: number;
 }
 
-function dimensionExpr(dimension: SourceDimension, alias: string): string {
+export function dimensionExpr(dimension: SourceDimension, alias: string): string {
   const col = (name: string) => `COALESCE(NULLIF(${alias}.${name}, ''), '(none)')`;
   switch (dimension) {
     case 'channel':
@@ -310,7 +314,12 @@ function dimensionExpr(dimension: SourceDimension, alias: string): string {
  * bounced. `conversions` are the events that count as converting.
  */
 export async function runSources(
-  spec: ReportRange & { dimension: SourceDimension; conversions: string[]; limit?: number },
+  spec: ReportRange & {
+    dimension: SourceDimension;
+    conversions: string[];
+    limit?: number;
+    revenue?: boolean;
+  },
   ctx: QueryContext,
 ): Promise<{ dimension: SourceDimension; rows: SourceRow[]; sql: string[] }> {
   const d = ctx.dialect;
@@ -332,8 +341,28 @@ FROM touch
 JOIN visits ON visits.distinct_id = touch.distinct_id
 LEFT JOIN conv ON conv.distinct_id = touch.distinct_id
 GROUP BY touch.val ORDER BY visitors DESC, touch.val ASC LIMIT ${Math.min(spec.limit ?? 20, 100)}`;
-  const rows = (await ctx.execute(sql)).map((r) => {
+  // Revenue by the paying person's first touch (people, not devices: payments often happen server-side).
+  const revenueSql = spec.revenue
+    ? `WITH ${eventsCte(d, { project: ctx.project, ...range, events: [PV], filters: spec.filters })},
+${eventsCte(d, { project: ctx.project, ...range, filters: [...(spec.filters ?? []), { property: 'props.$revenue_base', op: 'is_set' }], name: 'mv' })},
+pfirst AS (SELECT pid, MIN(ts_ms) AS t FROM ev GROUP BY pid),
+ptouch AS (
+  SELECT ev.pid AS pid, MIN(${dimensionExpr(spec.dimension, 'ev')}) AS val
+  FROM ev JOIN pfirst ON pfirst.pid = ev.pid AND ev.ts_ms = pfirst.t GROUP BY ev.pid
+)
+SELECT ptouch.val AS val, SUM(${d.jsonNumber('mv.props', ['$revenue_base'])}) AS revenue, COUNT(DISTINCT mv.pid) AS payers
+FROM mv JOIN ptouch ON ptouch.pid = mv.pid GROUP BY ptouch.val`
+    : null;
+  const [main, money] = await Promise.all([
+    ctx.execute(sql),
+    revenueSql ? ctx.execute(revenueSql) : Promise.resolve([]),
+  ]);
+  const revenueBy = new Map(
+    money.map((r) => [text(r.val), { revenue: num(r.revenue), payers: num(r.payers) }]),
+  );
+  const rows = main.map((r) => {
     const visitors = num(r.visitors);
+    const m = revenueBy.get(text(r.val));
     return {
       value: text(r.val),
       visitors,
@@ -341,9 +370,18 @@ GROUP BY touch.val ORDER BY visitors DESC, touch.val ASC LIMIT ${Math.min(spec.l
       converted: num(r.converted),
       rate: visitors ? num(r.converted) / visitors : 0,
       bounceRate: visitors ? num(r.bounced) / visitors : 0,
+      ...(spec.revenue
+        ? {
+            revenue: Math.round((m?.revenue ?? 0) * 100) / 100,
+            payers: m?.payers ?? 0,
+            revenuePerVisitor: visitors
+              ? Math.round(((m?.revenue ?? 0) / visitors) * 100) / 100
+              : 0,
+          }
+        : {}),
     };
   });
-  return { dimension: spec.dimension, rows, sql: [sql] };
+  return { dimension: spec.dimension, rows, sql: revenueSql ? [sql, revenueSql] : [sql] };
 }
 
 // ── Health ────────────────────────────────────────────────────────────────

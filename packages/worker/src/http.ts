@@ -74,6 +74,13 @@ export function errorResponse(err: unknown): Response {
   );
 }
 
+/** The raw body, refusing anything over `maxBytes` (webhooks verify signatures over exact bytes). */
+export async function readText(request: Request, maxBytes = 1_000_000): Promise<string> {
+  const text = await request.text();
+  if (text.length > maxBytes) throw new HttpError(413, `Body too large (max ${maxBytes} bytes)`);
+  return text;
+}
+
 export async function readJson<T = unknown>(request: Request, maxBytes = 1_000_000): Promise<T> {
   const text = await request.text();
   if (text.length > maxBytes) throw new HttpError(413, `Body too large (max ${maxBytes} bytes)`);

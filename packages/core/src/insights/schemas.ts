@@ -323,6 +323,37 @@ export const funnelCorrelationSpec = funnelSpec
   })
   .describe('What goes with converting through a funnel, and with dropping off.');
 
+export const revenueSpec = z
+  .object({
+    ...common,
+    interval: z
+      .enum(['day', 'week', 'month'])
+      .optional()
+      .describe('Period length. Default "month".'),
+    breakdown: z
+      .string()
+      .optional()
+      .describe(
+        'Split revenue by "product", a first-touch source ("channel", "referrer", "utm_source", "utm_medium", "utm_campaign", "entry_page"), "country", or any property such as "person.plan" or "group.company.industry".',
+      ),
+    aggregateBy,
+    limit: z
+      .number()
+      .int()
+      .min(1)
+      .max(100)
+      .optional()
+      .describe('Top customers to list. Default 10.'),
+    currency: z
+      .string()
+      .length(3)
+      .optional()
+      .describe("The currency amounts are in (the project's base currency). Set by the server."),
+  })
+  .describe(
+    'Revenue: gross, refunds, net, orders, paying customers, ARPU; MRR/ARR with new, expansion, contraction, churned and reactivated MRR; revenue and customer churn; LTV; a breakdown and top customers (or accounts).',
+  );
+
 export const retentionSpec = z
   .object({
     ...common,
