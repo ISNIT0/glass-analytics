@@ -5742,3 +5742,28 @@ select.short-select {
 .rich-list > .row > .picker {
   flex: 1;
 }
+
+.stack.wide-stack {
+  max-width: 820px;
+}
+
+.metric-cell {
+  display: grid;
+  gap: 2px;
+  min-width: 160px;
+}
+
+.lift-cell {
+  display: grid;
+  gap: 4px;
+  min-width: 140px;
+}
+
+.experiment-actions {
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.section-gap {
+  margin-top: 16px;
+}

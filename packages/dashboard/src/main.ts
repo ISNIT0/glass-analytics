@@ -236,7 +236,8 @@ function crumbs(route: Route): HTMLElement {
       ? 'New analysis'
       : route.page === 'reports' || route.page === 'pipelines'
         ? sub[0]!.toUpperCase() + sub.slice(1)
-        : route.page === 'groups' && route.rest[1]
+        : (route.page === 'groups' || (route.page === 'experiments' && sub === 'holdouts')) &&
+            route.rest[1]
           ? route.rest[1]
           : sub
     : null;

@@ -154,6 +154,55 @@ await call('POST', '/api/exports', {
   settings: { url: hook },
 });
 const issues = await call('GET', '/api/issues?project=demo&from=-7d');
+// An experiment with two primary metrics, a guardrail and a holdout, started a week ago.
+await call('PUT', '/api/holdouts/q4-holdout', { project: 'demo', percentage: 10 });
+await call('POST', '/api/experiments', {
+  project: 'demo',
+  key: 'checkout-test',
+  hypothesis: 'A shorter checkout gets more people to pay',
+  metrics: [
+    { kind: 'conversion', event: 'order_paid', name: 'Paid' },
+    {
+      kind: 'mean',
+      event: 'order_paid',
+      math: 'sum',
+      property: 'amount',
+      name: 'Revenue per person',
+    },
+  ],
+  secondary: [{ kind: 'conversion', event: '$exception', goal: 'decrease', name: 'Errors' }],
+  holdout: 'q4-holdout',
+  minimumDays: 0,
+});
+await call('POST', '/api/experiments/checkout-test/start', { project: 'demo' });
+const exposures = [];
+for (let i = 0; i < 80; i++) {
+  const variant = i % 2 ? 'test' : 'control';
+  // After the start: only exposures from then on count.
+  const ts = Date.now() + i;
+  exposures.push({
+    id: `exp-${i}`,
+    event: '$exposure',
+    ts,
+    distinct_id: `exp-user-${i}`,
+    session_id: `xs-${i}`,
+    url: 'https://demo.test/checkout',
+    props: { flag: 'checkout-test', variant },
+    flags: { 'checkout-test': variant },
+  });
+  if (i % (variant === 'test' ? 3 : 5) === 0)
+    exposures.push({
+      id: `exp-paid-${i}`,
+      event: 'order_paid',
+      ts: ts + 1,
+      distinct_id: `exp-user-${i}`,
+      session_id: `xs-${i}`,
+      url: 'https://demo.test/checkout',
+      props: { amount: 40 + (i % 3) * 10 },
+      flags: { 'checkout-test': variant },
+    });
+}
+await call('POST', '/api/import', { project: 'demo', events: exposures });
 await call('PUT', '/api/flags/new-checkout', {
   project: 'demo',
   description: 'The redesigned checkout',
@@ -205,6 +254,10 @@ const routes: [string, string][] = [
   ],
   ['people', 'users?project=demo'],
   ['flag', 'flags/new-checkout?project=demo'],
+  ['experiments-list', 'experiments?project=demo'],
+  ['experiment', 'experiments/checkout-test?project=demo'],
+  ['experiment-new', 'experiments/new?project=demo'],
+  ['holdout', 'experiments/holdouts/q4-holdout?project=demo'],
 ];
 const browser = await chromium.launch({ args: [`--user-agent=${UA}`] });
 const problems: string[] = [];

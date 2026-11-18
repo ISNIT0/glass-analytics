@@ -673,8 +673,10 @@ SELECT variant, COUNT(*) AS exposures, MIN(t0) AS first_exposure, (SELECT COUNT(
   let estimatedDaysToSignificance: number | null = null;
   const mde = spec.mde ?? 0.1;
   const controlStats = measured[0]!.stats.find((s) => s.variant === order[0]);
-  if (controlStats && controlStats.n > 0 && status !== 'winner') {
-    const m0 = primary[0]!;
+  const m0 = primary[0]!;
+  // A rate with no conversions yet has no baseline to plan from.
+  const hasBaseline = controlStats && controlStats.n > 0 && (!isRate(m0) || controlStats.a > 0);
+  if (controlStats && hasBaseline && status !== 'winner') {
     const needed = isRate(m0)
       ? sampleSizeForRate(Math.max(0.001, controlStats.a / controlStats.n), mde, confidence)
       : (() => {
@@ -740,7 +742,16 @@ SELECT variant, COUNT(*) AS exposures, MIN(t0) AS first_exposure, (SELECT COUNT(
   const verdict = {
     no_data: '',
     srm: 'Sample ratio mismatch detected (p < 0.001): exposure tracking or assignment is broken; do not trust these results.',
-    too_early: `Too early to call: wait for ${minimumDays} days and ${minimumExposures} exposures per variant${estimatedDaysToSignificance !== null ? ` (about ${estimatedDaysToSignificance} more days to detect a ${Math.round(mde * 100)}% change)` : ''}.`,
+    too_early: `Too early to call: wait for ${[
+      daysRunning < minimumDays
+        ? `${Math.ceil(minimumDays - daysRunning)} more day${Math.ceil(minimumDays - daysRunning) === 1 ? '' : 's'}`
+        : null,
+      !enough ? `${minimumExposures} exposures per variant` : null,
+    ]
+      .filter(Boolean)
+      .join(
+        ' and ',
+      )}${estimatedDaysToSignificance !== null ? ` (about ${estimatedDaysToSignificance} more days to detect a ${Math.round(mde * 100)}% change)` : ''}.`,
     winner: `"${winner}" is winning on ${decider.name} at ${Math.round(confidence * 100)}% ${engine === 'bayesian' ? 'probability' : 'confidence'}.`,
     no_winner_yet:
       estimatedDaysToSignificance !== null
@@ -772,7 +783,7 @@ SELECT variant, COUNT(*) AS exposures, MIN(t0) AS first_exposure, (SELECT COUNT(
     summary:
       totalExposures === 0
         ? `No exposures to "${spec.flag}" yet.`
-        : `${fmt(totalExposures)} ${actorNoun(aggregation, totalExposures)} exposed over ${daysRunning.toFixed(1)} days. ${decider.name}: ${lines.join('; ')}. ${verdict}${secondaryNotes.length ? ` Secondary: ${secondaryNotes.join('; ')}.` : ''}`,
+        : `${fmt(totalExposures)} ${actorNoun(aggregation, totalExposures)} exposed ${daysRunning < 1 ? 'today' : `over ${daysRunning.toFixed(1)} days`}. ${decider.name}: ${lines.join('; ')}. ${verdict}${secondaryNotes.length ? ` Secondary: ${secondaryNotes.join('; ')}.` : ''}`,
   };
 }
 

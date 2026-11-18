@@ -21,7 +21,10 @@ export interface ConversionStats {
 export interface BayesComparison {
   /** P(variant rate > control rate). */
   probabilityToBeatControl: number;
-  /** Posterior mean of (variant - control) / control. */
+  /**
+   * Posterior median of (variant - control) / control. (The mean is unstable: with few
+   * conversions the control rate can be near zero, and the ratio's mean runs away.)
+   */
   expectedLift: number;
   /** 95% credible interval for the relative lift. */
   liftInterval: [number, number];
@@ -44,10 +47,9 @@ export function compareConversions(
     lifts[i] = (v - c) / c;
   }
   lifts.sort();
-  const mean = lifts.reduce((a, b) => a + b, 0) / samples;
   return {
     probabilityToBeatControl: wins / samples,
-    expectedLift: mean,
+    expectedLift: lifts[Math.floor(samples / 2)]!,
     liftInterval: [lifts[Math.floor(0.025 * samples)]!, lifts[Math.floor(0.975 * samples)]!],
   };
 }
