@@ -27,6 +27,17 @@ import {
 import { previousRange } from '../components/date-range.ts';
 import { cleanFilters, type FilterRow, filterEditor } from '../components/filter-editor.ts';
 import { type IconName, icon } from '../components/icons.ts';
+import {
+  countBySection,
+  funnelOptions,
+  funnelVizView,
+  knownGroupTypes,
+  MEASURES,
+  PROPERTY_MATHS,
+  retentionOptions,
+  showActors,
+  trendsOptions,
+} from '../components/insight-options.ts';
 import { modal, popover, selectMenu } from '../components/menu.ts';
 import { eventPicker, propertyPicker } from '../components/picker.ts';
 import { INSIGHT_PROMPT } from '../components/prompts.ts';
@@ -193,7 +204,15 @@ function sanitizeSpec(kind: Kind, spec: Spec): Spec {
     return next;
   };
   if (kind === 'trends') out.series = (out.series as SeriesSpec[]).map(clean);
-  if (kind === 'funnel') out.steps = (out.steps as StepSpec[]).map(clean);
+  if (kind === 'funnel') {
+    out.steps = (out.steps as StepSpec[]).map(clean);
+    // Exclusions without an event yet are still being filled in.
+    const exclusions = ((out.exclusions as { event: string }[] | undefined) ?? []).filter(
+      (x) => x.event,
+    );
+    if (exclusions.length) out.exclusions = exclusions;
+    else delete out.exclusions;
+  }
   if (kind === 'retention') {
     for (const key of ['cohortEvent', 'returnEvent'] as const) {
       const step = out[key] as StepSpec | undefined;
@@ -207,14 +226,6 @@ function sanitizeSpec(kind: Kind, spec: Spec): Spec {
   else delete out.breakdown;
   return out;
 }
-
-const MEASURES: { value: string; label: string }[] = [
-  { value: 'total', label: 'Total count' },
-  { value: 'unique_persons', label: 'Unique people' },
-  { value: 'unique_sessions', label: 'Unique sessions' },
-  { value: 'sum', label: 'Sum of property' },
-  { value: 'avg', label: 'Average of property' },
-];
 
 const WINDOWS = ['1h', '1d', '3d', '7d', '14d', '30d', '90d'].map((w) => ({
   value: w,
@@ -272,7 +283,20 @@ function builder(kind: Kind, spec: Spec, update: () => void, project?: string): 
                   update();
                 },
               }),
-              s.math === 'sum' || s.math === 'avg'
+              s.math === 'unique_groups'
+                ? selectMenu({
+                    value: String((s as { groupType?: string }).groupType ?? ''),
+                    label: 'Group type',
+                    options: knownGroupTypes(project, update).map((t) => ({ value: t, label: t })),
+                    fallback: (s as { groupType?: string }).groupType ?? 'Pick a group type',
+                    width: 180,
+                    onChange: (v) => {
+                      (s as { groupType?: string }).groupType = v;
+                      update();
+                    },
+                  })
+                : null,
+              PROPERTY_MATHS.has(s.math ?? '')
                 ? propertyPicker({
                     value: s.property ?? '',
                     event: s.event,
@@ -303,6 +327,8 @@ function builder(kind: Kind, spec: Spec, update: () => void, project?: string): 
           cohorts: true,
         }),
       ),
+      countBySection(spec, update, project),
+      trendsOptions(spec, update, series.length),
     );
   }
   if (kind === 'funnel') {
@@ -376,6 +402,8 @@ function builder(kind: Kind, spec: Spec, update: () => void, project?: string): 
           cohorts: true,
         }),
       ),
+      funnelOptions(spec, update, steps.length, project),
+      countBySection(spec, update, project),
     );
   }
   const cohort = spec.cohortEvent as StepSpec;
@@ -472,6 +500,9 @@ function builder(kind: Kind, spec: Spec, update: () => void, project?: string): 
         cohorts: true,
       }),
     ),
+    section('Break down by', breakdownEditor(spec, cohort.event, project, update)),
+    retentionOptions(spec, update),
+    countBySection(spec, update, project),
   );
 }
 
@@ -484,12 +515,17 @@ function trendsView(
   r: TrendsResult,
   previous: TrendsResult | null,
   chartType: ChartType | 'number',
+  onPeople?: (series: number, label: string) => void,
 ): HTMLElement {
+  // Series, then formula lines (B / A * 100…), which come back separately.
+  const lines = [...r.series, ...(r.formulas ?? [])];
   const stats = h(
     'div',
     { class: `stats ${chartType === 'number' ? 'stats-large' : ''}` },
-    r.series.map((s, i) => {
-      const before = previous?.series[i]?.total;
+    lines.map((s, i) => {
+      const before = previous
+        ? [...previous.series, ...(previous.formulas ?? [])][i]?.total
+        : undefined;
       const c = before ? (s.total - before) / before : null;
       return kpiStat(
         s.label,
@@ -509,16 +545,20 @@ function trendsView(
   if (chartType === 'number') return h('div', { class: 'insight-result' }, stats);
   const chart = lineChart(
     r.buckets,
-    r.series.map((s, i) => ({
+    lines.map((s, i) => ({
       label: s.label,
       values: s.values,
-      previous: previous?.series[i]?.values,
+      previous: previous
+        ? [...previous.series, ...(previous.formulas ?? [])][i]?.values
+        : undefined,
     })),
     r.interval,
     { height: 320, type: chartType },
   );
-  const rows = r.series.map((s, i) => {
-    const before = previous?.series[i]?.total;
+  const rows = lines.map((s, i) => {
+    const before = previous
+      ? [...previous.series, ...(previous.formulas ?? [])][i]?.total
+      : undefined;
     return [
       h('span', { class: 'series-cell' }, seriesTag(i), s.label),
       sparkline(s.values, { color: SERIES[i % SERIES.length], height: 22 }),
@@ -531,6 +571,13 @@ function trendsView(
             `${s.total >= before ? '+' : '−'}${Math.abs(((s.total - before) / before) * 100).toFixed(0)}%`,
           )
         : '–',
+      onPeople && i < r.series.length
+        ? h(
+            'button',
+            { type: 'button', class: 'link-button', onclick: () => onPeople(i, s.label) },
+            'People',
+          )
+        : '',
     ];
   });
   return h(
@@ -538,8 +585,8 @@ function trendsView(
     { class: 'insight-result' },
     stats,
     chart,
-    r.series.length > 1 || previous
-      ? table(['Series', 'Trend', 'Total', 'Previous', 'Change'], rows, {
+    lines.length > 1 || previous || onPeople
+      ? table(['Series', 'Trend', 'Total', 'Previous', 'Change', ''], rows, {
           numeric: [2, 3, 4],
           class: 'series-table',
         })
@@ -547,7 +594,21 @@ function trendsView(
   );
 }
 
-function retentionView(r: RetentionResult): HTMLElement {
+const PERIOD_ADJECTIVE: Record<string, string> = {
+  hour: 'hourly',
+  day: 'daily',
+  week: 'weekly',
+  month: 'monthly',
+};
+
+/** What a spec counts, in the plural: people, sessions or groups of a type. */
+function countedNoun(aggregateBy: unknown): string {
+  if (!aggregateBy || aggregateBy === 'person') return 'people';
+  if (aggregateBy === 'session') return 'sessions';
+  return `${String(aggregateBy)} groups`;
+}
+
+function retentionView(r: RetentionResult, noun = 'people'): HTMLElement {
   if (!r.cohorts.length)
     return empty('No one in any cohort for this period.', undefined, { icon: 'retention' });
   const now = Date.now();
@@ -563,7 +624,7 @@ function retentionView(r: RetentionResult): HTMLElement {
       kpiStat(
         `Retained at ${p}1`,
         r.average.length > 1 && last >= 1 ? percent(r.average[1] ?? 0, 1) : '–',
-        `of people come back the next ${r.period}`,
+        `of ${noun} come back the next ${r.period}`,
       ),
       last > 1
         ? kpiStat(
@@ -573,9 +634,9 @@ function retentionView(r: RetentionResult): HTMLElement {
           )
         : null,
       kpiStat(
-        'People in cohorts',
+        `${noun[0]!.toUpperCase()}${noun.slice(1)} in cohorts`,
         count(r.cohorts.reduce((n, c) => n + c.size, 0)),
-        `${r.cohorts.length} ${r.period}ly cohorts`,
+        `${r.cohorts.length} ${PERIOD_ADJECTIVE[r.period] ?? r.period} cohorts`,
       ),
     ),
     retentionCurve(r.cohorts, r.average, r.period, now),
@@ -872,7 +933,10 @@ function editorView(options: {
     if (kind === 'funnel') return (spec.steps as StepSpec[]).every((s) => s.event);
     if (kind === 'trends')
       return (spec.series as SeriesSpec[]).every(
-        (s) => s.event && ((s.math !== 'sum' && s.math !== 'avg') || s.property),
+        (s) =>
+          s.event &&
+          (!PROPERTY_MATHS.has(s.math ?? '') || s.property) &&
+          (s.math !== 'unique_groups' || (s as { groupType?: string }).groupType),
       );
     return Boolean((spec.cohortEvent as StepSpec).event && (spec.returnEvent as StepSpec).event);
   };
@@ -913,17 +977,66 @@ function editorView(options: {
           : Promise.resolve(null),
       ]);
       if (id !== runId) return;
+      const shared = shareable();
+      const funnel = result as unknown as FunnelResult;
       const view =
         kind === 'trends'
-          ? trendsView(result as unknown as TrendsResult, previous, chartType)
+          ? trendsView(result as unknown as TrendsResult, previous, chartType, (series, label) =>
+              showActors('trends', shared, { series }, `Who did ${label}`),
+            )
           : kind === 'funnel'
-            ? (result as unknown as FunnelResult).steps[0]?.count
-              ? funnelChart((result as unknown as FunnelResult).steps, {
-                  windowSeconds: (result as unknown as FunnelResult).windowSeconds,
-                  breakdowns: (result as unknown as FunnelResult).breakdowns,
-                })
+            ? funnel.steps[0]?.count
+              ? (funnelVizView(funnel) ??
+                h(
+                  'div',
+                  {},
+                  funnelChart(funnel.steps, {
+                    windowSeconds: funnel.windowSeconds,
+                    breakdowns: funnel.breakdowns,
+                    noun: countedNoun(spec.aggregateBy),
+                  }),
+                  h(
+                    'div',
+                    { class: 'row people-row' },
+                    h('span', { class: 'muted small' }, 'Who:'),
+                    funnel.steps.map((st, i) => [
+                      h(
+                        'button',
+                        {
+                          type: 'button',
+                          class: 'chip',
+                          onclick: () =>
+                            showActors(
+                              'funnel',
+                              shared,
+                              { step: i + 1, status: 'converted' },
+                              `Reached step ${i + 1}`,
+                            ),
+                        },
+                        `reached ${i + 1}`,
+                      ),
+                      i > 0 && st.count < (funnel.steps[i - 1]?.count ?? 0)
+                        ? h(
+                            'button',
+                            {
+                              type: 'button',
+                              class: 'chip',
+                              onclick: () =>
+                                showActors(
+                                  'funnel',
+                                  shared,
+                                  { step: i + 1, status: 'dropped' },
+                                  `Dropped before step ${i + 1}`,
+                                ),
+                            },
+                            `dropped before ${i + 1}`,
+                          )
+                        : null,
+                    ]),
+                  ),
+                ))
               : empty('No one did the first step in this period.', undefined, { icon: 'funnel' })
-            : retentionView(result as unknown as RetentionResult);
+            : retentionView(result as unknown as RetentionResult, countedNoun(spec.aggregateBy));
       mount(
         output,
         panel(
@@ -1114,8 +1227,8 @@ function editorView(options: {
             'span',
             { class: 'muted small' },
             kind === 'funnel'
-              ? 'Counts unique people who did each step in order.'
-              : 'Cohorts by the period of each person’s first event.',
+              ? `Counts unique ${countedNoun(spec.aggregateBy)} who did each step ${spec.order === 'unordered' ? 'in any order' : spec.order === 'strict' ? 'one right after another' : 'in order'}.`
+              : `Cohorts by the period of each ${countedNoun(spec.aggregateBy) === 'people' ? 'person' : countedNoun(spec.aggregateBy).replace(/s$/, '')}’s ${spec.retentionType === 'recurring' ? 'events' : 'first event'}.`,
           ),
       h('span', { class: 'toolbar-spacer' }),
       status,

@@ -356,7 +356,7 @@ FROM ev GROUP BY ${bucket}, ${expr}`;
         ? 'sessions'
         : `${aggregation.group} accounts`;
   const parts = [
-    `Net revenue ${fmt(net)} (gross ${fmt(gross)}, refunds ${fmt(-refunds)}) from ${customers} paying ${who}.`,
+    `Net revenue ${fmt(net)} (gross ${fmt(gross)}${refunds ? `, refunds ${fmt(Math.abs(refunds))}` : ''}) from ${customers} paying ${who}.`,
   ];
   if (last && (last.mrr > 0 || last.churnedMrr > 0)) {
     parts.push(

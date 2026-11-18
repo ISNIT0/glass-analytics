@@ -205,6 +205,34 @@ describe('trends formulas and transforms', () => {
     assert.ok(line.at(-1)! > line[0]!);
   });
 
+  it('computes formulas from cumulative series, so they end at the formula of the totals', async () => {
+    const d = createDb();
+    insert(d, [
+      { event: 'visit', distinct_id: 'a', daysAgo: 2 },
+      { event: 'visit', distinct_id: 'b', daysAgo: 2 },
+      { event: 'buy', distinct_id: 'a', daysAgo: 2 },
+      { event: 'visit', distinct_id: 'c', daysAgo: 1 },
+      { event: 'visit', distinct_id: 'd', daysAgo: 1 },
+      { event: 'buy', distinct_id: 'c', daysAgo: 1 },
+      { event: 'buy', distinct_id: 'd', daysAgo: 1 },
+    ]);
+    const res = await runTrends(
+      spec({
+        series: [{ event: 'visit' }, { event: 'buy' }],
+        formulas: [{ expr: 'B / A * 100' }],
+        cumulative: true,
+        from: '-3d',
+        interval: 'day',
+      }),
+      context(d),
+    );
+    const f = res.formulas![0]!;
+    // Day by day: 1/2 = 50%, then (1+2)/(2+2) = 75% (not 50% + 100%).
+    assert.deepEqual(f.values.slice(-3, -1), [50, 75]);
+    assert.equal(f.values.at(-1), f.total);
+    assert.equal(f.total, 75);
+  });
+
   it('compares with the previous period', async () => {
     const d = createDb();
     insert(d, [

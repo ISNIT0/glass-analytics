@@ -11,11 +11,15 @@ import { type IconName, icon } from './components/icons.ts';
 import { listKeys, selectMenu, toggle } from './components/menu.ts';
 import { h, mount } from './dom.ts';
 import { eventsPage, sqlPage } from './pages/data.ts';
+import { errorsPage } from './pages/errors.ts';
 import { experimentsPage } from './pages/experiments.ts';
 import { flagsPage } from './pages/flags.ts';
+import { groupsPage } from './pages/groups.ts';
 import { insightsPage } from './pages/insights.ts';
 import { peoplePage } from './pages/people.ts';
+import { pipelinesPage } from './pages/pipelines.ts';
 import { replaysPage } from './pages/replays.ts';
+import { revenuePage } from './pages/revenue.ts';
 import { keyScreen, settingsPage } from './pages/settings.ts';
 import { sitesPage } from './pages/sites.ts';
 import { usagePage } from './pages/usage.ts';
@@ -35,19 +39,26 @@ const PAGES: Record<string, PageDef> = {
   web: { label: 'Reports', icon: 'reports', render: webPage },
   insights: { label: 'Insights', icon: 'insights', render: insightsPage },
   users: { label: 'People', icon: 'users', render: peoplePage },
+  groups: { label: 'Groups', icon: 'layers', render: groupsPage },
   replays: { label: 'Replays', icon: 'replay', render: replaysPage },
+  errors: { label: 'Errors', icon: 'alert', render: errorsPage },
+  revenue: { label: 'Revenue', icon: 'dollar', render: revenuePage },
   flags: { label: 'Flags', icon: 'flag', render: flagsPage },
   experiments: { label: 'Experiments', icon: 'flask', render: experimentsPage },
   events: { label: 'Events', icon: 'events', render: eventsPage },
+  pipelines: { label: 'Pipelines', icon: 'zap', render: pipelinesPage },
   sql: { label: 'SQL', icon: 'database', render: sqlPage },
   usage: { label: 'Usage & cost', icon: 'dollar', render: usagePage },
   settings: { label: 'Settings', icon: 'settings', render: settingsPage },
 };
 
 const GROUPS: { label: string; pages: string[] }[] = [
-  { label: 'Analytics', pages: ['reports', 'insights', 'users', 'replays'] },
+  {
+    label: 'Analytics',
+    pages: ['reports', 'insights', 'revenue', 'users', 'groups', 'replays', 'errors'],
+  },
   { label: 'Release', pages: ['flags', 'experiments'] },
-  { label: 'Data', pages: ['events', 'sql', 'usage'] },
+  { label: 'Data', pages: ['events', 'pipelines', 'sql', 'usage'] },
 ];
 
 const root = document.getElementById('app')!;
@@ -223,9 +234,11 @@ function crumbs(route: Route): HTMLElement {
   const subLabel = sub
     ? route.page === 'insights' && sub === 'new'
       ? 'New analysis'
-      : route.page === 'reports'
+      : route.page === 'reports' || route.page === 'pipelines'
         ? sub[0]!.toUpperCase() + sub.slice(1)
-        : sub
+        : route.page === 'groups' && route.rest[1]
+          ? route.rest[1]
+          : sub
     : null;
   return h(
     'div',

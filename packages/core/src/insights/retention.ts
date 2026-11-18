@@ -67,6 +67,12 @@ export interface RetentionResult extends ResultBase, RetentionTable {
 
 type Spec = RetentionSpec & { cohortBreakdown?: CohortBreakdown[] };
 type Period = NonNullable<RetentionSpec['period']>;
+const PERIOD_ADJECTIVE: Record<Period, string> = {
+  hour: 'hourly',
+  day: 'daily',
+  week: 'weekly',
+  month: 'monthly',
+};
 
 interface BaseOptions {
   /** The breakdown expression, read from the cohort event (aliased "e" for first-time cohorts). */
@@ -322,7 +328,7 @@ export async function runRetention(
   result.summary =
     total === 0
       ? `No one did "${spec.cohortEvent.event}" in this range.`
-      : `${fmt(total)} ${actorNoun(aggregation, total)} in ${overall.cohorts.length} ${period}ly ${recurring ? 'recurring ' : ''}cohorts. ` +
+      : `${fmt(total)} ${actorNoun(aggregation, total)} in ${overall.cohorts.length} ${PERIOD_ADJECTIVE[period]} ${recurring ? 'recurring ' : ''}cohorts. ` +
         `Average retention${spec.cumulative ? ' (on or after)' : ''}: ${period} 1 ${fmt(avg[1] ?? 0, 'percent')}` +
         (periods >= 4 ? `, ${period} 4 ${fmt(avg[4] ?? 0, 'percent')}` : '') +
         `.` +

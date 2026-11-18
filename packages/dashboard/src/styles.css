@@ -2157,8 +2157,14 @@ textarea.prose {
 
 .stack {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
   max-width: 560px;
+}
+
+.stack .toggle {
+  align-items: flex-start;
+  white-space: normal;
 }
 
 .row-actions {
@@ -5401,4 +5407,273 @@ a.kpi.key-event:hover {
   .key-events-empty {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+/* ── Errors, revenue, groups, pipelines, project settings ─────────────────── */
+
+.stats-panel {
+  margin-bottom: 16px;
+}
+
+.search-input {
+  min-width: 220px;
+  max-width: 320px;
+}
+
+input.short {
+  width: 7em;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.stack.tight {
+  gap: 6px;
+}
+
+label.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+}
+
+.code-inline {
+  margin: 6px 0;
+  padding: 10px 12px;
+  overflow-x: auto;
+  border-radius: var(--radius-sm);
+  background: var(--pane);
+  color: var(--pane-ink);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  white-space: pre;
+}
+
+.kv-table thead {
+  display: none;
+}
+
+.kv-key {
+  display: inline-block;
+  min-width: 9em;
+  color: var(--muted);
+}
+
+.truncate {
+  display: inline-block;
+  max-width: 340px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+button.danger {
+  border-color: color-mix(in srgb, var(--bad) 40%, var(--hairline));
+  color: var(--bad);
+}
+
+button.danger:hover {
+  background: color-mix(in srgb, var(--bad) 8%, transparent);
+}
+
+.badge.status-resolved {
+  color: var(--good);
+}
+
+.badge.status-suppressed {
+  color: var(--muted);
+}
+
+.badge.status-active {
+  color: var(--bad);
+}
+
+.state.ok {
+  margin-bottom: 16px;
+  border-left: 3px solid var(--good);
+  padding-left: 12px;
+}
+
+.page-tabs {
+  margin-bottom: 16px;
+}
+
+.issue-cell {
+  display: grid;
+  gap: 2px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.issue-type {
+  font-weight: 650;
+}
+
+.issue-message {
+  max-width: 560px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
+.issue-cell:hover .issue-type {
+  text-decoration: underline;
+}
+
+ol.stack {
+  display: block;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.frame {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.frame.vendor {
+  opacity: 0.62;
+}
+
+.frame-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.frame-fn {
+  font-weight: 650;
+}
+
+.frame-where {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  word-break: break-all;
+}
+
+.frame-context {
+  margin: 8px 0 0;
+  padding: 8px 0;
+  overflow-x: auto;
+  border-radius: var(--radius-sm);
+  background: var(--field);
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
+.frame-context > div {
+  padding: 0 12px;
+  white-space: pre;
+}
+
+.frame-context > div.hit {
+  background: color-mix(in srgb, var(--bad) 12%, transparent);
+}
+
+.frame-context .ln {
+  display: inline-block;
+  width: 3.5em;
+  color: var(--muted);
+  user-select: none;
+}
+
+.template-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 10px;
+}
+
+.template-card {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: inherit;
+  text-decoration: none;
+}
+
+.template-card:hover {
+  border-color: var(--hairline-strong);
+  box-shadow: var(--shadow-sm);
+}
+
+@media (max-width: 720px) {
+  .search-input {
+    min-width: 0;
+    width: 100%;
+  }
+  .issue-message,
+  .truncate {
+    max-width: 220px;
+  }
+  /* The issue list keeps what matters on a phone: the issue, counts and status. */
+  .issues-table th:nth-child(2),
+  .issues-table td:nth-child(2) {
+    display: none;
+  }
+  .issues-table .issue-message {
+    display: -webkit-box;
+    white-space: normal;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+}
+
+/* Forms never grow wider than their panel (long option labels, toggle labels, URLs). */
+.field {
+  min-width: 0;
+}
+
+.field select,
+.field textarea,
+.field input:not(.short):not([type="checkbox"]) {
+  max-width: 100%;
+}
+
+.code-inline {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+.merge-form input {
+  flex: 1;
+  min-width: 220px;
+}
+
+.breakdown-summary {
+  margin: 0 0 16px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.breakdown-value {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.row.gap-lg {
+  gap: 18px;
+}
+
+.field small {
+  overflow-wrap: anywhere;
 }

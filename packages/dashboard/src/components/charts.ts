@@ -529,8 +529,14 @@ export function kpiStat(
  */
 export function funnelChart(
   steps: FunnelStepView[],
-  options: { windowSeconds?: number; breakdowns?: FunnelBreakdownView[] } = {},
+  options: {
+    windowSeconds?: number;
+    breakdowns?: FunnelBreakdownView[];
+    /** What was counted, plural: "people" (default), "sessions", "company groups"… */
+    noun?: string;
+  } = {},
 ): HTMLElement {
+  const noun = options.noun ?? 'people';
   const first = steps[0]!;
   const last = steps[steps.length - 1]!;
   const base = Math.max(1, first.count);
@@ -569,7 +575,7 @@ export function funnelChart(
           'div',
           {
             class: 'funnel-col-track',
-            title: `${count(step.count)} people${prev ? `, ${count(dropped)} dropped` : ''}`,
+            title: `${count(step.count)} ${noun}${prev ? `, ${count(dropped)} dropped` : ''}`,
           },
           prev
             ? h('div', { class: 'funnel-col-drop', style: `height:${(dropped / base) * 100}%` })
@@ -590,7 +596,7 @@ export function funnelChart(
             'div',
             { class: 'funnel-col-count' },
             count(step.count),
-            h('span', { class: 'muted' }, ' people'),
+            h('span', { class: 'muted' }, ` ${noun}`),
           ),
           prev
             ? h(
@@ -708,7 +714,7 @@ export function funnelChart(
       kpiStat(
         'Conversion',
         percent(overall, 1),
-        `${count(last.count)} of ${count(first.count)} people`,
+        `${count(last.count)} of ${count(first.count)} ${noun}`,
       ),
       kpiStat('Completed', count(last.count), last.label),
       kpiStat(

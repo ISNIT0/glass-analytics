@@ -11,8 +11,9 @@
  * - rolling unique counts (wau, mau) join each bucket's window from a VALUES list;
  * - first_time finds each actor's first occurrence over all history.
  *
- * Formulas, cumulative totals, smoothing and trend lines are applied to the
- * finished series in JavaScript, so they behave the same for every math.
+ * Cumulative totals and smoothing shape the finished series in JavaScript, so
+ * they behave the same for every math; formulas are computed from the shaped
+ * series, and trend lines are fitted last.
  */
 
 import type { Filter } from '../filters.ts';
@@ -469,8 +470,8 @@ export function compileTrendsSeries(
   return { perBucket: plan.sql[0]!, totals: plan.sql[1] ?? plan.sql[0]! };
 }
 
-/** Running totals, a trailing moving average and a least-squares line, applied in that order. */
-function postProcess(line: TrendsSeries, spec: TrendsSpec): TrendsSeries {
+/** Running totals, then a trailing moving average. */
+function shape(line: TrendsSeries, spec: TrendsSpec): TrendsSeries {
   let values = line.values;
   if (spec.cumulative) {
     let sum = 0;
@@ -483,7 +484,13 @@ function postProcess(line: TrendsSeries, spec: TrendsSpec): TrendsSeries {
       return window.reduce((a, v) => a + v, 0) / window.length;
     });
   }
-  const out: TrendsSeries = { ...line, values };
+  return { ...line, values };
+}
+
+/** A least-squares line through the (shaped) values. */
+function withTrendLine(line: TrendsSeries, spec: TrendsSpec): TrendsSeries {
+  const values = line.values;
+  const out: TrendsSeries = { ...line };
   if (spec.trendLine && values.length > 1) {
     const n = values.length;
     const mx = (n - 1) / 2;
@@ -667,8 +674,11 @@ export async function runTrends(input: TrendsSpec, ctx: QueryContext): Promise<T
     }
   });
 
-  const formulas = formulaLines(spec, out, buckets).map((l) => postProcess(l, spec));
-  const series = out.map((l) => postProcess(l, spec));
+  // Formulas read the shaped series, so with running totals "B / A" is cumulative B over
+  // cumulative A (it ends at the formula of the totals), not a running sum of daily ratios.
+  const shaped = out.map((l) => shape(l, spec));
+  const series = shaped.map((l) => withTrendLine(l, spec));
+  const formulas = formulaLines(spec, shaped, buckets).map((l) => withTrendLine(l, spec));
 
   let compare: TrendsResult['compare'];
   if (spec.compare) {

@@ -3984,11 +3984,18 @@ WHERE project = ${d.str(project)} AND session_id = ${d.str(row.session_id)} AND 
     )
       .bind(ctx.project)
       .all<{ type: string; idx: number; name_singular: string; name_plural: string; n: number }>();
+    // English plurals for the default names: company → companies, address → addresses.
+    const plural = (t: string) =>
+      /[^aeiou]y$/i.test(t)
+        ? `${t.slice(0, -1)}ies`
+        : /(s|x|z|ch|sh)$/i.test(t)
+          ? `${t}es`
+          : `${t}s`;
     const types = results.map((r) => ({
       type: r.type,
       index: r.idx,
       singular: r.name_singular || r.type,
-      plural: r.name_plural || `${r.type}s`,
+      plural: r.name_plural || plural(r.type),
       groups: r.n,
     }));
     return {
