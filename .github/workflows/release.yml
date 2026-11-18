@@ -20,9 +20,10 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      # Keeps the token: this job pushes the version commit and tags with git.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0 # zizmor: ignore[artipacked]
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: pnpm
@@ -47,7 +48,7 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       # Don't publish a version the checks would reject. (CI runs on the same push, but not on this version commit.)
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
         if: steps.version.outputs.version
       - name: Check
         if: steps.version.outputs.version
@@ -66,7 +67,7 @@ jobs:
       - name: Publish
         run: |
           version=$(node -p "require('./packages/cli/package.json').version")
-          if [ -z "${{ steps.version.outputs.version }}" ] && git ls-remote --exit-code --tags origin "refs/tags/dataflare-cli@$version" >/dev/null; then
+          if [ -z "$NEW_VERSION" ] && git ls-remote --exit-code --tags origin "refs/tags/dataflare-cli@$version" >/dev/null; then
             echo "$version is already tagged: published by an earlier run."
             exit 0
           fi
@@ -75,6 +76,7 @@ jobs:
           # setup-node's registry-url writes an .npmrc that reads NODE_AUTH_TOKEN; without it npm publishes anonymously (E404).
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: true
+          NEW_VERSION: ${{ steps.version.outputs.version }}
 
       - name: Push tags and create the GitHub release
         if: steps.version.outputs.version

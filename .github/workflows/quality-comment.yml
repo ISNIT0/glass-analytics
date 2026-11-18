@@ -6,7 +6,8 @@
 name: Quality comment
 
 on:
-  workflow_run:
+  # Safe: never runs pull request code (see above); the report is only posted as text.
+  workflow_run: # zizmor: ignore[dangerous-triggers]
     workflows: [Quality]
     types: [completed]
 
@@ -23,14 +24,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # The default branch's copy of the posting script, never the pull request's.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          persist-credentials: false
           sparse-checkout: .github/scripts
 
       - name: Download the report
         id: download
         continue-on-error: true
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: quality-report
           run-id: ${{ github.event.workflow_run.id }}

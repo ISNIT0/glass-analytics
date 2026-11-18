@@ -29,18 +29,19 @@ jobs:
       # Run the Python-backed lake tests (via uv) so coverage matches the baseline exactly.
       DATAFLARE_REQUIRE_PYTHON: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          persist-credentials: false
           # The base commit is needed for the comparison and the changed-lines diff.
           fetch-depth: 0
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: pnpm
       # Switch to --frozen-lockfile once pnpm-lock.yaml is committed.
       - run: pnpm install --no-frozen-lockfile
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
 
       - name: Measure this change
         id: head
@@ -77,7 +78,7 @@ jobs:
 
       - name: Upload the report
         if: always() && github.event_name == 'pull_request' && steps.head.outcome == 'success'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: quality-report
           path: ${{ runner.temp }}/quality-report/
@@ -92,7 +93,7 @@ jobs:
 
       - name: Upload coverage
         if: always() && steps.head.outcome == 'success'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: coverage-lcov
           path: coverage/lcov.info
