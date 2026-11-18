@@ -387,6 +387,154 @@ export const webSpec = z
     'Web analytics overview: visitors, pageviews, sessions, bounce rate and top breakdowns.',
   );
 
+const metricEvent = {
+  event: z.string().describe('Event name ("*" for any).'),
+  filters: z.array(filterSchema).optional(),
+};
+const metricCommon = {
+  name: z.string().optional().describe('Label, e.g. "Checkout conversion".'),
+  goal: z
+    .enum(['increase', 'decrease'])
+    .optional()
+    .describe('Which way is better. Default "increase" (use "decrease" for e.g. errors or churn).'),
+};
+
+/** How an experiment measures success. Each is computed per exposed person (or group). */
+export const metricSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('conversion'),
+    ...metricEvent,
+    ...metricCommon,
+    within: z
+      .union([z.string(), z.number()])
+      .optional()
+      .describe('Only count it within this long of exposure, e.g. "7d". Default: any time after.'),
+  }),
+  z.object({
+    kind: z.literal('mean'),
+    ...metricEvent,
+    ...metricCommon,
+    math: z
+      .enum(['count', 'sum'])
+      .optional()
+      .describe(
+        'Per person: how many times they did it ("count", default) or the sum of `property`.',
+      ),
+    property: z
+      .string()
+      .optional()
+      .describe('For math "sum": the numeric property, e.g. "revenue".'),
+    winsorize: z
+      .object({
+        lower: z.number().min(0).max(50).optional().describe('Clamp values below this percentile.'),
+        upper: z
+          .number()
+          .min(50)
+          .max(100)
+          .optional()
+          .describe('Clamp values above this percentile, e.g. 99.'),
+      })
+      .optional()
+      .describe('Limit outliers: one huge spender can swing a mean.'),
+  }),
+  z.object({
+    kind: z.literal('ratio'),
+    ...metricCommon,
+    numerator: z.object({
+      ...metricEvent,
+      math: z.enum(['count', 'sum']).optional(),
+      property: z.string().optional(),
+    }),
+    denominator: z.object({
+      ...metricEvent,
+      math: z.enum(['count', 'sum']).optional(),
+      property: z.string().optional(),
+    }),
+  }),
+  z.object({
+    kind: z.literal('funnel'),
+    ...metricCommon,
+    steps: z.array(z.object(metricEvent)).min(1).max(10).describe('Ordered steps after exposure.'),
+    window: z
+      .union([z.string(), z.number()])
+      .optional()
+      .describe('From the first step to the last. Default "7d".'),
+  }),
+  z.object({
+    kind: z.literal('retention'),
+    ...metricEvent,
+    ...metricCommon,
+    from: z
+      .union([z.string(), z.number()])
+      .optional()
+      .describe('Return window start after exposure. Default "1d".'),
+    to: z
+      .union([z.string(), z.number()])
+      .optional()
+      .describe(
+        'Return window end after exposure. Default "8d". People exposed less long ago are left out.',
+      ),
+  }),
+]);
+
+export type ExperimentMetric = z.infer<typeof metricSchema>;
+
+export const experimentOptions = {
+  engine: z
+    .enum(['bayesian', 'frequentist'])
+    .optional()
+    .describe(
+      '"bayesian" (default): probability each variant is best, credible intervals. "frequentist": p-values and confidence intervals.',
+    ),
+  confidence: z
+    .union([z.literal(0.9), z.literal(0.95), z.literal(0.99)])
+    .optional()
+    .describe('Required probability (Bayesian) or 1 - alpha (frequentist). Default 0.95.'),
+  exposure: z
+    .object({
+      event: z
+        .string()
+        .optional()
+        .describe(
+          'Count exposure on this event instead of $exposure (its flags column holds the variant).',
+        ),
+      filters: z.array(filterSchema).optional(),
+      multipleVariants: z
+        .enum(['exclude', 'first_seen'])
+        .optional()
+        .describe(
+          'People who saw more than one variant: leave them out (default), or keep their first.',
+        ),
+    })
+    .optional(),
+  minimumDays: z
+    .number()
+    .min(0)
+    .max(90)
+    .optional()
+    .describe('Declare no winner before this many days. Default 7.'),
+  minimumExposures: z
+    .number()
+    .int()
+    .min(0)
+    .optional()
+    .describe('Declare no winner before every variant has this many exposures. Default 100.'),
+  mde: z
+    .number()
+    .min(0.001)
+    .max(10)
+    .optional()
+    .describe(
+      'Minimum detectable effect (relative) for running-time estimates. Default 0.1 (10%).',
+    ),
+  aggregateBy: z
+    .string()
+    .optional()
+    .describe(
+      'Randomise by a group type (e.g. "company") instead of people; use a flag bucketed by that group.',
+    ),
+};
+
 export const experimentSpec = z
   .object({
     project: common.project,
@@ -400,7 +548,20 @@ export const experimentSpec = z
             'Optional numeric property summed per person (e.g. "revenue") for a mean metric.',
           ),
       })
-      .describe('The conversion event.'),
+      .optional()
+      .describe(
+        'Simple form: a conversion event (and optional value). Same as one conversion metric.',
+      ),
+    metrics: z
+      .array(metricSchema)
+      .max(10)
+      .optional()
+      .describe('Primary metrics. The first decides the winner.'),
+    secondary: z
+      .array(metricSchema)
+      .max(20)
+      .optional()
+      .describe('Secondary metrics, reported but not deciding.'),
     variants: z
       .array(z.string())
       .min(2)
@@ -410,6 +571,11 @@ export const experimentSpec = z
       ),
     from: time.optional(),
     to: time.optional(),
+    filters: z
+      .array(filterSchema)
+      .optional()
+      .describe('Only these exposures, e.g. internal traffic left out.'),
+    ...experimentOptions,
   })
   .describe('A/B test readout for a flag.');
 
