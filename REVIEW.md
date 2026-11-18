@@ -64,12 +64,81 @@ Run: `pnpm install && pnpm typecheck && pnpm lint && pnpm test` (lake conformanc
   adds revenue per first touch; person detail adds lifetime revenue (migration 0016). Revenue
   reads are checked against DataFusion.
 
-## Not done yet
+- **Dashboard** (Phase 10). Every page added or deepened was checked in screenshots: light,
+  dark and 390 px mobile, plus empty-project states. `scripts/ui-smoke.ts` (run it with an
+  output folder) fails on console errors, HTTP errors and cards closer than 8 px.
+  - New pages: Errors (and issue), Revenue, Groups (and group), Pipelines (destinations,
+    transformations, exports, imports), Settings › project settings and Stripe.
+  - Insights:
+    - every trends maths, formulas, compare, cumulative and smoothing;
+    - eight displays (line, area, bar, number, bars by total, table, pie, world map);
+    - trend line, log scale, 100% stack and value labels;
+    - minute buckets, cohort and numeric-range breakdowns, notes on charts;
+    - the internal-traffic toggle and "count by";
+    - funnel order, exclusions, optional steps, attribution, views and correlation;
+    - retention type, hours, any event, per-breakdown tabs, and people behind every cell.
+  - People: the cohort editor (all condition kinds, nested groups, static lists from paste or
+    CSV, members, CSV, duplicate), and a person's groups and lifetime revenue.
+  - Flags: payloads, targeting, schedules, history, usage and early access.
+  - Experiments: metric editors, engine and confidence, holdouts, planning, web-experiment
+    changes, lifecycle actions, all-metrics table and timeline.
+- **Docs**: queries, sdk, experiments, privacy, architecture, agents (97 tools), ROADMAP; new
+  errors, revenue, destinations and node-sdk pages; llms.txt and the agent skill.
+- **Site**: comparison pages and README; Plausible and Umami facts re-checked on 2026-11-18;
+  screenshots and public demo regenerated (`pnpm site:assets`), with revenue, groups and a
+  behavioural cohort in the demo data.
+- **Checks**:
+  - `pnpm test`: 475 tests, including 112 lake-conformance checks against DataFusion.
+  - `pnpm test:e2e`: 13 tests, including payloads, web experiments, overrides, bootstrap,
+    early access and captureException in a real browser.
+  - Coverage: 94.0% of lines, 79.0% of branches.
+  - MCP smoke: 24 new tools called over `/mcp` against the demo data, all fine.
+  - Upgrade dry run on a copy of yourtypeis's `.glass/` (dummy credentials, nothing
+    deployed): stages 0.8.3 → 0.8.4 with migrations 0006–0017. The only difference from
+    main's staging is the cron (`17 * * * *` → `*/5 * * * *`).
 
-- Phase 10: dashboard UI for everything above (Errors, Revenue, Data › Destinations/
-  Transformations/Exports, Groups, experiment and flag depth, insight options), docs,
-  comparison pages, e2e tests (SDK `captureException`, web experiments, early access,
-  overrides), upgrade dry-run.
+## Commits
+
+```
+e9926f5 Coverage review: CRM templates, CLI data and flag commands, and a fix
+68d228a Site and README: the new depth, and current Umami and Plausible facts
+d4991a3 Docs for everything on the branch
+1fd278d e2e: SDK features in a real browser
+41d4607 Notice variants through a colour variable, without new icon selectors
+7f98835 Pipelines: an Imports tab that imports files from the browser
+4b01123 Insights: every display, notes on charts, cohort and numeric breakdowns, correlation
+4e5f69c Fix missing gaps between cards, and check for them on every page
+93b7236 People: full cohort editor, members, and a person's groups and revenue
+5d3f6d6 Experiments at full depth in the dashboard; steadier lift numbers
+a80ce5c Rich editors for configuration; flags at full depth in the dashboard
+236e42b Dashboard: errors, revenue, groups, pipelines, settings, deeper insights
+e573d82 Group tools, group erasure, and group analytics on the lake
+1dfee5b Revenue analytics: currencies, Stripe and MRR
+6acd5e8 Error tracking: issues, alerts and source maps
+4c28a88 Destinations, transformations, batch exports and import
+06a0bce Experiments: stored metrics, full lifecycle, holdouts, planning, web experiments
+21a27d8 Experiments core: metric kinds, both engines, probability to be best
+3966f88 Feature flags at PostHog depth, and the dataflare-node server SDK
+f21868b Cohorts at PostHog depth
+44d64cf Retention at PostHog depth
+6a29ce0 Funnels at PostHog depth, and funnel correlation
+547e4f1 Trends at PostHog depth, drill-down to actors, annotations
+77e8a8c Foundations: import, server key, project settings, time zones, groups, 5-minute cron
+```
+
+## Known limits
+
+- Web experiments have no visual editor: changes are CSS selectors plus text, HTML, style or
+  attributes.
+- The world map is Natural Earth 1:110m. Countries too small for it (Singapore, Malta…) are
+  listed under the map, not drawn.
+- Minute buckets only for ranges up to two days. Numeric-range breakdowns are offered only
+  for properties the catalog has seen as numbers.
+- Funnel correlation runs on demand (a button), since it reads every event of everyone in the
+  funnel.
+- Imports in the browser take files up to 50 MB; bigger ones go through the CLI.
+- Not in scope: paths, stickiness, lifecycle, heatmaps, multi-chart dashboards, alerts on any
+  insight, surveys, users/RBAC/SSO, mobile SDKs.
 
 ## Decisions to confirm
 
@@ -78,7 +147,7 @@ Run: `pnpm install && pnpm typecheck && pnpm lint && pnpm test` (lake conformanc
 - Static cohorts in lake mode are inlined (up to 10,000 people) instead of a new Pipelines stream.
 - Server and encryption keys are derived from existing secrets (CI upgrades can't add secrets).
 - Cohorts may now reference other cohorts (loop-checked), reversing the 2026-11-04 decision.
-- Script-tag SDK grew (now ~5.8 KB gzip); check against the "about 4 KB" claim.
+- Script-tag SDK grew to about 5.9 KB gzipped; README and sdk.md now say "about 6 KB".
 - Destination work per invocation is capped for the Free plan's 50 subrequests: queue batches
   of 25, 20 outbox deliveries per 5-minute tick, 10 export requests per tick (2,000 rows a page).
 - A failing after-write hook (e.g. the queue is over quota) logs and moves on: the events are
@@ -97,3 +166,10 @@ Run: `pnpm install && pnpm typecheck && pnpm lint && pnpm test` (lake conformanc
 - Subscription state is read from 400 days before the range (a yearly plan renews within it).
 - BigQuery uses streaming inserts (`insertAll`), not load jobs: simpler, and rows dedupe on the
   event id for about a minute; a load-job path would need a GCS bucket.
+- The world map's outlines are generated data (`scripts/world-map.ts` → `world-paths.ts`,
+  12.6 KB gzipped, excluded from Biome).
+- Notes on charts are project-wide unless pinned to one saved insight.
+- Upgrades keep `workers_dev` and route rewriting exactly as main does today; the dry run shows
+  main's staging turns `workers_dev` off and drops the route's `zone_name` for yourtypeis.
+  Worth checking against the live config before the next upgrade, but it isn't from this
+  branch.

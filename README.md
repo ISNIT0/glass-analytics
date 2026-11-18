@@ -35,7 +35,7 @@ Or paste this into your coding agent:
 - **No vendor.** Dataflare is a Worker, a D1 database and an R2 bucket in _your_ Cloudflare account. There is no Dataflare server, account or bill: you pay Cloudflare's list prices, which is $0 on Workers Free for small sites and the $5/month Workers Paid plan for most others ([calculator](https://dataflare.dev/pricing/)).
 - **Built for agents.** `dataflare init` writes instructions, a skill and an MCP server config for your agent. Every query result carries its SQL and a dashboard link, and session replays come with a text transcript an agent can read.
 - **Four tools, one event stream.** Web stats, funnels/retention/trends on any property, session replay, and flags with Bayesian A/B testing. A funnel step links to the replays of the people who dropped out.
-- **Small and readable.** The browser SDK is about 4 KB gzipped. The Worker has one runtime dependency (zod). Every number in the dashboard can show the SQL behind it.
+- **Small and readable.** The browser SDK is about 6 KB gzipped. The Worker has one runtime dependency (zod). Every number in the dashboard can show the SQL behind it.
 
 <table>
   <tr>
