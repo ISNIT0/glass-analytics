@@ -9,8 +9,10 @@ Dataflare is open-source, agent-first analytics that runs in the user's own Clou
 - `pnpm test`: unit and integration tests; run one file with `node --test <path>`
 - `pnpm test:e2e`: browser tests against the demo site (needs `npx playwright install chromium`)
 - `pnpm dev`: local Worker on :8787 (admin key `dev-admin-key`) and demo site on :8788
+- `pnpm quality`: tests with coverage, then the coverage and complexity ratchet (see below); `--fast` checks complexity only
+- `pnpm quality:hotspots`: the most complex, least tested functions and files
 
-Run `pnpm typecheck && pnpm test` before you finish. If you changed the SDK, ingest, replay or dashboard, also run `pnpm test:e2e`.
+Run `pnpm typecheck && pnpm test && pnpm quality` before you finish. If you changed the SDK, ingest, replay or dashboard, also run `pnpm test:e2e`.
 
 ## Map
 
@@ -31,3 +33,20 @@ Run `pnpm typecheck && pnpm test` before you finish. If you changed the SDK, ing
 7. **Migrations are append-only.** Add `packages/worker/migrations/000N_*.sql`; never edit shipped ones.
 8. **Write for agents and humans.** Tool descriptions, `summary` strings and error messages are read by models; make them specific and short.
 9. Node runs `.ts` sources directly: use `.ts` import extensions and only erasable syntax (no enums, namespaces or parameter properties).
+
+## Quality ratchet
+
+`quality-baseline.json` holds a line-coverage floor per package and every function whose cognitive complexity is over the threshold (15). `pnpm quality` and the Quality workflow on every PR fail if a change:
+
+- lowers line coverage of any package, or the total, by more than 0.1 points;
+- adds a function over the threshold; or
+- makes a function already listed in the baseline more complex.
+
+The PR gets a comment with coverage before and after, the changed lines no test runs, and every function whose complexity changed. Leave the codebase better than you found it:
+
+1. **Test what you add.** Aim for every changed line to be covered; `pnpm quality` lists the changed lines no test runs.
+2. **Shrink what you touch.** If you edit a function in the baseline, try to bring it down: early returns instead of nesting, a lookup table instead of a long `if`/`switch`, a named helper per step.
+3. **Lock improvements in.** When `pnpm quality` reports improvements, run `pnpm quality:update` and commit `quality-baseline.json` with your change.
+4. **Don't loosen the baseline to get green.** `pnpm quality:update` refuses to lower a floor or add debt unless you pass `--allow-regression`. Use it only when the change is right, for example when code moved and kept its complexity, and say why in the PR. The PR comment flags every loosening for the reviewer.
+
+Without [uv](https://docs.astral.sh/uv/) the Python-backed lake tests skip, so local coverage reads low; `pnpm quality` then only warns about coverage, and CI enforces it. The dashboard and the browser SDK are covered by the e2e suite, which the coverage numbers don't include yet, so they read 0%.

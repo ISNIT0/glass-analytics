@@ -1,0 +1,47 @@
+# Posts the Quality workflow's report on pull requests from forks, which can't comment from
+# quality.yml because GitHub gives them a read-only token. This job has a write token, so it
+# never runs pull request code: it checks out the default branch for the posting script and
+# downloads only the report text. Same-repo pull requests comment from quality.yml instead.
+# workflow_run workflows run from the default branch, so this file takes effect once on main.
+name: Quality comment
+
+on:
+  workflow_run:
+    workflows: [Quality]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: write
+
+jobs:
+  comment:
+    if: >-
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.head_repository.full_name != github.repository
+    runs-on: ubuntu-latest
+    steps:
+      # The default branch's copy of the posting script, never the pull request's.
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/scripts
+
+      - name: Download the report
+        id: download
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: quality-report
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+          path: report
+
+      - name: Post or update the comment
+        if: steps.download.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MEASURED_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          .github/scripts/post-quality-comment.sh "$GITHUB_REPOSITORY" "$(cat report/pr-number)" \
+            report/report.md "$MEASURED_SHA"

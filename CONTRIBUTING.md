@@ -22,7 +22,9 @@ pnpm dev            # Dataflare on http://localhost:8787, a demo site on http://
 | `pnpm lint` / `pnpm format` | Biome                                                                                                                                   |
 | `pnpm test`                 | `node:test` suites in `packages/*/test`                                                                                                 |
 | `pnpm test:e2e`             | Builds, then drives the demo site in Chromium with Playwright and checks the API and dashboard (`npx playwright install chromium` once) |
-| `pnpm check`                | typecheck + lint + test, what CI runs first                                                                                             |
+| `pnpm check`                | typecheck + lint + test + quality, what CI runs first                                                                                   |
+| `pnpm quality`              | Tests with coverage, then the coverage and complexity ratchet against `quality-baseline.json` (see AGENTS.md)                           |
+| `pnpm quality:hotspots`     | The most complex, least tested code: good places to improve                                                                             |
 
 Tests use Node's built-in runner and Node's TypeScript type stripping, so there is no test framework to learn: `node --test packages/core/test/insights.test.ts` runs one file.
 

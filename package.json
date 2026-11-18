@@ -10,8 +10,11 @@
   "scripts": {
     "build": "node scripts/build.ts",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "node --test \"packages/*/test/**/*.test.ts\"",
+    "test": "node --test \"packages/*/test/**/*.test.ts\" \"scripts/**/*.test.ts\"",
     "test:e2e": "node scripts/build.ts && node --test \"e2e/*.test.ts\"",
+    "quality": "node scripts/quality.ts check",
+    "quality:update": "node scripts/quality.ts update",
+    "quality:hotspots": "node scripts/quality.ts hotspots",
     "dev": "node scripts/build.ts && node packages/worker/test/server.ts",
     "site:build": "node scripts/build.ts && node site/build.ts",
     "site:assets": "node scripts/site-assets.ts",
@@ -19,7 +22,7 @@
     "dev:wrangler": "node scripts/build.ts && pnpm --filter @dataflare/worker exec wrangler dev",
     "lint": "biome check .",
     "format": "biome format --write .",
-    "check": "pnpm typecheck && pnpm lint && pnpm test",
+    "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm quality",
     "changeset": "changeset",
     "version-packages": "changeset version && biome format --write packages/cli/CHANGELOG.md packages/web/CHANGELOG.md && node scripts/sync-version.ts",
     "release": "pnpm build && changeset publish"

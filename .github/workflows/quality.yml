@@ -1,0 +1,102 @@
+# Coverage and complexity ratchet (scripts/quality.ts against quality-baseline.json).
+#
+# Fails when a change lowers line coverage or adds complexity debt, writes a before/after report
+# to the job summary, and comments it on the pull request. Pull requests from branches in this
+# repo comment from this job. Fork pull requests get a read-only token here, so they upload the
+# report instead and quality-comment.yml posts it from a workflow_run job that never runs fork
+# code.
+name: Quality
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: quality-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  # Only usable on same-repo pull requests: GitHub downgrades fork pull requests to read-only.
+  pull-requests: write
+
+jobs:
+  quality:
+    name: Coverage and complexity
+    runs-on: ubuntu-latest
+    env:
+      # Run the Python-backed lake tests (via uv) so coverage matches the baseline exactly.
+      DATAFLARE_REQUIRE_PYTHON: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The base commit is needed for the comparison and the changed-lines diff.
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      # Switch to --frozen-lockfile once pnpm-lock.yaml is committed.
+      - run: pnpm install --no-frozen-lockfile
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Measure this change
+        id: head
+        run: node scripts/quality.ts measure --out "$RUNNER_TEMP/head.json"
+
+      # The base branch is measured with this change's scripts, so the numbers are comparable
+      # even before the base has the quality tooling. A failure here only drops the comparison.
+      - name: Measure the base branch
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git worktree add --detach "$RUNNER_TEMP/base" "$BASE_SHA"
+          (cd "$RUNNER_TEMP/base" && pnpm install --no-frozen-lockfile)
+          node scripts/quality.ts measure --root "$RUNNER_TEMP/base" --out "$RUNNER_TEMP/base.json"
+
+      - name: Write the report
+        if: always() && steps.head.outcome == 'success'
+        env:
+          BASE_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || 'HEAD^' }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          out="$RUNNER_TEMP/quality-report"
+          mkdir -p "$out"
+          args=(--head "$RUNNER_TEMP/head.json" --base-ref "$BASE_REF" --run-url "$RUN_URL" --out "$out/report.md")
+          if [ -f "$RUNNER_TEMP/base.json" ]; then
+            args+=(--base "$RUNNER_TEMP/base.json" --base-root "$RUNNER_TEMP/base")
+          fi
+          node scripts/quality.ts report "${args[@]}"
+          cat "$out/report.md" >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$PR_NUMBER" ]; then echo "$PR_NUMBER" > "$out/pr-number"; fi
+
+      - name: Upload the report
+        if: always() && github.event_name == 'pull_request' && steps.head.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-report
+          path: ${{ runner.temp }}/quality-report/
+          retention-days: 7
+
+      - name: Comment on the pull request
+        if: always() && github.event_name == 'pull_request' && steps.head.outcome == 'success' && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: .github/scripts/post-quality-comment.sh "$GITHUB_REPOSITORY" "$PR_NUMBER" "$RUNNER_TEMP/quality-report/report.md"
+
+      - name: Upload coverage
+        if: always() && steps.head.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-lcov
+          path: coverage/lcov.info
+          retention-days: 14
+
+      - name: Check the ratchet
+        run: node scripts/quality.ts check --metrics "$RUNNER_TEMP/head.json"
