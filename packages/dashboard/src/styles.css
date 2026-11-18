@@ -5938,3 +5938,265 @@ input.tiny {
 .cohorts-table .row-actions {
   flex-wrap: nowrap;
 }
+
+/* Time chart extras: trend lines, 100% stacks, value labels and notes. */
+.chart .line.trend {
+  stroke-width: 1.5;
+  stroke-dasharray: 6 4;
+  opacity: 0.75;
+}
+
+.chart .area.stacked {
+  opacity: 0.5;
+}
+
+.chart .value-label {
+  fill: var(--ink-2);
+  font-size: 10.5px;
+  font-family: var(--sans);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+.chart .annotation-line {
+  stroke: var(--glass-amber);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  pointer-events: none;
+}
+
+.chart .annotation-dot {
+  fill: var(--glass-amber);
+  stroke: var(--surface);
+  stroke-width: 2;
+  cursor: help;
+}
+
+.readout-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--ink-2);
+  border-top: 1px solid var(--hairline);
+  padding-top: 4px;
+  white-space: normal;
+  max-width: 260px;
+}
+
+.note-icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--glass-amber);
+}
+
+.chart-notes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin-top: 10px;
+}
+
+.note-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px 2px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  font-size: 12px;
+  background: var(--surface-2);
+}
+
+.note-remove {
+  width: 20px;
+  height: 20px;
+}
+
+/* Breakdown by cohort: which cohorts to compare. */
+.chip-toggle {
+  font-size: 12.5px;
+  font-weight: 550;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--hairline-strong);
+  background: var(--surface);
+  color: var(--ink-2);
+  box-shadow: none;
+}
+
+.chip-toggle[aria-pressed="true"] {
+  background: var(--glass-green-soft);
+  border-color: transparent;
+  color: var(--pane-ink);
+}
+
+.cohort-chooser {
+  margin-top: 4px;
+}
+
+/* Other ways to show a trend. */
+.pie {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 24px 40px;
+  padding: 8px 0 4px;
+}
+
+.pie-chart {
+  width: 220px;
+  height: 220px;
+  flex: none;
+}
+
+.pie-slice {
+  stroke: var(--surface);
+  stroke-width: 1.5;
+}
+
+.pie-total {
+  fill: var(--ink);
+  font-size: 22px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.pie-caption {
+  fill: var(--muted);
+  font-size: 12px;
+}
+
+.pie-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+  flex: 1;
+  min-width: 240px;
+  max-width: 520px;
+}
+
+.pie-legend li {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) auto 56px;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.pie-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.world {
+  display: grid;
+  gap: 12px;
+}
+
+.world-canvas {
+  position: relative;
+}
+
+.world-map {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.world-map .country {
+  fill: color-mix(in srgb, var(--ink) 7%, var(--surface-2));
+  stroke: var(--surface);
+  stroke-width: 0.8px;
+  vector-effect: non-scaling-stroke;
+  transition: opacity 0.12s ease;
+}
+
+.world-map .country:hover {
+  opacity: 0.8;
+}
+
+.map-readout {
+  top: 0;
+}
+
+.world-scale {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 320px;
+}
+
+.world-ramp {
+  flex: 1;
+  height: 8px;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    color-mix(in srgb, var(--glass-green) 12%, var(--surface-2)),
+    var(--glass-green)
+  );
+}
+
+/* Retention: a cell opens the people it counts. */
+.cell-button {
+  all: unset;
+  display: block;
+  width: 100%;
+  cursor: pointer;
+  text-align: inherit;
+  border-radius: 4px;
+}
+
+.cell-button:hover {
+  text-decoration: underline;
+}
+
+.cell-button:focus-visible {
+  outline: 2px solid var(--glass-green);
+  outline-offset: 2px;
+}
+
+.retention-breakdowns {
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+/* Funnel correlation. */
+.correlation {
+  display: grid;
+  gap: 12px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--hairline);
+}
+
+.correlation-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.correlation-note {
+  margin: 2px 0 0;
+}
+
+.correlation-property {
+  max-width: 360px;
+}
+
+.correlation-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+  margin-bottom: 0;
+}
+
+.correlation-list h4 {
+  margin: 0 0 6px;
+  font-size: 13px;
+}

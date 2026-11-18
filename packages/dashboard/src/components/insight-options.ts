@@ -12,7 +12,7 @@ import { href, scope } from '../state.ts';
 import { lineChart } from './charts.ts';
 import { icon } from './icons.ts';
 import { modal, selectMenu, toggle } from './menu.ts';
-import { eventPicker } from './picker.ts';
+import { eventPicker, propertyPicker } from './picker.ts';
 import { empty, errorState, loading, table, tabs, toast } from './ui.ts';
 
 type Spec = Record<string, unknown>;
@@ -100,7 +100,31 @@ export function countBySection(
   );
 }
 
+/** A toggle for a boolean spec field that is left out when off. */
+function flag(spec: Spec, key: string, label: string, update: () => void): HTMLElement {
+  return toggle({
+    checked: Boolean(spec[key]),
+    label,
+    onChange: (c) => {
+      if (c) spec[key] = true;
+      else delete spec[key];
+      update();
+    },
+  });
+}
+
+/** Leave out the project's internal and test traffic (Settings › Internal traffic). */
+export function testAccountsToggle(spec: Spec, update: () => void): HTMLElement {
+  const el = flag(spec, 'filterTestAccounts', 'Filter out internal and test traffic', update);
+  el.title = 'Uses the internal traffic filters in Settings';
+  return el;
+}
+
 export function trendsOptions(spec: Spec, update: () => void, seriesCount: number): HTMLElement[] {
+  const display = String(spec.display ?? 'line');
+  const timeChart = ['line', 'area', 'bar'].includes(display);
+  const lines =
+    seriesCount + (Array.isArray(spec.breakdown) ? spec.breakdown.length : spec.breakdown ? 1 : 0);
   const formulas = (spec.formulas as { expr: string }[] | undefined) ?? [];
   const formula = h('input', {
     type: 'text',
@@ -158,6 +182,14 @@ export function trendsOptions(spec: Spec, update: () => void, seriesCount: numbe
             update();
           },
         }),
+        timeChart
+          ? [
+              flag(spec, 'trendLine', 'Trend line', update),
+              flag(spec, 'logScale', 'Log scale', update),
+              lines > 1 ? flag(spec, 'percentStack', 'Stack to 100%', update) : null,
+              flag(spec, 'showValues', 'Show values', update),
+            ]
+          : null,
       ),
     ),
   ];
@@ -168,11 +200,40 @@ export function funnelOptions(
   update: () => void,
   stepCount: number,
   project?: string,
-): HTMLElement[] {
+): (HTMLElement | null)[] {
   const exclusions =
     (spec.exclusions as { event: string; fromStep: number; toStep: number }[] | undefined) ?? [];
   const viz = String(spec.viz ?? 'steps');
+  const broken = Array.isArray(spec.breakdown)
+    ? spec.breakdown.length > 0
+    : Boolean(spec.breakdown);
+  const attribution = String(spec.breakdownAttribution ?? 'first_touch');
   return [
+    broken && spec.breakdown !== 'cohort'
+      ? section(
+          'Breakdown value from',
+          selectMenu({
+            value: attribution,
+            label: 'Breakdown attribution',
+            options: [
+              { value: 'first_touch', label: 'The first step' },
+              { value: 'last_touch', label: 'The last step reached' },
+              { value: 'all_steps', label: 'Every step (must match)' },
+              ...Array.from({ length: Math.max(0, stepCount - 1) }, (_, i) => ({
+                value: String(i + 2),
+                label: `Step ${i + 2}`,
+              })),
+            ],
+            fallback: `Step ${attribution}`,
+            width: 220,
+            onChange: (v) => {
+              if (v === 'first_touch') delete spec.breakdownAttribution;
+              else spec.breakdownAttribution = /^\d+$/.test(v) ? Number(v) : v;
+              update();
+            },
+          }),
+        )
+      : null,
     section(
       'Step order',
       tabs(
@@ -311,6 +372,160 @@ export function retentionOptions(spec: Spec, update: () => void): HTMLElement[] 
       ),
     ),
   ];
+}
+
+interface CorrelationItem {
+  name: string;
+  event?: string;
+  successCount: number;
+  failureCount: number;
+  conversionRate: number;
+  oddsRatio: number;
+  significant: boolean;
+}
+
+/**
+ * What goes with converting through a funnel, and with dropping off: other
+ * events people did (or values of a property they had), by odds ratio. Runs on
+ * demand, since it reads every event of everyone who entered the funnel.
+ */
+export function correlationView(spec: Spec): HTMLElement {
+  const project = scope().project;
+  const root = h('div', { class: 'correlation' });
+  let mode: 'events' | 'properties' = 'events';
+  let property = '';
+  const results = h('div', {});
+  const list = (items: CorrelationItem[], title: string, good: boolean) =>
+    h(
+      'div',
+      { class: 'correlation-list' },
+      h('h4', {}, title),
+      items.length
+        ? table(
+            [
+              mode === 'events' ? 'Event' : 'Value',
+              'Converted',
+              'Dropped off',
+              'Conversion',
+              'Odds',
+            ],
+            items.map((it) => [
+              mode === 'events'
+                ? h('span', { class: 'event-pill' }, it.event ?? it.name)
+                : h('span', { class: 'cell-clip', title: it.name }, it.name),
+              count(it.successCount),
+              count(it.failureCount),
+              `${Math.round(it.conversionRate * 100)}%`,
+              h(
+                'span',
+                {
+                  class: it.significant ? (good ? 'good' : 'bad') : 'muted',
+                  title: it.significant ? 'Significant (p < 0.05)' : 'Not significant yet',
+                },
+                `${it.oddsRatio >= 10 ? Math.round(it.oddsRatio) : it.oddsRatio.toFixed(1)}×`,
+              ),
+            ]),
+            { numeric: [1, 2, 3, 4] },
+          )
+        : h('p', { class: 'muted small' }, 'Nothing stands out.'),
+    );
+  const run = async () => {
+    if (mode === 'properties' && !property) {
+      mount(results, h('p', { class: 'muted small' }, 'Pick a property to compare its values.'));
+      return;
+    }
+    mount(results, loading('Comparing converters with drop-offs', 'table'));
+    try {
+      const r = await api.post<{
+        converters: number;
+        dropOffs: number;
+        success: CorrelationItem[];
+        failure: CorrelationItem[];
+        summary: string;
+      }>('/api/query', {
+        ...spec,
+        kind: 'funnel_correlation',
+        project,
+        correlation: mode,
+        ...(mode === 'properties' ? { properties: [property] } : {}),
+      });
+      mount(
+        results,
+        h(
+          'p',
+          { class: 'muted small' },
+          `${count(r.converters)} converted, ${count(r.dropOffs)} dropped off.`,
+        ),
+        h(
+          'div',
+          { class: 'grid-2 correlation-grid' },
+          list(r.success, 'Goes with converting', true),
+          list(r.failure, 'Goes with dropping off', false),
+        ),
+      );
+    } catch (err) {
+      mount(results, errorState(err));
+    }
+  };
+  const paint = () =>
+    mount(
+      root,
+      h(
+        'div',
+        { class: 'correlation-head' },
+        h(
+          'div',
+          {},
+          h('strong', {}, 'What goes with converting'),
+          h(
+            'p',
+            { class: 'muted small correlation-note' },
+            'Events or property values far more common among people who converted, or who dropped off.',
+          ),
+        ),
+        tabs(
+          [
+            { value: 'events', label: 'Events' },
+            { value: 'properties', label: 'A property' },
+          ],
+          mode,
+          (v) => {
+            mode = v;
+            paint();
+            void run();
+          },
+          'tabs-small',
+        ),
+      ),
+      mode === 'properties'
+        ? h(
+            'div',
+            { class: 'correlation-property' },
+            propertyPicker({
+              value: property,
+              project,
+              event: (spec.steps as { event: string }[] | undefined)?.[0]?.event,
+              placeholder: 'person.plan, browser, utm_source…',
+              onChange: (v) => {
+                property = v;
+                void run();
+              },
+            }),
+          )
+        : null,
+      results,
+    );
+  paint();
+  mount(
+    results,
+    h(
+      'button',
+      { type: 'button', onclick: () => void run() },
+      icon('search', 14),
+      'Find what drives conversion',
+    ),
+  );
+  return root;
 }
 
 const formatSeconds = (s: number) =>

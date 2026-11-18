@@ -12,8 +12,12 @@
 import type { FunnelResult } from '@dataflare/core/insights/funnel';
 import type { RetentionResult } from '@dataflare/core/insights/retention';
 import type { TrendsResult } from '@dataflare/core/insights/trends';
+import { resolveRange } from '@dataflare/core/time';
 import { api } from '../api.ts';
+import { loadEventDetail, loadPersonProperties, loadPropertyValues } from '../catalog.ts';
 import {
+  type Annotation,
+  barList,
   type ChartType,
   funnelChart,
   kpiStat,
@@ -25,9 +29,11 @@ import {
   sparkline,
 } from '../components/charts.ts';
 import { previousRange } from '../components/date-range.ts';
+import { pieChart, seriesTable, worldMap } from '../components/display.ts';
 import { cleanFilters, type FilterRow, filterEditor } from '../components/filter-editor.ts';
 import { type IconName, icon } from '../components/icons.ts';
 import {
+  correlationView,
   countBySection,
   funnelOptions,
   funnelVizView,
@@ -36,9 +42,10 @@ import {
   PROPERTY_MATHS,
   retentionOptions,
   showActors,
+  testAccountsToggle,
   trendsOptions,
 } from '../components/insight-options.ts';
-import { modal, popover, selectMenu } from '../components/menu.ts';
+import { modal, popover, selectMenu, toggle } from '../components/menu.ts';
 import { eventPicker, propertyPicker } from '../components/picker.ts';
 import { INSIGHT_PROMPT } from '../components/prompts.ts';
 import {
@@ -55,7 +62,7 @@ import {
   toast,
 } from '../components/ui.ts';
 import { type Child, h, mount } from '../dom.ts';
-import { ago, count, percent } from '../format.ts';
+import { ago, bucketLabel, count, percent } from '../format.ts';
 import { go, href, prefs, type Route, scope } from '../state.ts';
 
 type Kind = 'trends' | 'funnel' | 'retention';
@@ -124,7 +131,7 @@ type SeriesSpec = {
   filters?: FilterRow[];
   label?: string;
 };
-type StepSpec = { event: string; filters?: FilterRow[]; label?: string };
+type StepSpec = { event: string; filters?: FilterRow[]; label?: string; optional?: boolean };
 
 function readBreakdowns(spec: Spec): string[] {
   const b = spec.breakdown;
@@ -143,13 +150,72 @@ function ensureFilters(target: { filters?: FilterRow[] }): FilterRow[] {
   return target.filters;
 }
 
+/** Show `build()` once the catalog says `property` holds numbers (props.* or person.*). */
+function numericOnly(
+  property: string,
+  event: string | undefined,
+  project: string | undefined,
+  build: () => HTMLElement,
+): HTMLElement {
+  const holder = h('div', { class: 'row' });
+  const name = property.replace(/^(props|person)\./, '');
+  const source = property.startsWith('person.')
+    ? loadPersonProperties(project)
+    : property.startsWith('props.') && event
+      ? loadEventDetail(event, project).then((d) => d.properties)
+      : Promise.resolve([]);
+  void source.then((props) => {
+    const types = props.find((p) => p.name === name)?.types ?? [];
+    if (types.length && types.every((t) => t === 'number' || t === 'null')) mount(holder, build());
+  });
+  return holder;
+}
+
+/** Saved cohorts to compare, as toggles. */
+function cohortChooser(spec: Spec, project: string | undefined, update: () => void): HTMLElement {
+  const holder = h(
+    'div',
+    { class: 'chip-list cohort-chooser' },
+    h('span', { class: 'muted small' }, 'Loading cohorts…'),
+  );
+  void loadPropertyValues('cohort', { project }).then((cohorts) => {
+    const chosen = new Set((spec.breakdownCohorts as string[] | undefined) ?? []);
+    mount(
+      holder,
+      cohorts.length
+        ? cohorts.map((c) =>
+            h(
+              'button',
+              {
+                type: 'button',
+                class: 'chip-toggle',
+                'aria-pressed': String(chosen.has(c.value)),
+                onclick: () => {
+                  if (chosen.has(c.value)) chosen.delete(c.value);
+                  else chosen.add(c.value);
+                  if (chosen.size) spec.breakdownCohorts = [...chosen];
+                  else delete spec.breakdownCohorts;
+                  update();
+                },
+              },
+              c.label,
+            ),
+          )
+        : h('span', { class: 'muted small' }, 'No saved cohorts yet: make one on the People page.'),
+    );
+  });
+  return holder;
+}
+
 function breakdownEditor(
   spec: Spec,
   event: string | undefined,
   project: string | undefined,
   update: () => void,
+  kind: Kind,
 ): HTMLElement {
   const values = readBreakdowns(spec);
+  const byCohort = values.includes('cohort');
   return h(
     'div',
     { class: 'breakdown-editor' },
@@ -161,12 +227,17 @@ function breakdownEditor(
           value,
           event,
           project,
+          cohorts: true,
           placeholder: i === 0 ? 'browser, utm_source, plan…' : 'Add another property',
           onChange: (v) => {
-            const next = readBreakdowns(spec);
-            if (v) next[i] = v;
+            // Cohorts are compared on their own, not combined with properties.
+            let next = readBreakdowns(spec);
+            if (v === 'cohort') next = ['cohort'];
+            else if (v) next[i] = v;
             else next.splice(i, 1);
             writeBreakdowns(spec, next);
+            if (!next.includes('cohort')) delete spec.breakdownCohorts;
+            if (next.length !== 1) delete spec.breakdownBins;
             update();
           },
         }),
@@ -174,11 +245,34 @@ function breakdownEditor(
           const next = readBreakdowns(spec);
           next.splice(i, 1);
           writeBreakdowns(spec, next);
+          if (!next.includes('cohort')) delete spec.breakdownCohorts;
+          if (next.length !== 1) delete spec.breakdownBins;
           update();
         }),
       ),
     ),
-    values.length < 4
+    byCohort ? cohortChooser(spec, project, update) : null,
+    values.length === 1 && values[0] && !byCohort && kind !== 'retention'
+      ? numericOnly(values[0], event, project, () =>
+          selectMenu({
+            value: String(spec.breakdownBins ?? ''),
+            label: 'Numeric ranges',
+            options: [
+              { value: '', label: 'One line per value' },
+              { value: '5', label: 'Numbers in 5 ranges' },
+              { value: '10', label: 'Numbers in 10 ranges' },
+              { value: '20', label: 'Numbers in 20 ranges' },
+            ],
+            width: 220,
+            onChange: (v) => {
+              if (v) spec.breakdownBins = Number(v);
+              else delete spec.breakdownBins;
+              update();
+            },
+          }),
+        )
+      : null,
+    values.length < 4 && !byCohort
       ? addButton(values.length ? 'Add another' : 'Add breakdown', () => {
           writeBreakdowns(spec, [...readBreakdowns(spec), '']);
           update();
@@ -318,7 +412,7 @@ function builder(kind: Kind, spec: Spec, update: () => void, project?: string): 
           update();
         }),
       ),
-      section('Break down by', breakdownEditor(spec, series[0]?.event, project, update)),
+      section('Break down by', breakdownEditor(spec, series[0]?.event, project, update, kind)),
       section(
         'Filters on all series',
         filterEditor(spec.filters as FilterRow[], update, {
@@ -326,6 +420,7 @@ function builder(kind: Kind, spec: Spec, update: () => void, project?: string): 
           project,
           cohorts: true,
         }),
+        testAccountsToggle(spec, update),
       ),
       countBySection(spec, update, project),
       trendsOptions(spec, update, series.length),
@@ -372,6 +467,18 @@ function builder(kind: Kind, spec: Spec, update: () => void, project?: string): 
                   : null,
               ),
               filterEditor(step.filters!, update, { event: step.event, project, cohorts: true }),
+              // People may skip a middle step (not the first or last, and not in "any order").
+              i > 0 && i < steps.length - 1 && spec.order !== 'unordered'
+                ? toggle({
+                    checked: Boolean(step.optional),
+                    label: 'Optional step',
+                    onChange: (c) => {
+                      if (c) step.optional = true;
+                      else delete step.optional;
+                      update();
+                    },
+                  })
+                : null,
             );
           }),
         ),
@@ -393,7 +500,7 @@ function builder(kind: Kind, spec: Spec, update: () => void, project?: string): 
           },
         }),
       ),
-      section('Break down by', breakdownEditor(spec, steps[0]?.event, project, update)),
+      section('Break down by', breakdownEditor(spec, steps[0]?.event, project, update, kind)),
       section(
         'Filters on every step',
         filterEditor(spec.filters as FilterRow[], update, {
@@ -401,6 +508,7 @@ function builder(kind: Kind, spec: Spec, update: () => void, project?: string): 
           project,
           cohorts: true,
         }),
+        testAccountsToggle(spec, update),
       ),
       funnelOptions(spec, update, steps.length, project),
       countBySection(spec, update, project),
@@ -426,6 +534,7 @@ function builder(kind: Kind, spec: Spec, update: () => void, project?: string): 
           eventPicker({
             value: cohort.event,
             project,
+            anyEvent: true,
             label: 'Cohort event',
             onChange: (v) => {
               cohort.event = v;
@@ -448,6 +557,7 @@ function builder(kind: Kind, spec: Spec, update: () => void, project?: string): 
           eventPicker({
             value: ret.event,
             project,
+            anyEvent: true,
             label: 'Return event',
             onChange: (v) => {
               ret.event = v;
@@ -465,6 +575,7 @@ function builder(kind: Kind, spec: Spec, update: () => void, project?: string): 
         { class: 'query-card-row' },
         tabs(
           [
+            { value: 'hour', label: 'Hours' },
             { value: 'day', label: 'Days' },
             { value: 'week', label: 'Weeks' },
             { value: 'month', label: 'Months' },
@@ -499,8 +610,9 @@ function builder(kind: Kind, spec: Spec, update: () => void, project?: string): 
         project,
         cohorts: true,
       }),
+      testAccountsToggle(spec, update),
     ),
-    section('Break down by', breakdownEditor(spec, cohort.event, project, update)),
+    section('Break down by', breakdownEditor(spec, cohort.event, project, update, kind)),
     retentionOptions(spec, update),
     countBySection(spec, update, project),
   );
@@ -511,22 +623,29 @@ interface RunResult extends Record<string, unknown> {
   sql: string[];
 }
 
-function trendsView(
-  r: TrendsResult,
-  previous: TrendsResult | null,
-  chartType: ChartType | 'number',
-  onPeople?: (series: number, label: string) => void,
-): HTMLElement {
+const TIME_DISPLAYS = new Set(['line', 'area', 'bar']);
+
+interface TrendsDisplay {
+  /** line, area, bar, number, bar_value, table, pie or world_map. */
+  display: string;
+  spec: Spec;
+  annotations: (Annotation & { id?: string })[];
+  onPeople?: (series: number, label: string) => void;
+  onAnnotate?: () => void;
+  onDeleteNote?: (id: string) => void;
+  onMapBreakdown: () => void;
+}
+
+function trendsView(r: TrendsResult, previous: TrendsResult | null, o: TrendsDisplay): HTMLElement {
   // Series, then formula lines (B / A * 100…), which come back separately.
   const lines = [...r.series, ...(r.formulas ?? [])];
+  const before = previous ? [...previous.series, ...(previous.formulas ?? [])] : null;
   const stats = h(
     'div',
-    { class: `stats ${chartType === 'number' ? 'stats-large' : ''}` },
+    { class: `stats ${o.display === 'number' ? 'stats-large' : ''}` },
     lines.map((s, i) => {
-      const before = previous
-        ? [...previous.series, ...(previous.formulas ?? [])][i]?.total
-        : undefined;
-      const c = before ? (s.total - before) / before : null;
+      const prior = before?.[i]?.total;
+      const c = prior ? (s.total - prior) / prior : null;
       return kpiStat(
         s.label,
         count(s.total),
@@ -542,39 +661,105 @@ function trendsView(
       );
     }),
   );
-  if (chartType === 'number') return h('div', { class: 'insight-result' }, stats);
-  const chart = lineChart(
-    r.buckets,
-    lines.map((s, i) => ({
-      label: s.label,
-      values: s.values,
-      previous: previous
-        ? [...previous.series, ...(previous.formulas ?? [])][i]?.values
-        : undefined,
-    })),
-    r.interval,
-    { height: 320, type: chartType },
-  );
+  if (o.display === 'number') return h('div', { class: 'insight-result' }, stats);
+  const totals = lines.map((l) => ({ label: l.label, value: l.total }));
+  // Tables, pies, bars and maps show every total themselves.
+  const showStats = TIME_DISPLAYS.has(o.display);
+  let body: Child;
+  if (o.display === 'table') body = seriesTable(r.buckets, lines, r.interval);
+  else if (o.display === 'pie') body = pieChart(totals);
+  else if (o.display === 'bar_value') body = barList(totals, ['Series', 'Total'], { limit: 25 });
+  else if (o.display === 'world_map') {
+    const byCountry = readBreakdowns(o.spec).join() === 'country';
+    body = byCountry
+      ? worldMap(
+          r.series
+            .filter((x) => x.seriesIndex === 0 && x.breakdown)
+            .map((x) => ({ code: x.breakdown!, value: x.total })),
+        )
+      : empty(
+          'The map shades each country by its total, so it needs one line per country.',
+          h(
+            'button',
+            { type: 'button', class: 'primary', onclick: o.onMapBreakdown },
+            icon('globe', 15),
+            'Break down by country',
+          ),
+          { icon: 'globe', title: 'Break down by country' },
+        );
+  } else {
+    body = [
+      lineChart(
+        r.buckets,
+        lines.map((s, i) => ({
+          label: s.label,
+          values: s.values,
+          previous: before?.[i]?.values,
+          trend: s.trendLine,
+        })),
+        r.interval,
+        {
+          height: 320,
+          type: o.display as ChartType,
+          logScale: Boolean(o.spec.logScale),
+          percentStack: Boolean(o.spec.percentStack),
+          showValues: Boolean(o.spec.showValues),
+          annotations: o.annotations,
+        },
+      ),
+      o.onAnnotate
+        ? h(
+            'div',
+            { class: 'chart-notes' },
+            o.annotations.map((a) =>
+              h(
+                'span',
+                { class: 'note-chip' },
+                h('span', { class: 'note-icon' }, icon('flag', 12)),
+                h('span', { class: 'muted' }, bucketLabel(a.at, 'day')),
+                a.text,
+                a.id && o.onDeleteNote
+                  ? h(
+                      'button',
+                      {
+                        type: 'button',
+                        class: 'icon-button note-remove',
+                        'aria-label': `Delete note "${a.text}"`,
+                        onclick: () => o.onDeleteNote?.(a.id!),
+                      },
+                      icon('x', 12),
+                    )
+                  : null,
+              ),
+            ),
+            h(
+              'button',
+              { type: 'button', class: 'link-button add-button', onclick: o.onAnnotate },
+              icon('plus', 13),
+              'Add a note',
+            ),
+          )
+        : null,
+    ];
+  }
   const rows = lines.map((s, i) => {
-    const before = previous
-      ? [...previous.series, ...(previous.formulas ?? [])][i]?.total
-      : undefined;
+    const prior = before?.[i]?.total;
     return [
       h('span', { class: 'series-cell' }, seriesTag(i), s.label),
       sparkline(s.values, { color: SERIES[i % SERIES.length], height: 22 }),
       count(s.total),
-      before === undefined ? '–' : count(before),
-      before
+      prior === undefined ? '–' : count(prior),
+      prior
         ? h(
             'span',
-            { class: `delta ${s.total >= before ? 'good' : 'bad'}` },
-            `${s.total >= before ? '+' : '−'}${Math.abs(((s.total - before) / before) * 100).toFixed(0)}%`,
+            { class: `delta ${s.total >= prior ? 'good' : 'bad'}` },
+            `${s.total >= prior ? '+' : '−'}${Math.abs(((s.total - prior) / prior) * 100).toFixed(0)}%`,
           )
         : '–',
-      onPeople && i < r.series.length
+      o.onPeople && i < r.series.length
         ? h(
             'button',
-            { type: 'button', class: 'link-button', onclick: () => onPeople(i, s.label) },
+            { type: 'button', class: 'link-button', onclick: () => o.onPeople?.(i, s.label) },
             'People',
           )
         : '',
@@ -583,9 +768,9 @@ function trendsView(
   return h(
     'div',
     { class: 'insight-result' },
-    stats,
-    chart,
-    lines.length > 1 || previous || onPeople
+    showStats ? stats : null,
+    body,
+    TIME_DISPLAYS.has(o.display) && (lines.length > 1 || previous || o.onPeople)
       ? table(['Series', 'Trend', 'Total', 'Previous', 'Change', ''], rows, {
           numeric: [2, 3, 4],
           class: 'series-table',
@@ -608,40 +793,78 @@ function countedNoun(aggregateBy: unknown): string {
   return `${String(aggregateBy)} groups`;
 }
 
-function retentionView(r: RetentionResult, noun = 'people'): HTMLElement {
+function retentionView(
+  r: RetentionResult,
+  noun = 'people',
+  onCell?: (cohortStart: number, k: number, breakdown?: string) => void,
+): HTMLElement {
   if (!r.cohorts.length)
     return empty('No one in any cohort for this period.', undefined, { icon: 'retention' });
   const now = Date.now();
-  let last = r.average.length - 1;
-  while (last > 0 && !r.cohorts.some((c) => periodReached(c.start, last, r.period, now))) last--;
   const p = r.period[0]!.toUpperCase();
-  return h(
-    'div',
-    { class: 'insight-result' },
-    h(
-      'div',
-      { class: 'stats' },
-      kpiStat(
-        `Retained at ${p}1`,
-        r.average.length > 1 && last >= 1 ? percent(r.average[1] ?? 0, 1) : '–',
-        `of ${noun} come back the next ${r.period}`,
-      ),
-      last > 1
-        ? kpiStat(
-            `Retained at ${p}${last}`,
-            percent(r.average[last] ?? 0, 1),
-            `latest ${r.period} any cohort has reached`,
+  const tables = r.breakdowns ?? [];
+  const root = h('div', { class: 'insight-result' });
+  let selected: string | null = null;
+  const paint = () => {
+    const t = (selected === null ? null : tables.find((b) => b.value === selected)) ?? r;
+    let last = t.average.length - 1;
+    while (last > 0 && !t.cohorts.some((c) => periodReached(c.start, last, r.period, now))) last--;
+    mount(
+      root,
+      tables.length
+        ? tabs(
+            [
+              { value: '', label: 'All' },
+              ...tables.slice(0, 12).map((b) => ({ value: b.value, label: b.value || '(none)' })),
+            ],
+            selected ?? '',
+            (v) => {
+              selected = v || null;
+              paint();
+            },
+            'tabs-small retention-breakdowns',
           )
         : null,
-      kpiStat(
-        `${noun[0]!.toUpperCase()}${noun.slice(1)} in cohorts`,
-        count(r.cohorts.reduce((n, c) => n + c.size, 0)),
-        `${r.cohorts.length} ${PERIOD_ADJECTIVE[r.period] ?? r.period} cohorts`,
+      h(
+        'div',
+        { class: 'stats' },
+        kpiStat(
+          `Retained at ${p}1`,
+          t.average.length > 1 && last >= 1 ? percent(t.average[1] ?? 0, 1) : '–',
+          `of ${noun} come back the next ${r.period}`,
+        ),
+        last > 1
+          ? kpiStat(
+              `Retained at ${p}${last}`,
+              percent(t.average[last] ?? 0, 1),
+              `latest ${r.period} any cohort has reached`,
+            )
+          : null,
+        kpiStat(
+          `${noun[0]!.toUpperCase()}${noun.slice(1)} in cohorts`,
+          count(t.cohorts.reduce((n, c) => n + c.size, 0)),
+          `${t.cohorts.length} ${PERIOD_ADJECTIVE[r.period] ?? r.period} cohorts`,
+        ),
       ),
-    ),
-    retentionCurve(r.cohorts, r.average, r.period, now),
-    retentionGrid(r.cohorts, r.average, r.period, now),
-  );
+      t.cohorts.length
+        ? [
+            retentionCurve(t.cohorts, t.average, r.period, now),
+            retentionGrid(
+              t.cohorts,
+              t.average,
+              r.period,
+              now,
+              onCell ? (start, k) => onCell(start, k, selected ?? undefined) : undefined,
+            ),
+            onCell
+              ? h('p', { class: 'muted small' }, 'Click a percentage to see who it counts.')
+              : null,
+          ]
+        : empty('No one in this group’s cohorts.', undefined, { icon: 'retention' }),
+    );
+  };
+  paint();
+  return root;
 }
 
 function newMenu(label = 'New analysis'): HTMLElement {
@@ -907,8 +1130,9 @@ function editorView(options: {
   const form = h('form', { class: 'builder' });
   const output = h('div', { class: 'insight-output' });
   const status = h('span', { class: 'run-status muted small', 'aria-live': 'polite' });
-  let chartType: ChartType | 'number' =
-    (options.route.params.get('chart') as ChartType | 'number' | null) ?? 'line';
+  // How trends are drawn: saved with the analysis (an old ?chart= link still works).
+  let display = String(spec.display ?? options.route.params.get('chart') ?? 'line');
+  let notes: (Annotation & { id: string })[] = [];
   let runId = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
 
@@ -929,7 +1153,11 @@ function editorView(options: {
   const agentPrompt = () =>
     `Using the Dataflare MCP tool query_${kind}, run ${JSON.stringify(shareable())} and explain what it shows.`;
 
+  const cohortsMissing = () =>
+    readBreakdowns(spec).includes('cohort') &&
+    !(spec.breakdownCohorts as string[] | undefined)?.length;
   const ready = () => {
+    if (cohortsMissing()) return false;
     if (kind === 'funnel') return (spec.steps as StepSpec[]).every((s) => s.event);
     if (kind === 'trends')
       return (spec.series as SeriesSpec[]).every(
@@ -947,9 +1175,11 @@ function editorView(options: {
       mount(
         output,
         empty(
-          kind === 'funnel'
-            ? 'Pick an event for every step to see the funnel.'
-            : 'Pick an event to see results.',
+          cohortsMissing()
+            ? 'Pick the cohorts to compare under “Break down by”.'
+            : kind === 'funnel'
+              ? 'Pick an event for every step to see the funnel.'
+              : 'Pick an event to see results.',
           undefined,
           { icon: KIND_ICON[kind], title: 'Almost there' },
         ),
@@ -968,22 +1198,52 @@ function editorView(options: {
         kind === 'trends' && prefs.compare
           ? previousRange(String(body.from), body.to ? String(body.to) : null)
           : null;
-      const [result, previous] = await Promise.all([
+      const [result, previous, pinned] = await Promise.all([
         api.post<RunResult>('/api/query', body),
         prev
           ? api
               .post<TrendsResult>('/api/query', { ...body, from: prev.from, to: prev.to })
               .catch(() => null)
           : Promise.resolve(null),
+        kind === 'trends'
+          ? api
+              .get<{ annotations: { id: string; at: string; text: string }[] }>(
+                '/api/annotations',
+                {
+                  project: sc.project,
+                  from: String(body.from),
+                  to: body.to ? String(body.to) : undefined,
+                  insight: options.key,
+                },
+              )
+              .then((x) =>
+                x.annotations.map((a) => ({ id: a.id, at: Date.parse(a.at), text: a.text })),
+              )
+              .catch(() => [])
+          : Promise.resolve([]),
       ]);
+      notes = pinned;
       if (id !== runId) return;
       const shared = shareable();
       const funnel = result as unknown as FunnelResult;
       const view =
         kind === 'trends'
-          ? trendsView(result as unknown as TrendsResult, previous, chartType, (series, label) =>
-              showActors('trends', shared, { series }, `Who did ${label}`),
-            )
+          ? trendsView(result as unknown as TrendsResult, previous, {
+              display,
+              spec,
+              annotations: notes,
+              onPeople: (series, label) =>
+                showActors('trends', shared, { series }, `Who did ${label}`),
+              onAnnotate: addNote,
+              onDeleteNote: deleteNote,
+              onMapBreakdown: () => {
+                spec.breakdown = ['country'];
+                spec.breakdownLimit = 50;
+                delete spec.breakdownBins;
+                delete spec.breakdownCohorts;
+                update();
+              },
+            })
           : kind === 'funnel'
             ? funnel.steps[0]?.count
               ? (funnelVizView(funnel) ??
@@ -1034,9 +1294,22 @@ function editorView(options: {
                         : null,
                     ]),
                   ),
+                  funnel.breakdowns?.length ? null : correlationView(shared),
                 ))
               : empty('No one did the first step in this period.', undefined, { icon: 'funnel' })
-            : retentionView(result as unknown as RetentionResult, countedNoun(spec.aggregateBy));
+            : retentionView(
+                result as unknown as RetentionResult,
+                countedNoun(spec.aggregateBy),
+                (cohort, period, breakdown) =>
+                  showActors(
+                    'retention',
+                    shared,
+                    { cohort, period, ...(breakdown === undefined ? {} : { breakdown }) },
+                    period === 0
+                      ? `Who joined the ${bucketLabel(cohort, 'day')} cohort`
+                      : `Who came back in ${String((result as unknown as RetentionResult).period)} ${period}`,
+                  ),
+              );
       mount(
         output,
         panel(
@@ -1064,6 +1337,76 @@ function editorView(options: {
     clearTimeout(timer);
     timer = setTimeout(() => void run(), 450);
   };
+
+  function addNote(): void {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const d = new Date();
+    const when = h('input', {
+      type: 'datetime-local',
+      value: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`,
+    });
+    const text = h('input', {
+      type: 'text',
+      maxlength: 500,
+      placeholder: 'e.g. Launched pricing v2',
+      required: true,
+    });
+    let onlyHere = false;
+    const save = async () => {
+      if (!text.value.trim() || !when.value) {
+        toast('Say what happened, and when', 'error');
+        return;
+      }
+      try {
+        await api.post('/api/annotations', {
+          project: sc.project,
+          at: new Date(when.value).toISOString(),
+          text: text.value.trim(),
+          ...(onlyHere && options.key ? { insight: options.key } : {}),
+        });
+        toast('Note added');
+        close();
+        void run();
+      } catch (err) {
+        toast(err instanceof Error ? err.message : String(err), 'error');
+      }
+    };
+    const close = modal({
+      title: 'Add a note to the chart',
+      width: 480,
+      body: h(
+        'div',
+        { class: 'stack' },
+        h('label', { class: 'field' }, h('span', {}, 'What happened'), text),
+        h('label', { class: 'field' }, h('span', {}, 'When'), when),
+        options.mode === 'saved'
+          ? toggle({
+              checked: false,
+              label: 'Only on this analysis (otherwise on every time chart)',
+              onChange: (c) => {
+                onlyHere = c;
+              },
+            })
+          : h('p', { class: 'muted small' }, 'Notes show on every time chart in this project.'),
+      ),
+      actions: [
+        h('button', { type: 'button', onclick: () => close() }, 'Cancel'),
+        h('button', { type: 'button', class: 'primary', onclick: () => void save() }, 'Add note'),
+      ],
+    });
+    text.focus();
+  }
+
+  function deleteNote(id: string): void {
+    if (!confirm('Delete this note? It disappears from every chart.')) return;
+    void api
+      .delete(`/api/annotations/${encodeURIComponent(id)}`, { project: sc.project })
+      .then(() => {
+        toast('Note deleted');
+        void run();
+      })
+      .catch((err) => toast(err instanceof Error ? err.message : String(err), 'error'));
+  }
 
   const renderForm = () => mount(form, builder(kind, spec, update, sc.project));
   function update() {
@@ -1187,6 +1530,26 @@ function editorView(options: {
       : h('span', { class: `kind-chip kind-${kind}` }, icon(KIND_ICON[kind], 14), KIND_LABEL[kind]);
 
   const toolbar = h('div', { class: 'canvas-toolbar' });
+  /** Minute buckets only for ranges up to two days (the query refuses longer ones). */
+  const minuteAllowed = () => {
+    try {
+      const r = resolveRange(sc.from, sc.to ?? undefined);
+      return r.to - r.from <= 2 * 86_400_000 + 60_000;
+    } catch {
+      return false;
+    }
+  };
+  if (spec.interval === 'minute' && !minuteAllowed()) spec.interval = 'hour';
+  function setDisplay(v: string): void {
+    display = v;
+    if (v === 'line') delete spec.display;
+    else spec.display = v;
+    // A map wants every country, not the top ten.
+    if (v === 'world_map' && readBreakdowns(spec).join() === 'country') spec.breakdownLimit ??= 50;
+    paintToolbar();
+    renderForm();
+    void run();
+  }
   const paintToolbar = (): void =>
     mount(
       toolbar,
@@ -1199,16 +1562,26 @@ function editorView(options: {
                 { value: 'bar', label: 'Bar', icon: 'barChart' as IconName },
                 { value: 'number', label: 'Number', icon: 'hash' as IconName },
               ],
-              chartType,
-              (v) => {
-                chartType = v as ChartType | 'number';
-                paintToolbar();
-                void run();
-              },
+              display,
+              setDisplay,
               'tabs-small',
             ),
+            selectMenu({
+              value: display,
+              label: 'More ways to show it',
+              options: [
+                { value: 'bar_value', label: 'Bars by total', icon: 'barChart' as IconName },
+                { value: 'table', label: 'Table of values', icon: 'table' as IconName },
+                { value: 'pie', label: 'Pie of totals', icon: 'gauge' as IconName },
+                { value: 'world_map', label: 'World map', icon: 'globe' as IconName },
+              ],
+              fallback: 'More views',
+              width: 200,
+              onChange: setDisplay,
+            }),
             tabs(
               [
+                ...(minuteAllowed() ? [{ value: 'minute', label: 'Minute' }] : []),
                 { value: 'hour', label: 'Hour' },
                 { value: 'day', label: 'Day' },
                 { value: 'week', label: 'Week' },

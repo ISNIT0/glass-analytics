@@ -186,6 +186,25 @@ await call('POST', '/api/cohorts', {
     ],
   },
 });
+// Visits from a few countries (imported, so they keep their country), and a note on the charts.
+await call('POST', '/api/import', {
+  project: 'demo',
+  events: ['GB', 'GB', 'GB', 'US', 'US', 'DE', 'FR', 'IN', 'BR', 'JP', 'AU', 'SG'].map(
+    (country, i) => ({
+      id: `geo-${i}`,
+      event: '$pageview',
+      ts: now - (i % 5) * 86_400_000 - 7_200_000,
+      distinct_id: `geo-${i % 4}`,
+      url: 'https://demo.test/',
+      context: { country },
+    }),
+  ),
+});
+await call('POST', '/api/annotations', {
+  project: 'demo',
+  at: new Date(now - 3 * 86_400_000).toISOString(),
+  text: 'Launched pricing v2',
+});
 await call('POST', '/api/cohorts', {
   project: 'demo',
   key: 'beta',
@@ -285,6 +304,8 @@ await call('POST', '/api/flags/new-checkout/schedule', {
   change: { rollout: 100 },
 });
 
+const insight = (kind: string, spec: Record<string, unknown>, from = '-7d') =>
+  `insights/new/${kind}?project=demo&from=${from}&spec=${encodeURIComponent(JSON.stringify(spec))}`;
 const routes: [string, string][] = [
   ['errors', 'errors?project=demo&from=-7d'],
   ['issue', `errors/${issues.issues[0].id}?project=demo&from=-7d`],
@@ -313,6 +334,103 @@ const routes: [string, string][] = [
   [
     'insights-retention',
     'insights/new/retention?project=demo&from=-7d&spec=%7B%22cohortEvent%22%3A%7B%22event%22%3A%22%24pageview%22%7D%2C%22returnEvent%22%3A%7B%22event%22%3A%22%24pageview%22%7D%2C%22period%22%3A%22day%22%2C%22periods%22%3A6%2C%22retentionType%22%3A%22recurring%22%2C%22cumulative%22%3Atrue%2C%22aggregateBy%22%3A%22company%22%7D',
+  ],
+  [
+    'insights-table',
+    insight('trends', {
+      series: [{ event: '$pageview' }],
+      breakdown: ['path'],
+      display: 'table',
+      interval: 'day',
+    }),
+  ],
+  [
+    'insights-pie',
+    insight('trends', { series: [{ event: '$pageview' }], breakdown: ['path'], display: 'pie' }),
+  ],
+  [
+    'insights-values',
+    insight('trends', {
+      series: [{ event: '$pageview' }],
+      breakdown: ['path'],
+      display: 'bar_value',
+    }),
+  ],
+  [
+    'insights-map',
+    insight('trends', {
+      series: [{ event: '$pageview' }],
+      breakdown: ['country'],
+      breakdownLimit: 50,
+      display: 'world_map',
+    }),
+  ],
+  [
+    'insights-stacked',
+    insight('trends', {
+      series: [{ event: '$pageview' }],
+      breakdown: ['path'],
+      display: 'area',
+      percentStack: true,
+      showValues: true,
+    }),
+  ],
+  [
+    'insights-trendline',
+    insight('trends', {
+      series: [{ event: '$pageview' }, { event: '$exception' }],
+      display: 'bar',
+      trendLine: true,
+      logScale: true,
+      showValues: true,
+    }),
+  ],
+  [
+    'insights-cohorts',
+    insight('trends', {
+      series: [{ event: '$pageview' }],
+      breakdown: ['cohort'],
+      breakdownCohorts: ['buyers', 'beta'],
+    }),
+  ],
+  [
+    'insights-bins',
+    insight('trends', {
+      series: [{ event: 'order_paid' }],
+      breakdown: ['props.amount'],
+      breakdownBins: 5,
+    }),
+  ],
+  [
+    'insights-funnel-optional',
+    insight('funnel', {
+      steps: [
+        { event: '$pageview' },
+        { event: '$exception', optional: true },
+        { event: 'order_paid' },
+      ],
+      window: '7d',
+      breakdown: ['path'],
+      breakdownAttribution: 'last_touch',
+    }),
+  ],
+  [
+    'insights-correlation',
+    insight('funnel', { steps: [{ event: '$pageview' }, { event: 'order_paid' }], window: '7d' }),
+  ],
+  [
+    'insights-retention-hour',
+    insight(
+      'retention',
+      {
+        cohortEvent: { event: '*' },
+        returnEvent: { event: '*' },
+        period: 'hour',
+        periods: 6,
+        breakdown: ['path'],
+      },
+      '-2d',
+    ),
   ],
   ['people', 'users?project=demo'],
   ['person', 'users/dev-1?project=demo'],
@@ -423,6 +541,18 @@ const actions: Record<string, (p: Page) => Promise<void>> = {
     await p.getByRole('button', { name: 'Try it' }).click();
     await p.waitForTimeout(700);
   },
+  'insights-correlation': async (p) => {
+    await p.getByRole('button', { name: 'Find what drives conversion' }).click();
+    await p.waitForTimeout(1200);
+  },
+  'insights-retention-hour': async (p) => {
+    await p.locator('.retention .cell-button').first().click();
+    await p.waitForTimeout(900);
+  },
+  'insights-trendline': async (p) => {
+    await p.getByRole('button', { name: 'Add a note' }).click();
+    await p.waitForTimeout(300);
+  },
   cohorts: async (p) => {
     await p
       .locator('.cohorts-table tr', { hasText: 'Healthy paying accounts' })
@@ -443,6 +573,9 @@ const actions: Record<string, (p: Page) => Promise<void>> = {
   },
 };
 const MOBILE = new Set([
+  'insights-map',
+  'insights-pie',
+  'insights-correlation',
   'empty-destinations',
   'empty-errors',
   'destination-pick',

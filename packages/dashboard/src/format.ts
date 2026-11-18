@@ -90,6 +90,8 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 
 export function bucketLabel(ms: number, interval: string): string {
   const d = new Date(ms);
+  if (interval === 'minute')
+    return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
   if (interval === 'hour') return `${String(d.getUTCHours()).padStart(2, '0')}:00`;
   if (interval === 'month') return `${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
   return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;

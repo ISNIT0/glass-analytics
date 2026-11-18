@@ -26,6 +26,15 @@ export interface LineSeries {
   values: number[];
   /** The same series over the previous period, drawn dashed. Aligned by index. */
   previous?: number[];
+  /** A fitted trend, drawn as a thin dashed line in the series colour. */
+  trend?: number[];
+}
+
+/** A note pinned to a moment, shown as a marker on time charts. */
+export interface Annotation {
+  /** Epoch ms. */
+  at: number;
+  text: string;
 }
 
 export type ChartType = 'line' | 'area' | 'bar';
@@ -41,6 +50,38 @@ export interface ChartOptions {
   yMax?: number;
   /** Hide the legend even with several series. */
   legend?: boolean;
+  /** Logarithmic y axis, in powers of ten. */
+  logScale?: boolean;
+  /** Stack the series as shares of each bucket's total (areas, or bars with `type: 'bar'`). */
+  percentStack?: boolean;
+  /** Write each value on the chart, when there is room. */
+  showValues?: boolean;
+  /** Notes pinned to moments: a marker on the x axis and a line in the hover readout. */
+  annotations?: Annotation[];
+}
+
+const INTERVAL_MS: Record<string, number> = {
+  minute: 60_000,
+  hour: 3_600_000,
+  day: 86_400_000,
+  week: 7 * 86_400_000,
+  month: 31 * 86_400_000,
+};
+
+/** The bucket a moment falls in, or null when it is outside the chart. */
+export function bucketIndex(buckets: number[], at: number, interval: string): number | null {
+  if (!buckets.length || at < buckets[0]!) return null;
+  let i = buckets.length - 1;
+  while (i > 0 && buckets[i]! > at) i--;
+  if (i === buckets.length - 1 && at >= buckets[i]! + (INTERVAL_MS[interval] ?? 86_400_000))
+    return null;
+  return i;
+}
+
+/** Powers of ten from 1 up to just above `dataMax`. */
+function logTicks(dataMax: number): number[] {
+  const top = Math.max(1, Math.ceil(Math.log10(Math.max(10, dataMax))));
+  return Array.from({ length: top + 1 }, (_, k) => 10 ** k);
 }
 
 /** Round a step up to 1, 2 or 5 × 10^n so axis labels are whole, readable numbers. */
@@ -135,11 +176,38 @@ export function lineChart(
       : null;
   const wrap = h('div', { class: `chart-wrap chart-${type}` }, holder, readout, legend);
 
+  // 100% stacks: each series' share of the bucket's total, and the band it fills.
+  const stacked = Boolean(options.percentStack) && series.length > 1;
+  const totals = Array.from({ length: n }, (_, i) =>
+    series.reduce((sum, l) => sum + Math.max(0, l.values[i] ?? 0), 0),
+  );
+  const shares = series.map((l) =>
+    Array.from({ length: n }, (_, i) =>
+      totals[i] ? Math.max(0, l.values[i] ?? 0) / totals[i]! : 0,
+    ),
+  );
+  const lower = shares.map((_, si) =>
+    Array.from({ length: n }, (_, i) => shares.slice(0, si).reduce((sum, sh) => sum + sh[i]!, 0)),
+  );
+  const upper = lower.map((lo, si) => lo.map((v, i) => v + shares[si]![i]!));
+  const log = Boolean(options.logScale) && !stacked;
+  const axisFmt = stacked ? (v: number) => percent(v, 0) : fmt;
+  const notesAt = new Map<number, Annotation[]>();
+  for (const a of options.annotations ?? []) {
+    const i = bucketIndex(buckets, a.at, interval);
+    if (i !== null) notesAt.set(i, [...(notesAt.get(i) ?? []), a]);
+  }
+
   const draw = (W: number) => {
-    const all = series.flatMap((x) => [...x.values, ...(x.previous ?? [])]);
-    const tickValues = ticks(Math.max(0, ...all), options.yMax);
+    const all = series.flatMap((x) => [...x.values, ...(x.previous ?? []), ...(x.trend ?? [])]);
+    const dataMax = Math.max(0, ...all);
+    const tickValues = stacked
+      ? [0, 0.25, 0.5, 0.75, 1]
+      : log
+        ? logTicks(dataMax)
+        : ticks(dataMax, options.yMax);
     const max = tickValues[tickValues.length - 1]! || 1;
-    const longest = Math.max(...tickValues.map((t) => fmt(t).length));
+    const longest = Math.max(...tickValues.map((t) => axisFmt(t).length));
     const pad = { top: 14, right: 16, bottom: 28, left: Math.max(32, longest * 7 + 14) };
     const innerW = Math.max(10, W - pad.left - pad.right);
     const innerH = H - pad.top - pad.bottom;
@@ -148,7 +216,10 @@ export function lineChart(
       type === 'bar'
         ? pad.left + band * (i + 0.5)
         : pad.left + (n <= 1 ? innerW / 2 : (i / (n - 1)) * innerW);
-    const y = (v: number) => pad.top + innerH - (Math.min(v, max) / max) * innerH;
+    const y = (v: number) =>
+      log
+        ? pad.top + innerH - (Math.log10(Math.max(1, Math.min(v, max))) / Math.log10(max)) * innerH
+        : pad.top + innerH - (Math.min(v, max) / max) * innerH;
 
     const defs = s(
       'defs',
@@ -181,7 +252,11 @@ export function lineChart(
           y2: y(v),
           class: i === 0 ? 'grid baseline' : 'grid',
         }),
-        s('text', { x: pad.left - 10, y: y(v) + 4, class: 'axis', 'text-anchor': 'end' }, fmt(v)),
+        s(
+          'text',
+          { x: pad.left - 10, y: y(v) + 4, class: 'axis', 'text-anchor': 'end' },
+          axisFmt(v),
+        ),
       ),
     );
     const maxLabels = Math.max(2, Math.floor(innerW / 72));
@@ -203,7 +278,54 @@ export function lineChart(
     );
 
     const marks: SVGElement[] = [];
-    if (type === 'bar') {
+    const labels: SVGElement[] = [];
+    const roomy = innerW / Math.max(1, n) >= 30;
+    const valueLabel = (cx: number, cy: number, text: string) =>
+      labels.push(s('text', { x: cx, y: cy, class: 'value-label', 'text-anchor': 'middle' }, text));
+    if (stacked) {
+      series.forEach((_, si) => {
+        const color = SERIES[si % SERIES.length]!;
+        if (type === 'bar') {
+          const bw = Math.max(2, Math.min(40, band * 0.72));
+          for (let i = 0; i < n; i++) {
+            const top = y(upper[si]![i]!);
+            const bottom = y(lower[si]![i]!);
+            marks.push(
+              s('rect', {
+                x: x(i) - bw / 2,
+                y: top,
+                width: bw,
+                height: Math.max(0, bottom - top),
+                fill: color,
+                class: 'bar',
+              }),
+            );
+          }
+        } else {
+          const top = upper[si]!.map(
+            (v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`,
+          );
+          const bottom = lower[si]!.map(
+            (v, i) => `L${x(i).toFixed(1)},${y(v).toFixed(1)}`,
+          ).reverse();
+          marks.push(
+            s('path', {
+              d: `${top.join(' ')} ${bottom.join(' ')} Z`,
+              fill: color,
+              class: 'area stacked',
+            }),
+          );
+          marks.push(s('path', { d: top.join(' '), stroke: color, class: 'line' }));
+        }
+        if (options.showValues && roomy)
+          for (let i = 0; i < n; i++) {
+            const top = y(upper[si]![i]!);
+            const bottom = y(lower[si]![i]!);
+            if (bottom - top >= 16)
+              valueLabel(x(i), (top + bottom) / 2 + 4, percent(shares[si]![i]!, 0));
+          }
+      });
+    } else if (type === 'bar') {
       const groups = series.length;
       const bw = Math.max(2, Math.min(32, (band * 0.72) / groups));
       series.forEach((line, si) => {
@@ -235,7 +357,19 @@ export function lineChart(
               class: 'bar',
             }),
           );
+          if (options.showValues && roomy && n * groups <= 120)
+            valueLabel(bx + bw / 2, top - 5, fmt(v));
         });
+        if (line.trend)
+          marks.push(
+            s('path', {
+              d: line.trend
+                .map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`)
+                .join(' '),
+              stroke: color,
+              class: 'line trend',
+            }),
+          );
       });
     } else {
       series.forEach((line, si) => {
@@ -262,10 +396,34 @@ export function lineChart(
           );
         }
         marks.push(s('path', { d, stroke: color, class: 'line' }));
+        if (line.trend?.length)
+          marks.push(s('path', { d: path(line.trend), stroke: color, class: 'line trend' }));
         if (n <= 1)
           marks.push(s('circle', { cx: x(0), cy: y(line.values[0] ?? 0), r: 4, fill: color }));
+        if (options.showValues && roomy && n * series.length <= 120)
+          line.values.forEach((v, i) => {
+            valueLabel(x(i), y(v) - 8, fmt(v));
+          });
       });
     }
+    const notes = [...notesAt.entries()].map(([i, list]) =>
+      s(
+        'g',
+        { class: 'annotation' },
+        s('line', {
+          x1: x(i),
+          x2: x(i),
+          y1: pad.top,
+          y2: pad.top + innerH,
+          class: 'annotation-line',
+        }),
+        s(
+          'circle',
+          { cx: x(i), cy: pad.top + innerH, r: 4.5, class: 'annotation-dot' },
+          s('title', {}, list.map((a) => a.text).join('\n')),
+        ),
+      ),
+    );
 
     const cursor = s('line', {
       y1: pad.top,
@@ -297,9 +455,11 @@ export function lineChart(
       ...grid,
       ...xLabels,
       ...marks,
+      ...labels,
       cursor,
       ...dots,
       hit,
+      ...notes,
     );
 
     const show = (px: number) => {
@@ -314,7 +474,10 @@ export function lineChart(
       if (type !== 'bar') {
         dots.forEach((dot, si) => {
           dot.setAttribute('cx', String(cx));
-          dot.setAttribute('cy', String(y(series[si]!.values[i] ?? 0)));
+          dot.setAttribute(
+            'cy',
+            String(stacked ? y(upper[si]![i]!) : y(series[si]!.values[i] ?? 0)),
+          );
           dot.setAttribute('visibility', 'visible');
         });
       }
@@ -328,8 +491,22 @@ export function lineChart(
             { class: 'readout-row' },
             h('span', { class: 'swatch', style: `background:${SERIES[si % SERIES.length]}` }),
             h('span', { class: 'readout-label' }, line.label),
-            h('span', { class: 'readout-value' }, fmt(line.values[i] ?? 0)),
+            h(
+              'span',
+              { class: 'readout-value' },
+              stacked
+                ? `${percent(shares[si]![i]!, 0)} · ${fmt(line.values[i] ?? 0)}`
+                : fmt(line.values[i] ?? 0),
+            ),
             line.previous ? changeText(line.values[i] ?? 0, line.previous[i] ?? 0) : null,
+          ),
+        ),
+        ...(notesAt.get(i) ?? []).map((a) =>
+          h(
+            'span',
+            { class: 'readout-note' },
+            h('span', { class: 'note-icon' }, icon('flag', 12)),
+            a.text,
           ),
         ),
         hasPrevious
@@ -423,6 +600,8 @@ export interface BarListOptions {
   display?: (label: string) => string;
   /** Rows shown before "Show all". Default 8. */
   limit?: number;
+  /** Format for values. Default: counts. */
+  format?: (n: number) => string;
 }
 
 /** Horizontal bars behind each row, scaled to the largest value. */
@@ -434,6 +613,7 @@ export function barList(
   const max = Math.max(1, ...rows.map((r) => r.value));
   const total = rows.reduce((sum, r) => sum + r.value, 0);
   const limit = options.limit ?? 8;
+  const fmtValue = options.format ?? count;
   const root = h('div', { class: 'bar-list' });
   const paint = (expanded: boolean) => {
     const shown = expanded ? rows : rows.slice(0, limit);
@@ -460,12 +640,12 @@ export function barList(
           'div',
           {
             class: 'bar-row',
-            title: `${text}: ${count(r.value)} (${percent(total ? r.value / total : 0, 0)})`,
+            title: `${text}: ${fmtValue(r.value)} (${percent(total ? r.value / total : 0, 0)})`,
           },
           r.href
             ? h('a', { class: 'bar-label', href: r.href }, fill, content)
             : h('span', { class: 'bar-label' }, fill, content),
-          h('span', { class: 'num' }, count(r.value)),
+          h('span', { class: 'num' }, fmtValue(r.value)),
           r.secondary !== undefined ? h('span', { class: 'num muted' }, count(r.secondary)) : null,
         );
       }),
@@ -484,6 +664,8 @@ export function barList(
 
 export interface FunnelStepView {
   label: string;
+  /** People may skip this step. */
+  optional?: boolean;
   /** The step's event, for linking to replays of people who dropped off. */
   event?: string;
   count: number;
@@ -570,6 +752,7 @@ export function funnelChart(
           { class: 'funnel-col-head' },
           h('span', { class: 'funnel-step-index' }, String(i + 1)),
           h('span', { class: 'step-name', title: step.label }, step.label),
+          step.optional ? h('span', { class: 'badge' }, 'optional') : null,
         ),
         h(
           'div',
@@ -748,7 +931,11 @@ export interface CohortView {
   rates: number[];
 }
 
-const PERIOD_MS: Record<string, number> = { day: 86_400_000, week: 7 * 86_400_000 };
+const PERIOD_MS: Record<string, number> = {
+  hour: 3_600_000,
+  day: 86_400_000,
+  week: 7 * 86_400_000,
+};
 
 /** Whether period `k` of a cohort starting at `start` has fully happened yet. */
 export function periodReached(start: number, k: number, period: string, now = Date.now()): boolean {
@@ -762,22 +949,29 @@ export function retentionGrid(
   average: number[],
   period: string,
   now = Date.now(),
+  /** Click a cohort's cell to see who it counts. */
+  onCell?: (cohortStart: number, k: number) => void,
 ): HTMLElement {
   const periods = average.length;
   const reachedAny = (k: number) => cohorts.some((c) => periodReached(c.start, k, period, now));
-  const cell = (rate: number, n: number | null, reached: boolean) => {
+  const cell = (rate: number, n: number | null, reached: boolean, open?: () => void) => {
     if (!reached) return h('td', { class: 'num heat na', title: 'Not reached yet' }, '');
     const heat = Math.round(Math.sqrt(Math.max(0, rate)) * 100);
+    const text = percent(rate, rate < 0.1 && rate > 0 ? 1 : 0);
     return h(
       'td',
       {
         class: `num heat ${heat > 62 ? 'dark' : ''}`,
         style: `--heat:${heat}`,
-        title: n === null ? undefined : `${count(n)} people`,
+        title: n === null ? undefined : `${count(n)} people${open ? ': click to see them' : ''}`,
       },
-      percent(rate, rate < 0.1 && rate > 0 ? 1 : 0),
+      open && n ? h('button', { type: 'button', class: 'cell-button', onclick: open }, text) : text,
     );
   };
+  const rowLabel = (start: number) =>
+    period === 'hour'
+      ? `${bucketLabel(start, 'day')} ${bucketLabel(start, 'hour')}`
+      : bucketLabel(start, period === 'month' ? 'month' : 'day');
   return h(
     'div',
     { class: 'table-wrap' },
@@ -811,10 +1005,15 @@ export function retentionGrid(
           h(
             'tr',
             {},
-            h('td', {}, bucketLabel(c.start, period === 'month' ? 'month' : 'day')),
+            h('td', {}, rowLabel(c.start)),
             h('td', { class: 'num' }, count(c.size)),
             c.rates.map((r, k) =>
-              cell(r, c.counts[k] ?? 0, periodReached(c.start, k, period, now)),
+              cell(
+                r,
+                c.counts[k] ?? 0,
+                periodReached(c.start, k, period, now),
+                onCell ? () => onCell(c.start, k) : undefined,
+              ),
             ),
           ),
         ),
