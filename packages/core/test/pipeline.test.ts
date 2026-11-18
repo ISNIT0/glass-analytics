@@ -238,6 +238,87 @@ function delivery(extra: Partial<DeliveryEvent> = {}): DeliveryEvent {
 }
 
 describe('destination templates', () => {
+  it('sends people, companies and events to the CRMs, and skips what they cannot take', async () => {
+    const identify = delivery({ event: '$identify', props: { $set: { plan: 'team' } } });
+    const company = delivery({
+      event: '$groupidentify',
+      props: {
+        $group_type: 'company',
+        $group_key: 'acme',
+        $group_set: { domain: 'acme.com', seats: 12 },
+      },
+    });
+    const pageview = delivery({ event: '$pageview' });
+
+    // Customer.io: people, companies as objects, events; EU host; nothing for built-in events.
+    const [cioPerson] = (await TEMPLATES.customerio!.render(identify, {
+      siteId: 's',
+      apiKey: 'k',
+      eu: true,
+    }))!;
+    assert.match(cioPerson!.url, /track-eu\.customer\.io/);
+    const person = JSON.parse(cioPerson!.body!);
+    assert.deepEqual(
+      [person.type, person.action, person.attributes.plan],
+      ['person', 'identify', 'team'],
+    );
+    const [cioCompany] = (await TEMPLATES.customerio!.render(company, {
+      siteId: 's',
+      apiKey: 'k',
+    }))!;
+    assert.deepEqual(JSON.parse(cioCompany!.body!).identifiers, {
+      object_type_id: '1',
+      object_id: 'acme',
+    });
+    const [cioEvent] = (await TEMPLATES.customerio!.render(delivery(), {
+      siteId: 's',
+      apiKey: 'k',
+    }))!;
+    assert.deepEqual(JSON.parse(cioEvent!.body!).attributes, {
+      amount: 49,
+      currency: 'gbp',
+      plan: 'pro',
+    });
+    assert.equal(await TEMPLATES.customerio!.render(pageview, { siteId: 's', apiKey: 'k' }), null);
+
+    // Loops: contact updates without the email in the properties, events by email and user id.
+    const [loopsContact] = (await TEMPLATES.loops!.render(identify, { apiKey: 'k' }))!;
+    assert.equal(loopsContact!.method, 'PUT');
+    const contact = JSON.parse(loopsContact!.body!);
+    assert.equal(contact.email, ' Ann@Example.com ');
+    assert.equal(contact.plan, 'team');
+    const [loopsEvent] = (await TEMPLATES.loops!.render(delivery(), { apiKey: 'k' }))!;
+    assert.deepEqual(
+      [JSON.parse(loopsEvent!.body!).eventName, JSON.parse(loopsEvent!.body!).userId],
+      ['order_paid', 'user-1'],
+    );
+    assert.equal(await TEMPLATES.loops!.render(pageview, { apiKey: 'k' }), null);
+    assert.equal(
+      await TEMPLATES.loops!.render(delivery({ user_id: null, person: {} }), { apiKey: 'k' }),
+      null,
+      'no email and no user id: nothing to update',
+    );
+
+    // HubSpot: contacts by email (properties made HubSpot-safe), companies only with a domain.
+    const [hsContact] = (await TEMPLATES.hubspot!.render(identify, { accessToken: 't' }))!;
+    const input = JSON.parse(hsContact!.body!).inputs[0];
+    assert.deepEqual([input.idProperty, input.properties.plan], ['email', 'team']);
+    assert.equal(
+      await TEMPLATES.hubspot!.render(
+        delivery({ event: '$groupidentify', props: { $group_type: 'company', $group_key: 'x' } }),
+        { accessToken: 't' },
+      ),
+      null,
+    );
+    assert.equal(await TEMPLATES.hubspot!.render(delivery(), { accessToken: 't' }), null);
+    assert.equal(
+      await TEMPLATES.hubspot!.render(delivery({ event: '$identify', person: {} }), {
+        accessToken: 't',
+      }),
+      null,
+    );
+  });
+
   it('fills placeholders', () => {
     assert.equal(
       interpolate('{event} by {person.name} for {props.amount}', delivery()),

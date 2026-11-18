@@ -79,7 +79,12 @@ export async function experiments(
   if (!sub || sub === 'list') {
     const r = await call<{
       summary: string;
-      experiments: { key: string; status: string; goal: { event: string } }[];
+      experiments: {
+        key: string;
+        status: string;
+        goal: { event: string } | null;
+        metrics?: { event?: string; name?: string; kind: string }[];
+      }[];
     }>('GET', `/api/experiments${projectQuery(flags)}`);
     if (flags.json) return printJson(r);
     if (!r.experiments.length)
@@ -88,7 +93,16 @@ export async function experiments(
       );
     table(
       ['Experiment', 'Status', 'Goal'],
-      r.experiments.map((e) => [e.key, e.status, e.goal.event]),
+      // Experiments created with metrics have no single goal event.
+      r.experiments.map((e) => [
+        e.key,
+        e.status,
+        e.goal?.event ??
+          e.metrics?.[0]?.name ??
+          e.metrics?.[0]?.event ??
+          e.metrics?.[0]?.kind ??
+          '–',
+      ]),
     );
     return;
   }
