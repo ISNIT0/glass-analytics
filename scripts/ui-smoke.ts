@@ -43,11 +43,15 @@ const built = transformSync(SOURCE, {
   sourcesContent: true,
 });
 const throwColumn = built.code.indexOf('throw') + 1;
-/** A full-page screenshot from the top, so sticky headers and the sidebar sit where they belong. */
+/**
+ * A full-page screenshot from the top, so sticky headers and the sidebar sit where they belong.
+ * With a dialog open, just the window: its fixed backdrop only covers the viewport.
+ */
 const shot = async (p: Page, path: string) => {
-  await p.evaluate(() => window.scrollTo(0, 0));
+  const dialog = (await p.locator('.modal-overlay').count()) > 0;
+  if (!dialog) await p.evaluate(() => window.scrollTo(0, 0));
   await p.waitForTimeout(150);
-  await p.screenshot({ path, fullPage: true });
+  await p.screenshot({ path, fullPage: !dialog });
 };
 const call = async (
   method: string,
