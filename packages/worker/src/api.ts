@@ -4,6 +4,7 @@
  */
 
 import { experimentSpec, filterSchema, INSIGHTS, sqlSpec } from '@dataflare/core/insights';
+import { type StagedFeature, stagePrefix } from '@dataflare/core/stages';
 import { GLASS_VERSION } from '@dataflare/core/version';
 import { z } from 'zod/v4';
 import { authenticate, type Scope } from './auth.ts';
@@ -31,6 +32,24 @@ const SERVER_PATHS = [
   /^\/api\/flags\/definitions\/?$/,
   /^\/api\/sourcemaps(\/|$)/,
 ];
+
+/** Endpoints of features that aren't stable yet, and which feature each belongs to. */
+const ENDPOINT_STAGES: [RegExp, StagedFeature][] = [
+  [/ \/api\/destinations\b/, 'destinations'],
+  [/ \/api\/transformations\b/, 'transformations'],
+  [/ \/api\/exports\b/, 'exports'],
+  [/^POST \/api\/import$/, 'imports'],
+];
+
+/** The API index with "(alpha) " in front of every endpoint of an alpha feature. */
+function withStages(endpoints: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(endpoints).map(([route, text]) => {
+      const feature = ENDPOINT_STAGES.find(([re]) => re.test(route))?.[1];
+      return [route, feature ? stagePrefix(feature) + text : text];
+    }),
+  );
+}
 
 export async function apiRouter(
   service: GlassService,
@@ -89,7 +108,7 @@ export async function apiRouter(
       schemas: `${service.baseUrl}/api/schema`,
       mcp: `${service.baseUrl}/mcp`,
       health: `${service.baseUrl}/health`,
-      endpoints: {
+      endpoints: withStages({
         'GET /health': 'Deployment version, latest release, upgradeAvailable',
         'GET /api/overview?from=-30d':
           'Headline stats and movers (includes upgrade notice when outdated)',
@@ -230,7 +249,7 @@ export async function apiRouter(
         'GET /api/projects': 'Projects',
         'POST /api/projects': 'Create a project (admin)',
         'GET /api/instrument?event=&framework=': 'Tracking code for an event',
-      },
+      }),
       tools: TOOLS.map((t) => t.name),
     }),
   );

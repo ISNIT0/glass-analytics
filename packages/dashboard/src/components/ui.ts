@@ -5,6 +5,7 @@
  * "Show SQL" on (top bar, or press "s"), the queries appear under each panel.
  */
 
+import { STAGE_NOTES, type Stage } from '@dataflare/core/stages';
 import { ApiError } from '../api.ts';
 import { type Child, h, mount } from '../dom.ts';
 import { type IconName, icon } from './icons.ts';
@@ -342,4 +343,51 @@ export function avatar(
     },
     initialsText,
   );
+}
+
+/** A small "Alpha" or "Beta" pill for a feature that isn't stable yet (see core/stages.ts). */
+export function stagePill(stage: Exclude<Stage, 'stable'>): HTMLElement {
+  return h(
+    'span',
+    { class: `stage-pill stage-${stage}`, title: STAGE_NOTES[stage] },
+    stage === 'alpha' ? 'Alpha' : 'Beta',
+  );
+}
+
+/**
+ * The stage note for a feature, as a banner the reader can dismiss (remembered in this browser).
+ * `key` names the banner, so dismissing one doesn't hide another.
+ */
+export function stageBanner(stage: Exclude<Stage, 'stable'>, key: string): HTMLElement | null {
+  const storageKey = `glass.stage-banner.${key}`;
+  try {
+    if (localStorage.getItem(storageKey)) return null;
+  } catch {
+    // No storage (private mode, blocked): show the banner every time.
+  }
+  const banner = h(
+    'div',
+    { class: 'stage-banner', role: 'note' },
+    stagePill(stage),
+    h('span', {}, STAGE_NOTES[stage].replace(/^\w+: /, '')),
+    h(
+      'button',
+      {
+        type: 'button',
+        class: 'icon-button',
+        'aria-label': 'Dismiss',
+        title: 'Dismiss',
+        onclick: () => {
+          banner.remove();
+          try {
+            localStorage.setItem(storageKey, '1');
+          } catch {
+            // Nothing to remember it in; it is gone for this visit.
+          }
+        },
+      },
+      icon('x', 14),
+    ),
+  );
+  return banner;
 }

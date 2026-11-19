@@ -28,6 +28,7 @@ import {
   loading,
   pageHeader,
   panel,
+  stageBanner,
   table,
   tabs,
   toast,
@@ -1078,6 +1079,7 @@ export function pipelinesPage(route: Route): Node[] {
       'Pipelines',
       'Send events to other tools as they arrive, clean them at ingest, and export them to your warehouse.',
     ),
+    ...[stageBanner('alpha', 'pipelines')].filter((n) => n !== null),
     tabs(
       [
         { value: 'destinations', label: 'Destinations', icon: 'zap' },

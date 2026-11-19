@@ -2,6 +2,8 @@
 
 Pipelines (in the dashboard, and the matching MCP tools) move events in and out of Dataflare: forward them as they arrive, clean them before they're stored, export them in bulk to a warehouse, and import history from other tools.
 
+Status: **alpha**. Everything here works and is tested, but settings, payloads and APIs may change between releases without a migration. Try a destination on a test project, or point it at a webhook, before sending to a production tool. (Not to be confused with Cloudflare Pipelines, the service behind the [lake](lake.md).)
+
 ## Destinations
 
 A destination sends matching events to another service as they arrive. Templates:

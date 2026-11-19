@@ -11,6 +11,7 @@
  */
 
 import { INSIGHTS, sqlSpec } from '@dataflare/core/insights';
+import { type StagedFeature, stagePrefix } from '@dataflare/core/stages';
 import { z } from 'zod/v4';
 import type { Scope } from '../auth.ts';
 import { type GlassService, inputs } from '../service.ts';
@@ -36,7 +37,32 @@ const queryTools: ToolDefinition[] = Object.entries(INSIGHTS).map(([kind, def]) 
   run: (service, args) => service.runInsight(kind, args),
 }));
 
-export const TOOLS: ToolDefinition[] = [
+/** Tools for features that aren't stable yet: their descriptions say so (see core/stages.ts). */
+const TOOL_STAGES: Record<string, StagedFeature> = {
+  list_destination_templates: 'destinations',
+  list_destinations: 'destinations',
+  get_destination: 'destinations',
+  save_destination: 'destinations',
+  delete_destination: 'destinations',
+  test_destination: 'destinations',
+  retry_destination: 'destinations',
+  list_transformations: 'transformations',
+  save_transformation: 'transformations',
+  delete_transformation: 'transformations',
+  test_transformation: 'transformations',
+  list_exports: 'exports',
+  save_export: 'exports',
+  delete_export: 'exports',
+  export_runs: 'exports',
+  backfill_export: 'exports',
+};
+
+const withStage = (tool: ToolDefinition): ToolDefinition => {
+  const feature = TOOL_STAGES[tool.name];
+  return feature ? { ...tool, description: stagePrefix(feature) + tool.description } : tool;
+};
+
+const ALL_TOOLS: ToolDefinition[] = [
   {
     name: 'overview',
     title: 'Analytics overview',
@@ -829,5 +855,7 @@ export const TOOLS: ToolDefinition[] = [
     run: (s, a) => s.createProject(a),
   },
 ];
+
+export const TOOLS: ToolDefinition[] = ALL_TOOLS.map(withStage);
 
 export const TOOLS_BY_NAME = new Map(TOOLS.map((t) => [t.name, t]));

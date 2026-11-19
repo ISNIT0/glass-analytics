@@ -6216,3 +6216,39 @@ input.tiny {
   margin: 0 0 6px;
   font-size: 13px;
 }
+
+/* Feature stage (core/stages.ts): a pill next to a name, and a banner on the page. */
+.stage-pill {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 16px;
+  text-transform: uppercase;
+  vertical-align: 1px;
+  color: var(--glass-amber);
+  background: color-mix(in srgb, var(--glass-amber) 14%, transparent);
+}
+
+.stage-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--glass-amber) 35%, var(--hairline));
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--glass-amber) 7%, var(--surface));
+  font-size: 13px;
+}
+
+.stage-banner .stage-pill {
+  margin-left: 0;
+}
+
+.stage-banner > span:nth-child(2) {
+  flex: 1;
+}

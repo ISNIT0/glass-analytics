@@ -143,7 +143,10 @@ For "what's frustrating users?", start with \`analyse_replays\` for the period.
 2. \`query_revenue\` with \`breakdown\` ("product", "channel", "utm_campaign", "person.plan") for MRR, churn and where revenue comes from; \`aggregateBy: "company"\` for accounts.
 3. For one customer: \`get_person\` (lifetime revenue) or \`get_group\`.
 
-## Send events to another tool
+## Send events to another tool (alpha)
+
+Destinations, transformations, exports and imports are alpha: their settings may change between releases, so try them on a test project or a webhook first.
+
 
 1. \`list_destination_templates\`, then \`save_destination\` with the events and the template's settings (credentials are encrypted).
 2. \`test_destination\` sends a sample; \`get_destination\` shows deliveries and failures, \`retry_destination\` resends failures.

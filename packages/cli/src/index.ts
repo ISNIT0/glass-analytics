@@ -90,7 +90,7 @@ ${color.bold('Flags and experiments')}
 
 ${color.bold('Agents')}
   dataflare import <file> [--preset posthog|mixpanel|amplitude|segment|ga4] [--format ndjson|json|csv] [--dry-run]
-                                 Import a history of events, keeping their timestamps
+                                 (alpha) Import a history of events, keeping their timestamps
   dataflare sourcemaps upload <dir> --release <version> [--url-prefix /assets]
                                  Upload a build's source maps for error tracking (also: list, delete)
   dataflare stripe import --api-key rk_… [--since 2024-01-01]

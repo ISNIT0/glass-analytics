@@ -5,10 +5,12 @@
  */
 
 import './styles.css';
+import type { Stage } from '@dataflare/core/stages';
 import { api } from './api.ts';
 import { dateRangeControl } from './components/date-range.ts';
 import { type IconName, icon } from './components/icons.ts';
 import { listKeys, selectMenu, toggle } from './components/menu.ts';
+import { stagePill } from './components/ui.ts';
 import { h, mount } from './dom.ts';
 import { eventsPage, sqlPage } from './pages/data.ts';
 import { errorsPage } from './pages/errors.ts';
@@ -29,6 +31,8 @@ import { config, currentRoute, go, href, prefs, type Route, takeKeyFromLink } fr
 interface PageDef {
   label: string;
   icon: IconName;
+  /** Shown as a pill next to the page's name while the feature isn't stable. */
+  stage?: Exclude<Stage, 'stable'>;
   render: (route: Route) => Node[];
 }
 
@@ -46,7 +50,7 @@ const PAGES: Record<string, PageDef> = {
   flags: { label: 'Flags', icon: 'flag', render: flagsPage },
   experiments: { label: 'Experiments', icon: 'flask', render: experimentsPage },
   events: { label: 'Events', icon: 'events', render: eventsPage },
-  pipelines: { label: 'Pipelines', icon: 'zap', render: pipelinesPage },
+  pipelines: { label: 'Pipelines', icon: 'zap', render: pipelinesPage, stage: 'alpha' },
   sql: { label: 'SQL', icon: 'database', render: sqlPage },
   usage: { label: 'Usage & cost', icon: 'dollar', render: usagePage },
   settings: { label: 'Settings', icon: 'settings', render: settingsPage },
@@ -141,7 +145,7 @@ function navLink(key: string, route: Route): HTMLElement {
         title: page.label,
       },
       icon(page.icon, 17),
-      h('span', { class: 'nav-label' }, page.label),
+      h('span', { class: 'nav-label' }, page.label, page.stage ? stagePill(page.stage) : null),
     ),
   );
 }
