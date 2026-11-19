@@ -181,6 +181,19 @@ describe('trends formulas and transforms', () => {
     const byBrowser = Object.fromEntries(res.formulas!.map((f) => [f.breakdown, f.total]));
     assert.deepEqual(byBrowser, { Chrome: 50, Safari: 100 });
     assert.equal(res.formulas![0]!.math, 'formula');
+
+    // A percent formula keeps its ratio and says how to show it; functions work too.
+    const pct = await runTrends(
+      spec({
+        series: [{ event: 'visit' }, { event: 'buy' }],
+        formulas: [{ expr: 'round(B / A, 2)', format: 'percent' }],
+        from: '-7d',
+      }),
+      context(d),
+    );
+    assert.equal(pct.formulas![0]!.total, 0.67);
+    assert.equal(pct.formulas![0]!.format, 'percent');
+    assert.equal(pct.formulas![0]!.breakdown, null);
   });
 
   it('makes cumulative, smoothed and trend lines', async () => {

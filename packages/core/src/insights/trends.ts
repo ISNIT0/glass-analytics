@@ -17,7 +17,7 @@
  */
 
 import type { Filter } from '../filters.ts';
-import { evaluateFormula, parseFormula } from '../formula.ts';
+import { evaluateFormula, type FormulaNode, parseFormula } from '../formula.ts';
 import {
   breakdownExpr,
   breakdownProperties,
@@ -66,6 +66,8 @@ export interface TrendsSeries {
   math: TrendsMath | 'formula';
   /** The formula, for formula lines. */
   formula?: string;
+  /** "percent" when a formula's values are ratios to show as percentages. */
+  format?: 'percent';
   /** Least-squares fit of `values`, when `trendLine` is set. */
   trendLine?: number[];
 }
@@ -507,39 +509,47 @@ function withTrendLine(line: TrendsSeries, spec: TrendsSpec): TrendsSeries {
   return out;
 }
 
+type Formula = NonNullable<TrendsSpec['formulas']>[number];
+
+/** One formula's line for one breakdown value (or the only line, without a breakdown). */
+function formulaLine(
+  f: Formula,
+  index: number,
+  tree: FormulaNode,
+  inputs: (TrendsSeries | null)[],
+  buckets: number[],
+  key: string | null,
+): TrendsSeries {
+  const at = (b: number) => inputs.map((s) => s?.values[b] ?? 0);
+  const label = f.label ?? f.expr;
+  return {
+    label: key ? `${label} · ${key}` : label,
+    breakdown: key,
+    values: buckets.map((_, b) => evaluateFormula(tree, at(b))),
+    total: evaluateFormula(
+      tree,
+      inputs.map((s) => s?.total ?? 0),
+    ),
+    seriesIndex: index,
+    math: 'formula',
+    formula: f.expr,
+    ...(f.format === 'percent' ? { format: 'percent' as const } : {}),
+  };
+}
+
 function formulaLines(spec: TrendsSpec, series: TrendsSeries[], buckets: number[]): TrendsSeries[] {
   if (!spec.formulas?.length) return [];
   const keys = [...new Set(series.map((s) => s.breakdown ?? ''))];
-  const lines: TrendsSeries[] = [];
-  spec.formulas.forEach((f, fi) => {
+  const broken = series.some((s) => s.breakdown !== null);
+  return spec.formulas.flatMap((f, fi) => {
     const tree = parseFormula(f.expr, spec.series.length);
-    for (const key of keys) {
+    return keys.map((key) => {
       const inputs = spec.series.map(
         (_, i) => series.find((s) => s.seriesIndex === i && (s.breakdown ?? '') === key) ?? null,
       );
-      const values = buckets.map((_, b) =>
-        evaluateFormula(
-          tree,
-          inputs.map((s) => s?.values[b] ?? 0),
-        ),
-      );
-      const total = evaluateFormula(
-        tree,
-        inputs.map((s) => s?.total ?? 0),
-      );
-      const label = f.label ?? f.expr;
-      lines.push({
-        label: key ? `${label} · ${key}` : label,
-        breakdown: series.some((s) => s.breakdown !== null) ? key : null,
-        values,
-        total,
-        seriesIndex: fi,
-        math: 'formula',
-        formula: f.expr,
-      });
-    }
+      return formulaLine(f, fi, tree, inputs, buckets, broken ? key : null);
+    });
   });
-  return lines;
 }
 
 export async function runTrends(input: TrendsSpec, ctx: QueryContext): Promise<TrendsResult> {
@@ -713,7 +723,7 @@ export async function runTrends(input: TrendsSpec, ctx: QueryContext): Promise<T
     ...(bins ? { bins } : {}),
     sql,
     range: { from: iso(range.from), to: iso(range.to) },
-    summary: `${iso(range.from).slice(0, 10)} to ${iso(range.to).slice(0, 10)} by ${interval}${zone.name === 'UTC' ? '' : ` (${zone.name})`}. ${head || 'No data.'}${counted}`,
+    summary: `${iso(range.from).slice(0, 10)} to ${iso(range.to).slice(0, 10)} by ${interval}${zone.name === 'UTC' ? '' : ` (${zone.name})`}. ${head ? `${head}.` : 'No data.'}${counted}`,
   };
 }
 

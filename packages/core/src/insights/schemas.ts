@@ -184,9 +184,13 @@ export const trendsSpec = z
             .string()
             .min(1)
             .describe(
-              'Arithmetic over series letters, e.g. "B / A * 100" (A is the first series).',
+              'Arithmetic over series letters, e.g. "B / A" (A is the first series), with abs(x), min(a, b), max(a, b) and round(x, digits).',
             ),
           label: z.string().optional(),
+          format: z
+            .enum(['number', 'percent'])
+            .optional()
+            .describe('How to show the values: "percent" shows 0.25 as 25%. Default "number".'),
         }),
       )
       .max(5)
