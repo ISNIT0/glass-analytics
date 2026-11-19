@@ -180,139 +180,182 @@ export interface CohortContext {
   staticMembers(key: string): string;
 }
 
+type ConditionOf<K extends CohortCondition['type']> = Extract<CohortCondition, { type: K }>;
+
+/** One condition as SQL selecting `pid`; `negate` means "not in" it. */
+interface Part {
+  sql: string;
+  negate: boolean;
+}
+
+/** What compiling one definition needs: the context, the time windows seen, the reference chain. */
+interface Compiler {
+  d: Dialect;
+  ctx: CohortContext;
+  now: number;
+  universeFrom: number;
+  windows: number[];
+  stack: string[];
+}
+
+function eventsSql(
+  k: Compiler,
+  from: number,
+  to: number,
+  b: { event: string; filters?: Filter[] },
+): string {
+  return resolvedEventsSql(k.d, {
+    project: k.ctx.project,
+    from,
+    to,
+    events: b.event === '*' ? undefined : [b.event],
+    filters: b.filters as Filter[] | undefined,
+  });
+}
+
+/** The start of a look-back window, recorded so the universe covers it. */
+function lookback(k: Compiler, within: string | number | undefined): number {
+  const from = k.now - parseDuration(within ?? '30d');
+  k.windows.push(from);
+  return from;
+}
+
+const until = (k: Compiler) => k.now + 60_000;
+
+function propertyPart(c: ConditionOf<'property'>, k: Compiler): Part {
+  const filter = { property: c.property, op: c.op, value: c.value } as Filter;
+  const people = resolvedEventsSql(k.d, {
+    project: k.ctx.project,
+    from: k.universeFrom,
+    to: until(k),
+  });
+  return {
+    sql: `SELECT DISTINCT cp.pid FROM (${people}) cp WHERE ${filtersSql([filter], k.d, 'cp')}`,
+    negate: Boolean(c.negate),
+  };
+}
+
+const COUNT_SYMBOL = { gte: '>=', eq: '=', lte: '<=' } as const;
+
+function performedPart(c: ConditionOf<'performed'>, k: Compiler): Part {
+  const from = lookback(k, c.within);
+  const count = c.count ?? { op: 'gte' as const, value: 1 };
+  if (count.op === 'gte' && count.value <= 0)
+    return {
+      sql: `SELECT DISTINCT pe.pid FROM (${eventsSql(k, k.universeFrom, until(k), { event: '*' })}) pe`,
+      negate: false,
+    };
+  const counted = `SELECT pe.pid FROM (${eventsSql(k, from, until(k), c)}) pe GROUP BY pe.pid HAVING COUNT(*)`;
+  // "At most N" (or exactly 0) includes people who never did it: everyone but those who did more.
+  const atMost =
+    (count.op === 'lte' && count.value >= 0) || (count.op === 'eq' && count.value === 0);
+  if (atMost)
+    return { sql: `${counted} > ${k.d.num(count.op === 'eq' ? 0 : count.value)}`, negate: true };
+  return { sql: `${counted} ${COUNT_SYMBOL[count.op]} ${k.d.num(count.value)}`, negate: false };
+}
+
+function notPerformedPart(c: ConditionOf<'not_performed'>, k: Compiler): Part {
+  const from = lookback(k, c.within);
+  return {
+    sql: `SELECT DISTINCT pe.pid FROM (${eventsSql(k, from, until(k), c)}) pe`,
+    negate: true,
+  };
+}
+
+const PERIOD_MS = { day: DAY_MS, week: 7 * DAY_MS, month: 30 * DAY_MS } as const;
+
+function regularlyPart(c: ConditionOf<'performed_regularly'>, k: Compiler): Part {
+  if (c.minPeriods > c.periods) throw new RangeError('minPeriods cannot be more than periods.');
+  const from = k.now - c.periods * PERIOD_MS[c.period];
+  k.windows.push(from);
+  const periods = `SELECT DISTINCT pe.pid, ${bucketExpr(k.d, 'pe.ts_ms', c.period)} AS b FROM (${eventsSql(k, from, until(k), c)}) pe`;
+  return {
+    sql: `SELECT pr.pid FROM (${periods}) pr GROUP BY pr.pid HAVING COUNT(*) >= ${k.d.num(c.minPeriods)}`,
+    negate: false,
+  };
+}
+
+function firstPerformedPart(c: ConditionOf<'first_performed'>, k: Compiler): Part {
+  const from = lookback(k, c.within);
+  // First ever: all history, not just the window.
+  return {
+    sql: `SELECT pe.pid FROM (${eventsSql(k, 0, until(k), c)}) pe GROUP BY pe.pid HAVING MIN(pe.ts_ms) >= ${k.d.num(from)}`,
+    negate: false,
+  };
+}
+
+function changedPart(c: ConditionOf<'stopped' | 'started'>, k: Compiler): Part {
+  const split = k.now - parseDuration(c.within);
+  const start = split - parseDuration(c.before ?? c.within);
+  k.windows.push(start);
+  const before = `SELECT DISTINCT pe.pid FROM (${eventsSql(k, start, split, c)}) pe`;
+  const after = `SELECT DISTINCT pe.pid FROM (${eventsSql(k, split, until(k), c)}) pe`;
+  const [did, didNot] = c.type === 'stopped' ? [before, after] : [after, before];
+  return { sql: `SELECT dn.pid FROM (${did}) dn WHERE dn.pid NOT IN (${didNot})`, negate: false };
+}
+
+function sequencePart(c: ConditionOf<'sequence'>, k: Compiler): Part {
+  const from = lookback(k, c.within);
+  const gap = parseDuration(c.gap ?? '1d');
+  return {
+    sql: `SELECT DISTINCT sa.pid FROM (${eventsSql(k, from, until(k), c)}) sa JOIN (${eventsSql(k, from, until(k), c.followedBy)}) sb
+  ON sb.pid = sa.pid AND sb.ts_ms > sa.ts_ms AND sb.ts_ms <= sa.ts_ms + ${k.d.num(gap)}`,
+    negate: false,
+  };
+}
+
+function cohortPart(c: ConditionOf<'cohort'>, k: Compiler): Part {
+  if (k.stack.includes(c.key))
+    throw new TypeError(
+      `Cohorts refer to each other in a loop: ${[...k.stack, c.key].join(' → ')}.`,
+    );
+  const other = k.ctx.lookup(c.key);
+  if (other === undefined) throw new TypeError(`No cohort "${c.key}" to refer to.`);
+  const sql =
+    other === 'static'
+      ? k.ctx.staticMembers(c.key)
+      : compileCohort(other, k.ctx, [...k.stack, c.key]);
+  return { sql, negate: Boolean(c.negate) };
+}
+
+const PARTS: { [K in CohortCondition['type']]: (c: ConditionOf<K>, k: Compiler) => Part } = {
+  property: propertyPart,
+  performed: performedPart,
+  not_performed: notPerformedPart,
+  performed_regularly: regularlyPart,
+  first_performed: firstPerformedPart,
+  stopped: changedPart,
+  started: changedPart,
+  sequence: sequencePart,
+  cohort: cohortPart,
+};
+
+function conditionSql(c: CohortCondition, k: Compiler): string {
+  const { sql, negate } = (PARTS[c.type] as (c: CohortCondition, k: Compiler) => Part)(c, k);
+  return `u.pid ${negate ? 'NOT IN' : 'IN'} (${sql})`;
+}
+
 /** Membership as SQL selecting `pid`. Throws on unknown or circular references. */
 export function compileCohort(
   def: CohortDefinition,
   ctx: CohortContext,
   stack: string[] = [],
 ): string {
-  const d = ctx.dialect;
-  const now = ctx.now;
-  const universeFrom = parseTime(def.from ?? '-90d', now);
-  const windows: number[] = [universeFrom];
-  const events = (from: number, to: number, b: { event: string; filters?: Filter[] }) =>
-    resolvedEventsSql(d, {
-      project: ctx.project,
-      from,
-      to,
-      events: b.event === '*' ? undefined : [b.event],
-      filters: b.filters as Filter[] | undefined,
-    });
-  const back = (v: string | number | undefined, fallback: string) =>
-    now - parseDuration(v ?? fallback);
-
-  const conditionSql = (c: CohortCondition): { sql: string; negate: boolean } => {
-    switch (c.type) {
-      case 'property': {
-        const filter = { property: c.property, op: c.op, value: c.value } as Filter;
-        return {
-          sql: `SELECT DISTINCT cp.pid FROM (${resolvedEventsSql(d, { project: ctx.project, from: universeFrom, to: now + 60_000 })}) cp WHERE ${filtersSql([filter], d, 'cp')}`,
-          negate: Boolean(c.negate),
-        };
-      }
-      case 'performed': {
-        const from = back(c.within, '30d');
-        windows.push(from);
-        const count = c.count ?? { op: 'gte' as const, value: 1 };
-        if (count.op === 'gte' && count.value <= 0) {
-          return {
-            sql: `SELECT DISTINCT pe.pid FROM (${events(universeFrom, now + 60_000, { event: '*' })}) pe`,
-            negate: false,
-          };
-        }
-        const sym = { gte: '>=', eq: '=', lte: '<=' }[count.op];
-        // "At most N" (or exactly 0) includes people who never did it.
-        if ((count.op === 'lte' && count.value >= 0) || (count.op === 'eq' && count.value === 0)) {
-          const over = count.op === 'eq' ? 0 : count.value;
-          return {
-            sql: `SELECT pe.pid FROM (${events(from, now + 60_000, c)}) pe GROUP BY pe.pid HAVING COUNT(*) > ${d.num(over)}`,
-            negate: true,
-          };
-        }
-        return {
-          sql: `SELECT pe.pid FROM (${events(from, now + 60_000, c)}) pe GROUP BY pe.pid HAVING COUNT(*) ${sym} ${d.num(count.value)}`,
-          negate: false,
-        };
-      }
-      case 'not_performed': {
-        const from = back(c.within, '30d');
-        windows.push(from);
-        return {
-          sql: `SELECT DISTINCT pe.pid FROM (${events(from, now + 60_000, c)}) pe`,
-          negate: true,
-        };
-      }
-      case 'performed_regularly': {
-        if (c.minPeriods > c.periods)
-          throw new RangeError('minPeriods cannot be more than periods.');
-        const unit = c.period === 'day' ? DAY_MS : c.period === 'week' ? 7 * DAY_MS : 30 * DAY_MS;
-        const from = now - c.periods * unit;
-        windows.push(from);
-        return {
-          sql: `SELECT pr.pid FROM (SELECT DISTINCT pe.pid, ${bucketExpr(d, 'pe.ts_ms', c.period)} AS b FROM (${events(from, now + 60_000, c)}) pe) pr GROUP BY pr.pid HAVING COUNT(*) >= ${d.num(c.minPeriods)}`,
-          negate: false,
-        };
-      }
-      case 'first_performed': {
-        const from = back(c.within, '30d');
-        windows.push(from);
-        // First ever: all history, not just the window.
-        return {
-          sql: `SELECT pe.pid FROM (${events(0, now + 60_000, c)}) pe GROUP BY pe.pid HAVING MIN(pe.ts_ms) >= ${d.num(from)}`,
-          negate: false,
-        };
-      }
-      case 'stopped':
-      case 'started': {
-        const recent = parseDuration(c.within);
-        const prior = parseDuration(c.before ?? c.within);
-        const split = now - recent;
-        const start = split - prior;
-        windows.push(start);
-        const before = `SELECT DISTINCT pe.pid FROM (${events(start, split, c)}) pe`;
-        const after = `SELECT DISTINCT pe.pid FROM (${events(split, now + 60_000, c)}) pe`;
-        const [did, didNot] = c.type === 'stopped' ? [before, after] : [after, before];
-        return {
-          sql: `SELECT dn.pid FROM (${did}) dn WHERE dn.pid NOT IN (${didNot})`,
-          negate: false,
-        };
-      }
-      case 'sequence': {
-        const from = back(c.within, '30d');
-        const gap = parseDuration(c.gap ?? '1d');
-        windows.push(from);
-        return {
-          sql: `SELECT DISTINCT sa.pid FROM (${events(from, now + 60_000, c)}) sa JOIN (${events(from, now + 60_000, c.followedBy)}) sb
-  ON sb.pid = sa.pid AND sb.ts_ms > sa.ts_ms AND sb.ts_ms <= sa.ts_ms + ${d.num(gap)}`,
-          negate: false,
-        };
-      }
-      case 'cohort': {
-        if (stack.includes(c.key)) {
-          throw new TypeError(
-            `Cohorts refer to each other in a loop: ${[...stack, c.key].join(' → ')}.`,
-          );
-        }
-        const other = ctx.lookup(c.key);
-        if (other === undefined) throw new TypeError(`No cohort "${c.key}" to refer to.`);
-        const sql =
-          other === 'static'
-            ? ctx.staticMembers(c.key)
-            : compileCohort(other, ctx, [...stack, c.key]);
-        return { sql, negate: Boolean(c.negate) };
-      }
-    }
+  const universeFrom = parseTime(def.from ?? '-90d', ctx.now);
+  const k: Compiler = {
+    d: ctx.dialect,
+    ctx,
+    now: ctx.now,
+    universeFrom,
+    windows: [universeFrom],
+    stack,
   };
-
-  const groups = def.groups.map((g) => {
-    const parts = g.conditions.map((c) => {
-      const { sql, negate } = conditionSql(c);
-      return `u.pid ${negate ? 'NOT IN' : 'IN'} (${sql})`;
-    });
-    return `(${parts.join(g.match === 'any' ? ' OR ' : ' AND ')})`;
-  });
+  const groups = def.groups.map(
+    (g) =>
+      `(${g.conditions.map((c) => conditionSql(c, k)).join(g.match === 'any' ? ' OR ' : ' AND ')})`,
+  );
   // Everyone seen in the longest window any condition looks at: "did not" needs someone to not do it.
-  const universe = `SELECT DISTINCT ue.pid FROM (${resolvedEventsSql(d, { project: ctx.project, from: Math.min(...windows), to: now + 60_000 })}) ue`;
+  const universe = `SELECT DISTINCT ue.pid FROM (${resolvedEventsSql(k.d, { project: ctx.project, from: Math.min(...k.windows), to: until(k) })}) ue`;
   return `SELECT u.pid FROM (${universe}) u WHERE ${groups.join(def.match === 'any' ? ' OR ' : ' AND ')}`;
 }
 
@@ -360,41 +403,52 @@ export function durationWords(input: string | number): string {
 
 const COUNT_WORDS = { gte: 'at least', eq: 'exactly', lte: 'at most' } as const;
 
+const quoted = (v: unknown) =>
+  v === undefined
+    ? ''
+    : ` ${Array.isArray(v) ? v.map((x) => JSON.stringify(x)).join(', ') : JSON.stringify(v)}`;
+
+const times = (n: number) => `${n} time${n === 1 ? '' : 's'}`;
+const lastWindow = (within: string | number | undefined) =>
+  `in the last ${durationWords(within ?? '30d')}`;
+
+function describeProperty(c: ConditionOf<'property'>): string {
+  const op = c.op ?? 'eq';
+  const value = op === 'is_set' || op === 'is_not_set' ? '' : quoted(c.value);
+  return `${c.negate ? 'not: ' : ''}${c.property} ${OP_WORDS[op] ?? op}${value}`;
+}
+
+function describePerformed(c: ConditionOf<'performed'>): string {
+  const count = c.count ? ` ${COUNT_WORDS[c.count.op]} ${times(c.count.value)}` : '';
+  return `did ${c.event}${count} ${lastWindow(c.within)}`;
+}
+
+const DESCRIBE: {
+  [K in CohortCondition['type']]: (c: ConditionOf<K>, names?: Map<string, string>) => string;
+} = {
+  property: describeProperty,
+  performed: describePerformed,
+  not_performed: (c) => `didn't do ${c.event} ${lastWindow(c.within)}`,
+  performed_regularly: (c) =>
+    `did ${c.event} in at least ${c.minPeriods} of the last ${c.periods} ${c.period}s`,
+  first_performed: (c) => `first did ${c.event} ${lastWindow(c.within)}`,
+  stopped: (c) => `stopped doing ${c.event} (none in the last ${durationWords(c.within)})`,
+  started: (c) => `started doing ${c.event} (in the last ${durationWords(c.within)})`,
+  sequence: (c) =>
+    `did ${c.event} then ${c.followedBy.event} within ${durationWords(c.gap ?? '1d')}`,
+  cohort: (c, names) => {
+    const name = names?.get(c.key);
+    return `${c.negate ? 'not in' : 'in'} cohort ${name ? `"${name}"` : c.key}`;
+  },
+};
+
 /**
  * A definition in plain words, e.g. "did report at least 3 times in the last 7 days".
  * `names` turns referenced cohort keys into their names.
  */
 export function describeCohort(def: CohortDefinition, names?: Map<string, string>): string {
-  const value = (v: unknown) =>
-    v === undefined
-      ? ''
-      : ` ${Array.isArray(v) ? v.map((x) => JSON.stringify(x)).join(', ') : JSON.stringify(v)}`;
-  const one = (c: CohortCondition): string => {
-    switch (c.type) {
-      case 'property': {
-        const op = c.op ?? 'eq';
-        return `${c.negate ? 'not: ' : ''}${c.property} ${OP_WORDS[op] ?? op}${op === 'is_set' || op === 'is_not_set' ? '' : value(c.value)}`;
-      }
-      case 'performed':
-        return `did ${c.event}${c.count ? ` ${COUNT_WORDS[c.count.op]} ${c.count.value} time${c.count.value === 1 ? '' : 's'}` : ''} in the last ${durationWords(c.within ?? '30d')}`;
-      case 'not_performed':
-        return `didn't do ${c.event} in the last ${durationWords(c.within ?? '30d')}`;
-      case 'performed_regularly':
-        return `did ${c.event} in at least ${c.minPeriods} of the last ${c.periods} ${c.period}s`;
-      case 'first_performed':
-        return `first did ${c.event} in the last ${durationWords(c.within ?? '30d')}`;
-      case 'stopped':
-        return `stopped doing ${c.event} (none in the last ${durationWords(c.within)})`;
-      case 'started':
-        return `started doing ${c.event} (in the last ${durationWords(c.within)})`;
-      case 'sequence':
-        return `did ${c.event} then ${c.followedBy.event} within ${durationWords(c.gap ?? '1d')}`;
-      case 'cohort': {
-        const name = names?.get(c.key);
-        return `${c.negate ? 'not in' : 'in'} cohort ${name ? `"${name}"` : c.key}`;
-      }
-    }
-  };
+  const one = (c: CohortCondition) =>
+    (DESCRIBE[c.type] as (c: CohortCondition, names?: Map<string, string>) => string)(c, names);
   return def.groups
     .map((g) => g.conditions.map(one).join(g.match === 'any' ? ' or ' : ' and '))
     .map((s) => (def.groups.length > 1 ? `(${s})` : s))

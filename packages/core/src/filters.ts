@@ -199,18 +199,7 @@ function walk(value: unknown, path: readonly string[]): unknown {
 export function matchEventFilter(filter: Filter, ev: EventLike): boolean {
   if (filter.property === COHORT_PROPERTY) return false;
   const ref = parseProperty(filter.property);
-  const actual =
-    ref.kind === 'column'
-      ? ev[ref.column]
-      : ref.kind === 'event'
-        ? walk(ev.props, ref.path)
-        : ref.kind === 'person'
-          ? walk(ev.person, ref.path)
-          : ref.kind === 'flag'
-            ? ev.flags?.[ref.key]
-            : ref.path.length === 0
-              ? walk(ev.props, ['$groups', ref.type])
-              : walk(ev.props, ['$group_props', ref.type, ...ref.path]);
+  const actual = READ[ref.kind](ref as never, ev);
   return compare(
     filter.op ?? 'eq',
     actual === '' && ref.kind === 'column' ? undefined : actual,
@@ -218,35 +207,55 @@ export function matchEventFilter(filter: Filter, ev: EventLike): boolean {
   );
 }
 
+type RefOf<K extends PropertyRef['kind']> = Extract<PropertyRef, { kind: K }>;
+
+/** Where each kind of property lives on an event. */
+const READ: { [K in PropertyRef['kind']]: (ref: RefOf<K>, ev: EventLike) => unknown } = {
+  column: (ref, ev) => ev[ref.column],
+  event: (ref, ev) => walk(ev.props, ref.path),
+  person: (ref, ev) => walk(ev.person, ref.path),
+  flag: (ref, ev) => ev.flags?.[ref.key],
+  group: (ref, ev) =>
+    ref.path.length === 0
+      ? walk(ev.props, ['$groups', ref.type])
+      : walk(ev.props, ['$group_props', ref.type, ...ref.path]),
+};
+
+const contains = (text: string | null, value: FilterValue | undefined) =>
+  text?.toLowerCase().includes(String(value ?? '').toLowerCase()) ?? false;
+
+function compareNumbers(
+  op: 'gt' | 'gte' | 'lt' | 'lte',
+  actual: unknown,
+  value: FilterValue | undefined,
+): boolean {
+  const a = typeof actual === 'number' ? actual : Number.NaN;
+  const b = Number(value);
+  if (Number.isNaN(a) || Number.isNaN(b)) return false;
+  if (op === 'gt') return a > b;
+  if (op === 'gte') return a >= b;
+  return op === 'lt' ? a < b : a <= b;
+}
+
+/** Text operators, given the actual value as text (null when unset) and the filter's value. */
+const TEXT_OPS: Record<
+  Exclude<FilterOp, 'gt' | 'gte' | 'lt' | 'lte'>,
+  (text: string | null, value: FilterValue | undefined) => boolean
+> = {
+  is_set: (text) => text !== null,
+  is_not_set: (text) => text === null,
+  eq: (text, value) => text !== null && text === asText(value),
+  neq: (text, value) => text === null || text !== asText(value),
+  contains: (text, value) => contains(text, value),
+  not_contains: (text, value) => text === null || !contains(text, value),
+  in: (text, value) => text !== null && toList(value).includes(text),
+  not_in: (text, value) => text === null || !toList(value).includes(text),
+};
+
 function compare(op: FilterOp, actual: unknown, value: FilterValue | undefined): boolean {
-  const text = asText(actual);
-  switch (op) {
-    case 'is_set':
-      return text !== null;
-    case 'is_not_set':
-      return text === null;
-    case 'eq':
-      return text !== null && text === asText(value);
-    case 'neq':
-      return text === null || text !== asText(value);
-    case 'contains':
-      return text?.toLowerCase().includes(String(value ?? '').toLowerCase()) ?? false;
-    case 'not_contains':
-      return text === null || !text.toLowerCase().includes(String(value ?? '').toLowerCase());
-    case 'in':
-      return text !== null && toList(value).includes(text);
-    case 'not_in':
-      return text === null || !toList(value).includes(text);
-    case 'gt':
-    case 'gte':
-    case 'lt':
-    case 'lte': {
-      const a = typeof actual === 'number' ? actual : Number.NaN;
-      const b = Number(value);
-      if (Number.isNaN(a) || Number.isNaN(b)) return false;
-      return op === 'gt' ? a > b : op === 'gte' ? a >= b : op === 'lt' ? a < b : a <= b;
-    }
-  }
+  if (op === 'gt' || op === 'gte' || op === 'lt' || op === 'lte')
+    return compareNumbers(op, actual, value);
+  return TEXT_OPS[op](asText(actual), value);
 }
 
 export function toList(value: FilterValue | undefined): string[] {

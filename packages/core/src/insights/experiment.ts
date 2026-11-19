@@ -57,7 +57,7 @@ import {
 } from '../stats/tests.ts';
 import { DAY_MS, iso, parseDuration, resolveRange } from '../time.ts';
 import type { ExperimentMetric, ExperimentSpec } from './schemas.ts';
-import { fmt, type QueryContext, type ResultBase, zoneOf } from './types.ts';
+import { fmt, type QueryContext, type ResultBase, type Row, zoneOf } from './types.ts';
 
 export interface MetricVariant {
   variant: string;
@@ -331,104 +331,135 @@ interface VariantStats {
 const isRate = (m: ExperimentMetric) =>
   m.kind === 'conversion' || m.kind === 'funnel' || m.kind === 'retention';
 
-async function measure(
+type MeanMetric = Extract<ExperimentMetric, { kind: 'mean' }>;
+type RatioMetric = Extract<ExperimentMetric, { kind: 'ratio' }>;
+
+type Measured = {
+  stats: VariantStats[];
+  winsorized?: { lower: number | null; upper: number | null };
+  timelineSql: string;
+};
+
+const STAT_FIELDS = ['a', 'b', 'c', 'dd', 'e'] as const;
+
+/** Rows of (variant, n, a, b, …) as stats; columns a query doesn't return are 0. */
+function toStats(rows: Row[]): VariantStats[] {
+  return rows.map((r) => {
+    const out: VariantStats = {
+      variant: text(r.variant),
+      n: num(r.n),
+      a: 0,
+      b: 0,
+      c: 0,
+      dd: 0,
+      e: 0,
+    };
+    for (const f of STAT_FIELDS) out[f] = num(r[f]);
+    return out;
+  });
+}
+
+const dayOf = (ctx: QueryContext, now: number) => (ts: string) =>
+  bucketExpr(ctx.dialect, ts, 'day', zoneOf({}, ctx, { from: 0, to: now }));
+
+async function measureRate(
   m: ExperimentMetric,
   head: Head,
   ctx: QueryContext,
   sql: string[],
   now: number,
-): Promise<{
-  stats: VariantStats[];
-  winsorized?: { lower: number | null; upper: number | null };
-  timelineSql: string;
-}> {
+): Promise<Measured> {
   const d = ctx.dialect;
-  const day = (ts: string) => bucketExpr(d, ts, 'day', zoneOf({}, ctx, { from: 0, to: now }));
-  if (isRate(m)) {
-    const { ctes } = convertedSql(m, d);
-    // Retention needs actors exposed long enough ago to have had the whole window.
-    const eligible =
-      m.kind === 'retention'
-        ? `WHERE xe.t0 + ${d.num(parseDuration(m.to ?? '8d'))} <= ${d.num(now)}`
-        : '';
-    const q = `${head.sql},
-${ctes.join(',\n')}
-SELECT xe.variant AS variant, COUNT(*) AS n, SUM(CASE WHEN mc.actor IS NULL THEN 0 ELSE 1 END) AS a
-FROM xe LEFT JOIN mc ON mc.actor = xe.actor ${eligible} GROUP BY xe.variant`;
-    sql.push(q);
-    const rows = await ctx.execute(q);
-    return {
-      stats: rows.map((r) => ({
-        variant: text(r.variant),
-        n: num(r.n),
-        a: num(r.a),
-        b: 0,
-        c: 0,
-        dd: 0,
-        e: 0,
-      })),
-      timelineSql: `${head.sql},
-${ctes.join(',\n')}
-SELECT ${day('xe.t0')} AS day, xe.variant AS variant, COUNT(*) AS n, SUM(CASE WHEN mc.actor IS NULL THEN 0 ELSE 1 END) AS a
-FROM xe LEFT JOIN mc ON mc.actor = xe.actor ${eligible} GROUP BY ${day('xe.t0')}, xe.variant`,
-    };
-  }
-  if (m.kind === 'mean') {
-    const base = `${head.sql},
-mv AS (${perActorValue(m, d)}),
+  const day = dayOf(ctx, now);
+  const { ctes } = convertedSql(m, d);
+  // Retention needs actors exposed long enough ago to have had the whole window.
+  const eligible =
+    m.kind === 'retention'
+      ? `WHERE xe.t0 + ${d.num(parseDuration(m.to ?? '8d'))} <= ${d.num(now)}`
+      : '';
+  const base = `${head.sql},\n${ctes.join(',\n')}`;
+  const converted =
+    'SUM(CASE WHEN mc.actor IS NULL THEN 0 ELSE 1 END) AS a\nFROM xe LEFT JOIN mc ON mc.actor = xe.actor';
+  const q = `${base}\nSELECT xe.variant AS variant, COUNT(*) AS n, ${converted} ${eligible} GROUP BY xe.variant`;
+  sql.push(q);
+  return {
+    stats: toStats(await ctx.execute(q)),
+    timelineSql: `${base}\nSELECT ${day('xe.t0')} AS day, xe.variant AS variant, COUNT(*) AS n, ${converted} ${eligible} GROUP BY ${day('xe.t0')}, xe.variant`,
+  };
+}
+
+/** The value at a percentile of per-actor values: exact for counts, from the sketch for sums. */
+async function percentileOf(m: MeanMetric, base: string, ctx: QueryContext, sql: string[]) {
+  const counts = (m.math ?? 'count') === 'count';
+  const sk = sketchColumns(ctx.dialect, 'v');
+  const q = counts
+    ? `${base}\nSELECT 0 AS sign, v AS k, COUNT(*) AS n FROM vals GROUP BY v`
+    : `${base}\nSELECT ${sk.sign} AS sign, ${sk.key} AS k, COUNT(*) AS n FROM vals GROUP BY ${sk.sign}, ${sk.key}`;
+  sql.push(q);
+  const cells = (await ctx.execute(q)).map((r) => ({
+    sign: num(r.sign),
+    key: num(r.k),
+    n: num(r.n),
+  }));
+  return (p: number) =>
+    counts
+      ? exactQuantile(
+          cells.map((c) => ({ value: c.key, n: c.n })),
+          p,
+        )
+      : sketchQuantile(cells as SketchCell[], p);
+}
+
+/** Winsorising: the bounds, and the value expression clamped to them. */
+async function winsorize(m: MeanMetric, base: string, ctx: QueryContext, sql: string[]) {
+  const w = m.winsorize;
+  if (!w || (w.lower === undefined && w.upper === undefined)) return { value: 'v' };
+  const quantile = await percentileOf(m, base, ctx, sql);
+  const lower = w.lower !== undefined ? quantile(w.lower / 100) : null;
+  const upper = w.upper !== undefined ? quantile(w.upper / 100) : null;
+  const d = ctx.dialect;
+  // No values yet means nothing to clamp.
+  const clamps = [
+    ...(lower !== null ? [`WHEN v < ${d.num(lower)} THEN ${d.num(lower)}`] : []),
+    ...(upper !== null ? [`WHEN v > ${d.num(upper)} THEN ${d.num(upper)}`] : []),
+  ];
+  return {
+    value: clamps.length ? `(CASE ${clamps.join(' ')} ELSE v END)` : 'v',
+    winsorized: { lower, upper },
+  };
+}
+
+async function measureMean(
+  m: MeanMetric,
+  head: Head,
+  ctx: QueryContext,
+  sql: string[],
+  now: number,
+): Promise<Measured> {
+  const day = dayOf(ctx, now);
+  const base = `${head.sql},
+mv AS (${perActorValue(m, ctx.dialect)}),
 vals AS (SELECT xe.actor, xe.t0, xe.variant, COALESCE(mv.v, 0) AS v FROM xe LEFT JOIN mv ON mv.actor = xe.actor)`;
-    let value = 'v';
-    let winsorized: { lower: number | null; upper: number | null } | undefined;
-    if (m.winsorize && (m.winsorize.lower !== undefined || m.winsorize.upper !== undefined)) {
-      // Per-actor counts are exact; sums of a property go through the sketch.
-      const sk = sketchColumns(d, 'v');
-      const q =
-        (m.math ?? 'count') === 'count'
-          ? `${base}\nSELECT 0 AS sign, v AS k, COUNT(*) AS n FROM vals GROUP BY v`
-          : `${base}\nSELECT ${sk.sign} AS sign, ${sk.key} AS k, COUNT(*) AS n FROM vals GROUP BY ${sk.sign}, ${sk.key}`;
-      sql.push(q);
-      const cells = (await ctx.execute(q)).map((r) => ({
-        sign: num(r.sign),
-        key: num(r.k),
-        n: num(r.n),
-      }));
-      const quantile = (p: number) =>
-        (m.math ?? 'count') === 'count'
-          ? exactQuantile(
-              cells.map((c) => ({ value: c.key, n: c.n })),
-              p,
-            )
-          : sketchQuantile(cells as SketchCell[], p);
-      const lower = m.winsorize.lower !== undefined ? quantile(m.winsorize.lower / 100) : null;
-      const upper = m.winsorize.upper !== undefined ? quantile(m.winsorize.upper / 100) : null;
-      winsorized = { lower, upper };
-      // No values yet means nothing to clamp.
-      const clamps = [
-        ...(lower !== null ? [`WHEN v < ${d.num(lower)} THEN ${d.num(lower)}`] : []),
-        ...(upper !== null ? [`WHEN v > ${d.num(upper)} THEN ${d.num(upper)}`] : []),
-      ];
-      if (clamps.length) value = `(CASE ${clamps.join(' ')} ELSE v END)`;
-    }
-    const q = `${base}
-SELECT variant, COUNT(*) AS n, SUM(${value}) AS a, SUM(${value} * ${value}) AS b FROM vals GROUP BY variant`;
-    sql.push(q);
-    const rows = await ctx.execute(q);
-    return {
-      stats: rows.map((r) => ({
-        variant: text(r.variant),
-        n: num(r.n),
-        a: num(r.a),
-        b: num(r.b),
-        c: 0,
-        dd: 0,
-        e: 0,
-      })),
-      ...(winsorized ? { winsorized } : {}),
-      timelineSql: `${base}
-SELECT ${day('t0')} AS day, variant, COUNT(*) AS n, SUM(${value}) AS a, SUM(${value} * ${value}) AS b FROM vals GROUP BY ${day('t0')}, variant`,
-    };
-  }
-  // Ratio.
+  const { value, winsorized } = await winsorize(m, base, ctx, sql);
+  const sums = `COUNT(*) AS n, SUM(${value}) AS a, SUM(${value} * ${value}) AS b FROM vals`;
+  const q = `${base}\nSELECT variant, ${sums} GROUP BY variant`;
+  sql.push(q);
+  return {
+    stats: toStats(await ctx.execute(q)),
+    ...(winsorized ? { winsorized } : {}),
+    timelineSql: `${base}\nSELECT ${day('t0')} AS day, variant, ${sums} GROUP BY ${day('t0')}, variant`,
+  };
+}
+
+async function measureRatio(
+  m: RatioMetric,
+  head: Head,
+  ctx: QueryContext,
+  sql: string[],
+  now: number,
+): Promise<Measured> {
+  const d = ctx.dialect;
+  const day = dayOf(ctx, now);
   const base = `${head.sql},
 mn AS (${perActorValue(m.numerator, d)}),
 md AS (${perActorValue(m.denominator, d)}),
@@ -436,23 +467,26 @@ vals AS (
   SELECT xe.actor, xe.t0, xe.variant, COALESCE(mn.v, 0) AS x, COALESCE(md.v, 0) AS y
   FROM xe LEFT JOIN mn ON mn.actor = xe.actor LEFT JOIN md ON md.actor = xe.actor
 )`;
-  const q = `${base}
-SELECT variant, COUNT(*) AS n, SUM(x) AS a, SUM(y) AS b, SUM(x * x) AS c, SUM(y * y) AS dd, SUM(x * y) AS e FROM vals GROUP BY variant`;
+  const sums =
+    'COUNT(*) AS n, SUM(x) AS a, SUM(y) AS b, SUM(x * x) AS c, SUM(y * y) AS dd, SUM(x * y) AS e FROM vals';
+  const q = `${base}\nSELECT variant, ${sums} GROUP BY variant`;
   sql.push(q);
-  const rows = await ctx.execute(q);
   return {
-    stats: rows.map((r) => ({
-      variant: text(r.variant),
-      n: num(r.n),
-      a: num(r.a),
-      b: num(r.b),
-      c: num(r.c),
-      dd: num(r.dd),
-      e: num(r.e),
-    })),
-    timelineSql: `${base}
-SELECT ${day('t0')} AS day, variant, COUNT(*) AS n, SUM(x) AS a, SUM(y) AS b, SUM(x * x) AS c, SUM(y * y) AS dd, SUM(x * y) AS e FROM vals GROUP BY ${day('t0')}, variant`,
+    stats: toStats(await ctx.execute(q)),
+    timelineSql: `${base}\nSELECT ${day('t0')} AS day, variant, ${sums} GROUP BY ${day('t0')}, variant`,
   };
+}
+
+function measure(
+  m: ExperimentMetric,
+  head: Head,
+  ctx: QueryContext,
+  sql: string[],
+  now: number,
+): Promise<Measured> {
+  if (isRate(m)) return measureRate(m, head, ctx, sql, now);
+  if (m.kind === 'mean') return measureMean(m, head, ctx, sql, now);
+  return measureRatio(m as RatioMetric, head, ctx, sql, now);
 }
 
 /** The value and its standard error for a variant's stats. */
@@ -469,6 +503,76 @@ function estimate(m: ExperimentMetric, s: VariantStats): { value: number; se: nu
   return { value: r.ratio, se: r.se };
 }
 
+const zeroStats = (variant: string): VariantStats => ({
+  variant,
+  n: 0,
+  a: 0,
+  b: 0,
+  c: 0,
+  dd: 0,
+  e: 0,
+});
+
+interface Analysis {
+  m: ExperimentMetric;
+  rows: VariantStats[];
+  estimates: { value: number; se: number }[];
+  confidence: number;
+  lower: boolean;
+}
+
+/** Variant `i` against control (row 0), or null for control and empty variants. */
+function versusControl(a: Analysis, i: number): Comparison | null {
+  const control = a.rows[0]!;
+  const r = a.rows[i]!;
+  if (i === 0 || control.n === 0 || r.n === 0) return null;
+  if (!isRate(a.m))
+    return compareEstimates(a.estimates[0]!, a.estimates[i]!, a.confidence, a.lower);
+  return compareProportions(
+    { exposures: control.n, conversions: control.a },
+    { exposures: r.n, conversions: r.a },
+    a.confidence,
+    a.lower,
+  );
+}
+
+function variantResult(a: Analysis, i: number, best: number[]): MetricVariant {
+  const r = a.rows[i]!;
+  const e = a.estimates[i]!;
+  const z = zFor(a.confidence);
+  const interval: [number, number] = isRate(a.m)
+    ? wilson(r.a, r.n, z)
+    : [e.value - z * e.se, e.value + z * e.se];
+  return {
+    variant: r.variant,
+    exposures: r.n,
+    ...(isRate(a.m) ? { conversions: r.a } : {}),
+    value: e.value,
+    interval,
+    vsControl: versusControl(a, i),
+    probabilityToBeBest: best[i] ?? 0,
+  };
+}
+
+/** The variant that wins: Bayesian by chance to beat control, frequentist by p-value. */
+function significantOf(
+  variants: MetricVariant[],
+  engine: 'bayesian' | 'frequentist',
+  confidence: number,
+  lower: boolean,
+): string | null {
+  const candidates = variants.filter((v) => v.vsControl);
+  if (engine === 'bayesian') {
+    const chance = (v: MetricVariant) => v.vsControl!.probabilityToBeatControl;
+    const top = [...candidates].sort((x, y) => chance(y) - chance(x))[0];
+    return top && chance(top) >= confidence ? top.variant : null;
+  }
+  const better = (v: MetricVariant) =>
+    lower ? v.vsControl!.expectedLift < 0 : v.vsControl!.expectedLift > 0;
+  const winners = candidates.filter((v) => better(v) && v.vsControl!.pValue < 1 - confidence);
+  return winners.sort((x, y) => x.vsControl!.pValue - y.vsControl!.pValue)[0]?.variant ?? null;
+}
+
 function analyse(
   m: ExperimentMetric,
   stats: VariantStats[],
@@ -478,74 +582,21 @@ function analyse(
 ): MetricResult {
   const lower = m.goal === 'decrease';
   const by = new Map(stats.map((s) => [s.variant, s]));
-  const zero = (variant: string): VariantStats => ({
-    variant,
-    n: 0,
-    a: 0,
-    b: 0,
-    c: 0,
-    dd: 0,
-    e: 0,
-  });
-  const rows = order.map((v) => by.get(v) ?? zero(v));
-  const control = rows[0]!;
-  const z = zFor(confidence);
-  const estimates = rows.map((r) => estimate(m, r));
+  const rows = order.map((v) => by.get(v) ?? zeroStats(v));
+  const a: Analysis = { m, rows, estimates: rows.map((r) => estimate(m, r)), confidence, lower };
   const best = isRate(m)
     ? probabilityToBeBestBeta(
         rows.map((r) => ({ exposures: r.n, conversions: r.a })),
         lower,
       )
-    : probabilityToBeBestNormal(estimates, lower);
-  const variants: MetricVariant[] = rows.map((r, i) => {
-    const e = estimates[i]!;
-    const interval: [number, number] = isRate(m)
-      ? wilson(r.a, r.n, z)
-      : [e.value - z * e.se, e.value + z * e.se];
-    let vsControl: Comparison | null = null;
-    if (i > 0 && control.n > 0 && r.n > 0) {
-      vsControl = isRate(m)
-        ? compareProportions(
-            { exposures: control.n, conversions: control.a },
-            { exposures: r.n, conversions: r.a },
-            confidence,
-            lower,
-          )
-        : compareEstimates(estimates[0]!, e, confidence, lower);
-    }
-    return {
-      variant: r.variant,
-      exposures: r.n,
-      ...(isRate(m) ? { conversions: r.a } : {}),
-      value: e.value,
-      interval,
-      vsControl,
-      probabilityToBeBest: best[i] ?? 0,
-    };
-  });
-  const candidates = variants.filter((v) => v.vsControl);
-  let significantVariant: string | null = null;
-  if (engine === 'bayesian') {
-    const top = [...candidates].sort(
-      (a, b) => b.vsControl!.probabilityToBeatControl - a.vsControl!.probabilityToBeatControl,
-    )[0];
-    if (top && top.vsControl!.probabilityToBeatControl >= confidence)
-      significantVariant = top.variant;
-  } else {
-    const winners = candidates.filter((v) => {
-      const c = v.vsControl!;
-      const better = lower ? c.expectedLift < 0 : c.expectedLift > 0;
-      return better && c.pValue < 1 - confidence;
-    });
-    const top = winners.sort((a, b) => a.vsControl!.pValue - b.vsControl!.pValue)[0];
-    if (top) significantVariant = top.variant;
-  }
+    : probabilityToBeBestNormal(a.estimates, lower);
+  const variants = rows.map((_, i) => variantResult(a, i, best));
   return {
     name: metricName(m),
     kind: m.kind,
     goal: lower ? 'decrease' : 'increase',
     variants,
-    significantVariant,
+    significantVariant: significantOf(variants, engine, confidence, lower),
   };
 }
 
@@ -598,6 +649,207 @@ export function compileExperiment(
   return `${head.sql}\nSELECT variant, COUNT(*) AS exposures FROM xe GROUP BY variant`;
 }
 
+/** Who was exposed: variants in display order, exposures per variant, and the first exposure. */
+interface Exposures {
+  order: string[];
+  counts: Map<string, number>;
+  /** Actors who saw more than one variant (left out). */
+  excluded: number;
+  first: number;
+  total: number;
+}
+
+function variantOrder(spec: Spec, rows: Row[]): string[] {
+  if (spec.holdoutFlags) return ['holdout', 'experiments'];
+  if (spec.variants) return spec.variants;
+  const seen = rows.map((r) => text(r.variant)).filter((v) => v !== 'holdout');
+  return [
+    ...(seen.includes('control') ? ['control'] : []),
+    ...seen.filter((v) => v !== 'control').sort(),
+  ];
+}
+
+function exposuresFrom(spec: Spec, rows: Row[]): Exposures {
+  const order = variantOrder(spec, rows);
+  const counts = new Map(rows.map((r) => [text(r.variant), num(r.exposures)]));
+  return {
+    order,
+    counts,
+    excluded: num(rows[0]?.multi),
+    first: Math.min(...rows.map((r) => num(r.first_exposure)), Number.POSITIVE_INFINITY),
+    total: order.reduce((a, v) => a + (counts.get(v) ?? 0), 0),
+  };
+}
+
+interface Readiness {
+  daysRunning: number;
+  minimumDays: number;
+  minimumExposures: number;
+  /** Every variant has the minimum exposures. */
+  enough: boolean;
+}
+
+function readiness(
+  spec: Spec,
+  x: Exposures,
+  startedAt: number,
+  now: number,
+  rangeTo: number,
+): Readiness {
+  const minimumExposures = spec.minimumExposures ?? 100;
+  return {
+    daysRunning: Math.max(0, (Math.min(now, rangeTo) - startedAt) / DAY_MS),
+    minimumDays: spec.minimumDays ?? 7,
+    minimumExposures,
+    enough: x.order.length > 1 && x.order.every((v) => (x.counts.get(v) ?? 0) >= minimumExposures),
+  };
+}
+
+function statusOf(
+  x: Exposures,
+  srmMismatch: boolean,
+  ready: Readiness,
+  decider: MetricResult,
+): ExperimentResult['status'] {
+  if (x.total === 0) return 'no_data';
+  if (srmMismatch) return 'srm';
+  if (ready.daysRunning < ready.minimumDays || !ready.enough) return 'too_early';
+  return decider.significantVariant ? 'winner' : 'no_winner_yet';
+}
+
+/** People needed per variant to detect `mde` on the first metric, from control's numbers. */
+function sampleNeeded(
+  m0: ExperimentMetric,
+  control: VariantStats,
+  mde: number,
+  confidence: number,
+): number {
+  if (isRate(m0)) return sampleSizeForRate(Math.max(0.001, control.a / control.n), mde, confidence);
+  const e = estimate(m0, control);
+  return sampleSizeForMean(e.value, e.se * Math.sqrt(control.n), mde, confidence);
+}
+
+/** Days until an `mde` change on the first metric is detectable at the current exposure pace. */
+function daysToSignificance(
+  m0: ExperimentMetric,
+  control: VariantStats | undefined,
+  x: Exposures,
+  ready: Readiness,
+  plan: { mde: number; confidence: number },
+): number | null {
+  // A rate with no conversions yet has no baseline to plan from.
+  if (!control || control.n === 0 || (isRate(m0) && control.a === 0)) return null;
+  const needed = sampleNeeded(m0, control, plan.mde, plan.confidence);
+  const perDayPerVariant = x.total / Math.max(1, ready.daysRunning) / Math.max(1, x.order.length);
+  if (perDayPerVariant <= 0 || !Number.isFinite(needed)) return null;
+  const have = Math.min(...x.order.map((v) => x.counts.get(v) ?? 0));
+  return Math.max(
+    Math.ceil(Math.max(0, needed - have) / perDayPerVariant),
+    Math.ceil(Math.max(0, ready.minimumDays - ready.daysRunning)),
+  );
+}
+
+/** Sums of a mean metric for one variant, for the original mean comparison. */
+function meanSums(stats: VariantStats[] | undefined, variant: string | undefined) {
+  const s = stats?.find((y) => y.variant === variant);
+  return { n: s?.n ?? 0, sum: s?.a ?? 0, sumSquares: s?.b ?? 0 };
+}
+
+/** The original result shape: conversion on the first rate metric, and the mean of a goal value. */
+function legacyVariants(
+  spec: Spec,
+  x: Exposures,
+  all: ExperimentMetric[],
+  metrics: MetricResult[],
+  measured: Measured[],
+): VariantResult[] {
+  const rate = metrics.find((_, i) => isRate(all[i]!)) ?? null;
+  const meanMetric = spec.goal?.value ? metrics.find((r) => r.kind === 'mean') : undefined;
+  const meanStats = meanMetric ? measured[metrics.indexOf(meanMetric)]?.stats : undefined;
+  const control = meanMetric?.variants[0];
+  return x.order.map((v, i) => {
+    const r = rate?.variants[i];
+    const mean = meanMetric?.variants[i];
+    const c = r?.vsControl;
+    return {
+      variant: v,
+      exposures: x.counts.get(v) ?? 0,
+      conversions: r?.conversions ?? 0,
+      conversionRate: r?.value ?? 0,
+      rateInterval: r?.interval ?? [0, 0],
+      vsControl: c
+        ? {
+            probabilityToBeatControl: c.probabilityToBeatControl,
+            expectedLift: c.expectedLift,
+            liftInterval: c.liftInterval,
+          }
+        : null,
+      mean: mean
+        ? {
+            value: mean.value,
+            vsControl:
+              i === 0
+                ? null
+                : compareMeans(
+                    meanSums(meanStats, control?.variant),
+                    meanSums(meanStats, mean.variant),
+                  ),
+          }
+        : null,
+    };
+  });
+}
+
+/** "variant: 4.2%, 87% chance to beat control (lift 12%)" for each variant of the deciding metric. */
+function variantLine(v: MetricVariant, rate: boolean, engine: 'bayesian' | 'frequentist'): string {
+  const shown = rate ? fmt(v.value, 'percent') : fmt(v.value, 'decimal');
+  const c = v.vsControl;
+  if (!c) return `${v.variant}: ${shown} (control)`;
+  const lift = `lift ${fmt(c.expectedLift, 'percent')}`;
+  return engine === 'bayesian'
+    ? `${v.variant}: ${shown}, ${fmt(c.probabilityToBeatControl, 'percent')} chance to beat control (${lift})`
+    : `${v.variant}: ${shown}, p = ${c.pValue.toFixed(3)} (${lift})`;
+}
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+function tooEarly(ready: Readiness, days: number | null, mde: number): string {
+  const waits = [
+    ready.daysRunning < ready.minimumDays
+      ? `${plural(Math.ceil(ready.minimumDays - ready.daysRunning), 'more day')}`
+      : null,
+    ready.enough ? null : `${ready.minimumExposures} exposures per variant`,
+  ].filter(Boolean);
+  const pace =
+    days !== null ? ` (about ${days} more days to detect a ${Math.round(mde * 100)}% change)` : '';
+  return `Too early to call: wait for ${waits.join(' and ')}${pace}.`;
+}
+
+function verdictOf(
+  status: ExperimentResult['status'],
+  o: {
+    winner: string | null;
+    decider: MetricResult;
+    confidence: number;
+    engine: string;
+    days: number | null;
+    mde: number;
+    ready: Readiness;
+  },
+): string {
+  const pct = (n: number) => `${Math.round(n * 100)}%`;
+  if (status === 'srm')
+    return 'Sample ratio mismatch detected (p < 0.001): exposure tracking or assignment is broken; do not trust these results.';
+  if (status === 'too_early') return tooEarly(o.ready, o.days, o.mde);
+  if (status === 'winner')
+    return `"${o.winner}" is winning on ${o.decider.name} at ${pct(o.confidence)} ${o.engine === 'bayesian' ? 'probability' : 'confidence'}.`;
+  if (status === 'no_winner_yet')
+    return o.days !== null
+      ? `No winner yet; roughly ${o.days} more days to detect a ${pct(o.mde)} change at the current pace.`
+      : 'No winner yet.';
+  return '';
+}
+
 export async function runExperiment(
   input: ExperimentSpec,
   ctx: QueryContext,
@@ -617,151 +869,42 @@ export async function runExperiment(
   const exposureQuery = `${head.sql}
 SELECT variant, COUNT(*) AS exposures, MIN(t0) AS first_exposure, (SELECT COUNT(*) FROM x WHERE nv > 1) AS multi FROM xe GROUP BY variant`;
   sql.push(exposureQuery);
-  const exposureRows = await ctx.execute(exposureQuery);
-  const seen = exposureRows
-    .map((r) => text(r.variant))
-    .filter((v) => spec.holdoutFlags || v !== 'holdout');
-  const order = spec.holdoutFlags
-    ? ['holdout', 'experiments']
-    : (spec.variants ?? [
-        ...(seen.includes('control') ? ['control'] : []),
-        ...seen.filter((v) => v !== 'control').sort(),
-      ]);
-  const exposuresOf = new Map(exposureRows.map((r) => [text(r.variant), num(r.exposures)]));
-  const excluded = num(exposureRows[0]?.multi);
-  const firstExposure = Math.min(
-    ...exposureRows.map((r) => num(r.first_exposure)),
-    Number.POSITIVE_INFINITY,
-  );
+  const x = exposuresFrom(spec, await ctx.execute(exposureQuery));
 
   const measured = await Promise.all(all.map((m) => measure(m, head, ctx, sql, now)));
   const results = all.map((m, i) => {
-    const r = analyse(m, measured[i]!.stats, order, engine, confidence);
+    const r = analyse(m, measured[i]!.stats, x.order, engine, confidence);
     if (measured[i]!.winsorized) r.winsorized = measured[i]!.winsorized;
     return r;
   });
   const metrics = results.slice(0, primary.length);
   const secondaryResults = results.slice(primary.length);
-  if (options.timeline !== false && order.length) {
-    metrics[0]!.timeline = await timeline(primary[0]!, measured[0]!.timelineSql, ctx, order, sql);
-  }
+  if (options.timeline !== false && x.order.length)
+    metrics[0]!.timeline = await timeline(primary[0]!, measured[0]!.timelineSql, ctx, x.order, sql);
 
-  const weights = order.map((v) => options.weights?.[v] ?? 1);
   const srm = sampleRatioMismatch(
-    order.map((v) => exposuresOf.get(v) ?? 0),
-    weights,
+    x.order.map((v) => x.counts.get(v) ?? 0),
+    x.order.map((v) => options.weights?.[v] ?? 1),
   );
-  const startedAt = options.startedAt ?? (Number.isFinite(firstExposure) ? firstExposure : now);
-  const daysRunning = Math.max(0, (Math.min(now, range.to) - startedAt) / DAY_MS);
-  const minimumDays = spec.minimumDays ?? 7;
-  const minimumExposures = spec.minimumExposures ?? 100;
-  const enough =
-    order.length > 1 && order.every((v) => (exposuresOf.get(v) ?? 0) >= minimumExposures);
+  const startedAt = options.startedAt ?? (Number.isFinite(x.first) ? x.first : now);
+  const ready = readiness(spec, x, startedAt, now, range.to);
   const decider = metrics[0]!;
-  const totalExposures = order.reduce((a, v) => a + (exposuresOf.get(v) ?? 0), 0);
-  let status: ExperimentResult['status'];
-  let winner: string | null = null;
-  if (totalExposures === 0) status = 'no_data';
-  else if (srm.mismatch) status = 'srm';
-  else if (daysRunning < minimumDays || !enough) status = 'too_early';
-  else if (decider.significantVariant) {
-    status = 'winner';
-    winner = decider.significantVariant;
-  } else status = 'no_winner_yet';
-
-  // Days until an `mde` change on the first metric is detectable at the current exposure pace.
-  let estimatedDaysToSignificance: number | null = null;
+  const status = statusOf(x, srm.mismatch, ready, decider);
+  const winner = status === 'winner' ? decider.significantVariant : null;
   const mde = spec.mde ?? 0.1;
-  const controlStats = measured[0]!.stats.find((s) => s.variant === order[0]);
-  const m0 = primary[0]!;
-  // A rate with no conversions yet has no baseline to plan from.
-  const hasBaseline = controlStats && controlStats.n > 0 && (!isRate(m0) || controlStats.a > 0);
-  if (controlStats && hasBaseline && status !== 'winner') {
-    const needed = isRate(m0)
-      ? sampleSizeForRate(Math.max(0.001, controlStats.a / controlStats.n), mde, confidence)
-      : (() => {
-          const e = estimate(m0, controlStats);
-          const sd = e.se * Math.sqrt(controlStats.n);
-          return sampleSizeForMean(e.value, sd, mde, confidence);
-        })();
-    const perDayPerVariant = totalExposures / Math.max(1, daysRunning) / Math.max(1, order.length);
-    const have = Math.min(...order.map((v) => exposuresOf.get(v) ?? 0));
-    const remaining = Math.max(0, needed - have);
-    estimatedDaysToSignificance =
-      perDayPerVariant > 0 && Number.isFinite(needed)
-        ? Math.max(
-            Math.ceil(remaining / perDayPerVariant),
-            Math.ceil(Math.max(0, minimumDays - daysRunning)),
-          )
-        : null;
-  }
-
-  // The original shape: conversion on the first rate metric (and the mean of a goal value).
-  const rate = metrics.find((_, i) => isRate(all[i]!)) ?? null;
-  const meanMetric = spec.goal?.value ? metrics.find((r) => r.kind === 'mean') : undefined;
-  const variants: VariantResult[] = order.map((v, i) => {
-    const r = rate?.variants[i];
-    const mean = meanMetric?.variants[i];
-    const control = meanMetric?.variants[0];
-    const meanStats = (x: MetricVariant | undefined) => {
-      const s = measured[metrics.indexOf(meanMetric!)]?.stats.find((y) => y.variant === x?.variant);
-      return { n: s?.n ?? 0, sum: s?.a ?? 0, sumSquares: s?.b ?? 0 };
-    };
-    return {
-      variant: v,
-      exposures: exposuresOf.get(v) ?? 0,
-      conversions: r?.conversions ?? 0,
-      conversionRate: r?.value ?? 0,
-      rateInterval: r?.interval ?? [0, 0],
-      vsControl: r?.vsControl
-        ? {
-            probabilityToBeatControl: r.vsControl.probabilityToBeatControl,
-            expectedLift: r.vsControl.expectedLift,
-            liftInterval: r.vsControl.liftInterval,
-          }
-        : null,
-      mean:
-        meanMetric && mean
-          ? {
-              value: mean.value,
-              vsControl: i === 0 ? null : compareMeans(meanStats(control), meanStats(mean)),
-            }
-          : null,
-    };
-  });
-
-  const lines = decider.variants.map((v) => {
-    const shown = isRate(primary[0]!) ? fmt(v.value, 'percent') : fmt(v.value, 'decimal');
-    const vs = v.vsControl
-      ? engine === 'bayesian'
-        ? `, ${fmt(v.vsControl.probabilityToBeatControl, 'percent')} chance to beat control (lift ${fmt(v.vsControl.expectedLift, 'percent')})`
-        : `, p = ${v.vsControl.pValue.toFixed(3)} (lift ${fmt(v.vsControl.expectedLift, 'percent')})`
-      : ' (control)';
-    return `${v.variant}: ${shown}${vs}`;
-  });
-  const verdict = {
-    no_data: '',
-    srm: 'Sample ratio mismatch detected (p < 0.001): exposure tracking or assignment is broken; do not trust these results.',
-    too_early: `Too early to call: wait for ${[
-      daysRunning < minimumDays
-        ? `${Math.ceil(minimumDays - daysRunning)} more day${Math.ceil(minimumDays - daysRunning) === 1 ? '' : 's'}`
-        : null,
-      !enough ? `${minimumExposures} exposures per variant` : null,
-    ]
-      .filter(Boolean)
-      .join(
-        ' and ',
-      )}${estimatedDaysToSignificance !== null ? ` (about ${estimatedDaysToSignificance} more days to detect a ${Math.round(mde * 100)}% change)` : ''}.`,
-    winner: `"${winner}" is winning on ${decider.name} at ${Math.round(confidence * 100)}% ${engine === 'bayesian' ? 'probability' : 'confidence'}.`,
-    no_winner_yet:
-      estimatedDaysToSignificance !== null
-        ? `No winner yet; roughly ${estimatedDaysToSignificance} more days to detect a ${Math.round(mde * 100)}% change at the current pace.`
-        : 'No winner yet.',
-  }[status];
+  const control = measured[0]!.stats.find((st) => st.variant === x.order[0]);
+  const days =
+    status === 'winner'
+      ? null
+      : daysToSignificance(primary[0]!, control, x, ready, { mde, confidence });
+  const verdict = verdictOf(status, { winner, decider, confidence, engine, days, mde, ready });
+  const lines = decider.variants.map((v) => variantLine(v, isRate(primary[0]!), engine));
   const secondaryNotes = secondaryResults
     .filter((r) => r.significantVariant)
     .map((r) => `${r.name}: ${r.significantVariant} better`);
   const aggregation = parseAggregation(spec.aggregateBy);
+  const exposed = `${fmt(x.total)} ${actorNoun(aggregation, x.total)} exposed ${ready.daysRunning < 1 ? 'today' : `over ${ready.daysRunning.toFixed(1)} days`}`;
+  const secondaryText = secondaryNotes.length ? ` Secondary: ${secondaryNotes.join('; ')}.` : '';
   return {
     kind: 'experiment',
     flag: spec.flag,
@@ -769,21 +912,21 @@ SELECT variant, COUNT(*) AS exposures, MIN(t0) AS first_exposure, (SELECT COUNT(
     engine,
     confidence,
     aggregateBy: typeof aggregation === 'object' ? aggregation.group : aggregation,
-    variants,
+    variants: legacyVariants(spec, x, all, metrics, measured),
     metrics,
     secondary: secondaryResults,
-    excludedMultipleVariants: excluded,
+    excludedMultipleVariants: x.excluded,
     srm,
     winner,
     status,
-    daysRunning,
-    estimatedDaysToSignificance,
+    daysRunning: ready.daysRunning,
+    estimatedDaysToSignificance: days,
     sql,
     range: { from: iso(range.from), to: iso(range.to) },
     summary:
-      totalExposures === 0
+      x.total === 0
         ? `No exposures to "${spec.flag}" yet.`
-        : `${fmt(totalExposures)} ${actorNoun(aggregation, totalExposures)} exposed ${daysRunning < 1 ? 'today' : `over ${daysRunning.toFixed(1)} days`}. ${decider.name}: ${lines.join('; ')}. ${verdict}${secondaryNotes.length ? ` Secondary: ${secondaryNotes.join('; ')}.` : ''}`,
+        : `${exposed}. ${decider.name}: ${lines.join('; ')}. ${verdict}${secondaryText}`,
   };
 }
 
@@ -808,6 +951,32 @@ export interface ExperimentPlan {
   sql: string[];
   range: { from: string; to: string };
   summary: string;
+}
+
+/** People per variant to detect `mde` (infinite with no baseline yet). */
+function planSampleSize(
+  rate: boolean,
+  n: number,
+  baseline: number,
+  sd: number | null,
+  mde: number,
+  confidence: number,
+): number {
+  if (!n) return Number.POSITIVE_INFINITY;
+  return rate
+    ? sampleSizeForRate(baseline, mde, confidence)
+    : sampleSizeForMean(baseline, sd ?? 0, mde, confidence);
+}
+
+/** Days to reach the sample at the current pace, never fewer than the minimum; null if it can't. */
+function planDays(
+  perVariant: number,
+  variants: number,
+  perDay: number,
+  minimumDays: number,
+): number | null {
+  if (!Number.isFinite(perVariant) || perDay <= 0) return null;
+  return Math.max(minimumDays, Math.ceil((perVariant * variants) / perDay));
 }
 
 /**
@@ -850,26 +1019,19 @@ export async function planExperiment(
   sql.push(countQuery);
   const people = num((await ctx.execute(countQuery))[0]?.n);
   const measured = await measure(input.metric, head, ctx, sql, now);
-  const stats = measured.stats[0] ?? { variant: 'all', n: 0, a: 0, b: 0, c: 0, dd: 0, e: 0 };
+  const stats = measured.stats[0] ?? zeroStats('all');
   const e = estimate(input.metric, stats);
   const mde = input.mde ?? 0.1;
   const confidence = input.confidence ?? 0.95;
   const variants = input.variants ?? 2;
-  const sd = isRate(input.metric) ? null : e.se * Math.sqrt(Math.max(1, stats.n));
-  const perVariant = stats.n
-    ? isRate(input.metric)
-      ? sampleSizeForRate(e.value, mde, confidence)
-      : sampleSizeForMean(e.value, sd ?? 0, mde, confidence)
-    : Number.POSITIVE_INFINITY;
+  const rate = isRate(input.metric);
+  const sd = rate ? null : e.se * Math.sqrt(Math.max(1, stats.n));
+  const perVariant = planSampleSize(rate, stats.n, e.value, sd, mde, confidence);
   const share = Math.min(100, Math.max(1, input.exposurePercentage ?? 100)) / 100;
   const peoplePerDay = (people / days) * share;
-  const minimumDays = input.minimumDays ?? 7;
-  const needDays =
-    Number.isFinite(perVariant) && peoplePerDay > 0
-      ? Math.max(minimumDays, Math.ceil((perVariant * variants) / peoplePerDay))
-      : null;
+  const needDays = planDays(perVariant, variants, peoplePerDay, input.minimumDays ?? 7);
   const name = metricName(input.metric);
-  const shown = isRate(input.metric) ? fmt(e.value, 'percent') : fmt(e.value, 'decimal');
+  const shown = rate ? fmt(e.value, 'percent') : fmt(e.value, 'decimal');
   return {
     kind: 'experiment_plan',
     metric: name,

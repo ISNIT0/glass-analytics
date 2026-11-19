@@ -71,6 +71,89 @@ export function parseSourceMap(text: string): RawSourceMap {
   return map;
 }
 
+/** Where a mapping points: indexes into `sources` and `names`, 0-based line and column. */
+interface Mapped {
+  src: number;
+  line: number;
+  col: number;
+  name: number | null;
+}
+
+/** The decoder's running totals: VLQ fields are deltas from the previous segment. */
+interface Totals {
+  src: number;
+  srcLine: number;
+  srcCol: number;
+  name: number;
+}
+
+/** Add one segment's deltas; returns where it points, or null for generated code with no source. */
+function step(totals: Totals, seg: number[]): Mapped | null {
+  if (seg.length < 4) return null;
+  totals.src += seg[1]!;
+  totals.srcLine += seg[2]!;
+  totals.srcCol += seg[3]!;
+  if (seg.length >= 5) totals.name += seg[4]!;
+  return {
+    src: totals.src,
+    line: totals.srcLine,
+    col: totals.srcCol,
+    name: seg.length >= 5 ? totals.name : null,
+  };
+}
+
+/**
+ * Read one generated line from `pos` (up to the ";"). On the target line, keep the last mapping at
+ * or before the column. Returns where the line ends.
+ */
+function readLine(
+  m: string,
+  pos: number,
+  totals: Totals,
+  target: { col: number } | null,
+  found: { best: Mapped | null },
+): number {
+  let genCol = 0;
+  const seg: number[] = [];
+  while (pos < m.length && m.charCodeAt(pos) !== 59) {
+    if (m.charCodeAt(pos) === 44) {
+      pos++;
+      continue;
+    }
+    pos = decodeVlq(m, pos, seg);
+    if (seg.length === 0) continue;
+    genCol += seg[0]!;
+    const mapped = step(totals, seg);
+    if (target && genCol <= target.col) found.best = mapped;
+  }
+  return pos;
+}
+
+/** The mapping for a 0-based generated line and column, or null. */
+function findMapping(mappings: string, targetLine: number, targetCol: number): Mapped | null {
+  const totals: Totals = { src: 0, srcLine: 0, srcCol: 0, name: 0 };
+  const found: { best: Mapped | null } = { best: null };
+  let pos = 0;
+  for (let genLine = 0; pos < mappings.length && genLine <= targetLine; genLine++) {
+    const onTarget = genLine === targetLine;
+    pos = readLine(mappings, pos, totals, onTarget ? { col: targetCol } : null, found);
+    if (onTarget) break;
+    pos++; // the ";"
+  }
+  return found.best;
+}
+
+/** A few lines of source around the mapped line, from `sourcesContent`. */
+function contextOf(content: string, i: number, contextLines: number): OriginalPosition['context'] {
+  const lines = content.split(/\r?\n/);
+  const clip = (l: string) => l.slice(0, 300);
+  return {
+    pre: lines.slice(Math.max(0, i - contextLines), i).map(clip),
+    line: clip(lines[i] ?? ''),
+    post: lines.slice(i + 1, i + 1 + contextLines).map(clip),
+  };
+}
+
 /**
  * The original position for a generated 1-based line and column. Returns null when that spot has
  * no mapping (generated code with no source, or a line past the end).
@@ -81,67 +164,16 @@ export function originalPositionFor(
   column: number,
   contextLines = 3,
 ): OriginalPosition | null {
-  const targetLine = line - 1;
-  const targetCol = Math.max(0, column - 1);
-  const m = map.mappings;
-  let pos = 0;
-  let genLine = 0;
-  // Cumulative state across the whole file (only the generated column resets per line).
-  let src = 0;
-  let srcLine = 0;
-  let srcCol = 0;
-  let name = 0;
-  const seg: number[] = [];
-  let best: { src: number; line: number; col: number; name: number | null } | null = null;
-  while (pos < m.length && genLine <= targetLine) {
-    let genCol = 0;
-    // One generated line.
-    while (pos < m.length && m.charCodeAt(pos) !== 59) {
-      if (m.charCodeAt(pos) === 44) {
-        pos++;
-        continue;
-      }
-      pos = decodeVlq(m, pos, seg);
-      if (seg.length === 0) continue;
-      genCol += seg[0]!;
-      let hasSource = false;
-      let hasName = false;
-      if (seg.length >= 4) {
-        src += seg[1]!;
-        srcLine += seg[2]!;
-        srcCol += seg[3]!;
-        hasSource = true;
-      }
-      if (seg.length >= 5) {
-        name += seg[4]!;
-        hasName = true;
-      }
-      if (genLine === targetLine && genCol <= targetCol) {
-        best = hasSource ? { src, line: srcLine, col: srcCol, name: hasName ? name : null } : null;
-      }
-    }
-    if (genLine === targetLine) break;
-    pos++; // the ";"
-    genLine++;
-  }
+  const best = findMapping(map.mappings, line - 1, Math.max(0, column - 1));
   if (!best) return null;
   const root = map.sourceRoot ? map.sourceRoot.replace(/\/?$/, '/') : '';
-  const source = `${root}${map.sources[best.src] ?? ''}`;
   const out: OriginalPosition = {
-    source,
+    source: `${root}${map.sources[best.src] ?? ''}`,
     line: best.line + 1,
     column: best.col + 1,
     name: best.name === null ? null : (map.names?.[best.name] ?? null),
   };
   const content = map.sourcesContent?.[best.src];
-  if (typeof content === 'string') {
-    const lines = content.split(/\r?\n/);
-    const i = best.line;
-    out.context = {
-      pre: lines.slice(Math.max(0, i - contextLines), i).map((l) => l.slice(0, 300)),
-      line: (lines[i] ?? '').slice(0, 300),
-      post: lines.slice(i + 1, i + 1 + contextLines).map((l) => l.slice(0, 300)),
-    };
-  }
+  if (typeof content === 'string') out.context = contextOf(content, best.line, contextLines);
   return out;
 }

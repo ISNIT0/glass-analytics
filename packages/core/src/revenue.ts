@@ -63,6 +63,88 @@ export function revenueCurrencies(
   return out;
 }
 
+/** The money an event carries, read from `$revenue_*` fields or the project's matching rule. */
+interface Money {
+  amount: number | null;
+  currency: string;
+  product?: unknown;
+  /** Set for a rule's payment of a subscription (custom events). */
+  subscription?: unknown;
+  interval: 'month' | 'year';
+  fromRule: boolean;
+}
+
+const present = (v: unknown) => v !== undefined && v !== null && v !== '';
+
+function ruleCurrency(props: Props, rule: RevenueEvent, base: string): string {
+  const c = at(props, rule.currencyProperty);
+  return (typeof c === 'string' && c.length === 3 ? c : (rule.currency ?? base)).toUpperCase();
+}
+
+function moneyOf(event: string, props: Props, rules: readonly RevenueEvent[], base: string): Money {
+  if (props.$revenue_amount !== undefined && typeof props.$revenue_currency === 'string')
+    return {
+      amount: numberOf(props.$revenue_amount),
+      currency: props.$revenue_currency.toUpperCase(),
+      product: props.$revenue_product,
+      interval: 'month',
+      fromRule: false,
+    };
+  const rule = rules.find((r) => r.event === event);
+  if (!rule) return { amount: null, currency: base, interval: 'month', fromRule: false };
+  const amount = numberOf(at(props, rule.amountProperty));
+  return {
+    amount: amount !== null && rule.kind === 'refund' ? -Math.abs(amount) : amount,
+    currency: ruleCurrency(props, rule, base),
+    product: at(props, rule.productProperty),
+    subscription: at(props, rule.subscriptionProperty),
+    interval: rule.interval ?? 'month',
+    fromRule: true,
+  };
+}
+
+/**
+ * A payment of a subscription (custom events): its amount is the subscription's MRR until the
+ * next one; 0 cancels it, and no payment within the grace period counts as churned.
+ */
+function addSubscription(out: Props, m: Money, converted: number | null, base: string): void {
+  if (!m.fromRule || !present(m.subscription) || (m.amount ?? 0) < 0) return;
+  const yearly = m.interval === 'year';
+  out.$subscription_id = String(m.subscription).slice(0, 200);
+  if (converted !== null) out.$mrr = roundMoney(yearly ? converted / 12 : converted, base);
+  out.$subscription_status = (m.amount ?? 0) > 0 ? 'active' : 'canceled';
+  out.$mrr_grace_days = yearly ? 370 : 35;
+}
+
+function moneyFields(
+  props: Props,
+  m: Money & { amount: number },
+  base: string,
+  rates: RateTable,
+): Props {
+  const out: Props = { ...props, $revenue_amount: m.amount, $revenue_currency: m.currency };
+  if (present(m.product)) out.$revenue_product = String(m.product).slice(0, 200);
+  const converted = convert(m.amount, m.currency, base, rates);
+  if (converted === null) {
+    out.$revenue_unconverted = true;
+    delete out.$revenue_base;
+  } else {
+    out.$revenue_base = roundMoney(converted, base);
+    delete out.$revenue_unconverted;
+  }
+  addSubscription(out, m, converted, base);
+  return out;
+}
+
+/** Subscription state with an explicit monthly amount (Stripe subscription events). */
+function addMrr(out: Props, props: Props, base: string, rates: RateTable): void {
+  const mrrAmount = numberOf(props.$mrr_amount);
+  const mrr =
+    mrrAmount === null ? null : convert(mrrAmount, props.$mrr_currency as string, base, rates);
+  if (mrr === null) out.$revenue_unconverted = true;
+  else out.$mrr = roundMoney(mrr, base);
+}
+
 /**
  * Add the normalised revenue fields to an event's props. Returns null when the event carries no
  * revenue and no subscription state. `rates` are for the event's day (an empty table is enough
@@ -76,68 +158,12 @@ export function applyRevenue(
   rates: RateTable,
 ): Props | null {
   const baseCcy = base.toUpperCase();
-  let out: Props | null = null;
-  // Money that moved: a payment (positive) or a refund (negative).
-  let amount: number | null = null;
-  let currency = baseCcy;
-  let product: unknown;
-  let subscription: unknown;
-  let interval: 'month' | 'year' = 'month';
-  let fromRule = false;
-  if (props.$revenue_amount !== undefined && typeof props.$revenue_currency === 'string') {
-    amount = numberOf(props.$revenue_amount);
-    currency = props.$revenue_currency.toUpperCase();
-    product = props.$revenue_product;
-  } else {
-    const rule = rules.find((r) => r.event === event);
-    if (rule) {
-      fromRule = true;
-      amount = numberOf(at(props, rule.amountProperty));
-      const c = at(props, rule.currencyProperty);
-      currency = (
-        typeof c === 'string' && c.length === 3 ? c : (rule.currency ?? baseCcy)
-      ).toUpperCase();
-      product = at(props, rule.productProperty);
-      subscription = at(props, rule.subscriptionProperty);
-      interval = rule.interval ?? 'month';
-      if (amount !== null && rule.kind === 'refund') amount = -Math.abs(amount);
-    }
-  }
-  if (amount !== null) {
-    out = { ...props, $revenue_amount: amount, $revenue_currency: currency };
-    if (product !== undefined && product !== null && product !== '')
-      out.$revenue_product = String(product).slice(0, 200);
-    const converted = convert(amount, currency, baseCcy, rates);
-    if (converted === null) {
-      out.$revenue_unconverted = true;
-      delete out.$revenue_base;
-    } else {
-      out.$revenue_base = roundMoney(converted, baseCcy);
-      delete out.$revenue_unconverted;
-    }
-    // A payment of a subscription (custom events): its amount is the subscription's MRR until the
-    // next one; 0 cancels it, and no payment within the grace period counts as churned.
-    if (
-      fromRule &&
-      subscription !== undefined &&
-      subscription !== null &&
-      subscription !== '' &&
-      amount >= 0
-    ) {
-      out.$subscription_id = String(subscription).slice(0, 200);
-      if (converted !== null)
-        out.$mrr = roundMoney(interval === 'year' ? converted / 12 : converted, baseCcy);
-      out.$subscription_status = amount > 0 ? 'active' : 'canceled';
-      out.$mrr_grace_days = interval === 'year' ? 370 : 35;
-    }
-  }
-  // Subscription state with an explicit monthly amount (Stripe subscription events).
+  const m = moneyOf(event, props, rules, baseCcy);
+  let out: Props | null =
+    m.amount === null ? null : moneyFields(props, { ...m, amount: m.amount }, baseCcy, rates);
   if (props.$mrr_amount !== undefined && typeof props.$mrr_currency === 'string') {
-    const mrrAmount = numberOf(props.$mrr_amount);
     out = out ?? { ...props };
-    const mrr = mrrAmount === null ? null : convert(mrrAmount, props.$mrr_currency, baseCcy, rates);
-    if (mrr === null) out.$revenue_unconverted = true;
-    else out.$mrr = roundMoney(mrr, baseCcy);
+    addMrr(out, props, baseCcy, rates);
   }
   return out;
 }

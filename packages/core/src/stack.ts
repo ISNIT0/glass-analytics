@@ -36,35 +36,37 @@ function frame(fn: string, file: string, line?: string, column?: string): StackF
   };
 }
 
+/** A Chrome/V8 frame: "at fn (file:1:2)", "at file:1:2", eval frames, "at fn (native)". */
+function v8Frame(line: string): StackFrame | null {
+  const m = V8.exec(line);
+  if (!m) return null;
+  let [, fn = '', file = '', l, c] = m;
+  const origin = file.startsWith('eval at') ? EVAL_ORIGIN.exec(file) : null;
+  if (origin) [, file, l, c] = origin as unknown as [string, string, string, string];
+  // "at fn (native)" and "at <anonymous>"
+  const bare = !l && !fn && !file.includes('/') && !file.includes(':');
+  return bare ? frame(file, '', undefined, undefined) : frame(fn, file, l, c);
+}
+
+/** A Firefox or Safari frame: "fn@file:1:2", "@file:1:2", "global code@file:1:2". */
+function geckoFrame(line: string): StackFrame | null {
+  const m = GECKO.exec(line);
+  if (!m) return null;
+  const [, fn = '', rawFile = '', l, c] = m;
+  // Firefox eval frames: "fn@https://a.com/x.js line 2 > eval:1:1" — keep the script that ran eval.
+  const evalAt = / line (\d+) > (?:eval|Function)/.exec(rawFile);
+  if (evalAt) return frame(fn, rawFile.slice(0, evalAt.index), evalAt[1], undefined);
+  return frame(fn, rawFile, l, c);
+}
+
 /** Parse one line of a trace, or null for lines that aren't frames (the message, blank lines). */
 export function parseFrame(text: string): StackFrame | null {
   const line = text.trimEnd();
   if (!line.trim()) return null;
-  if (/^\s*at\s/.test(line)) {
-    const m = V8.exec(line);
-    if (!m) return null;
-    let [, fn = '', file = '', l, c] = m;
-    if (file.startsWith('eval at')) {
-      const origin = EVAL_ORIGIN.exec(file);
-      if (origin) [, file, l, c] = origin as unknown as [string, string, string, string];
-    }
-    // "at fn (native)" and "at <anonymous>"
-    if (!l && !fn && !file.includes('/') && !file.includes(':'))
-      return frame(file, '', undefined, undefined);
-    return frame(fn, file, l, c);
-  }
-  if (line.includes('@')) {
-    const m = GECKO.exec(line);
-    if (!m) return null;
-    const [, fn = '', rawFile = '', l, c] = m;
-    // Firefox eval frames: "fn@https://a.com/x.js line 2 > eval:1:1" — keep the script that ran eval.
-    const evalAt = / line (\d+) > (?:eval|Function)/.exec(rawFile);
-    if (evalAt) return frame(fn, rawFile.slice(0, evalAt.index), evalAt[1], undefined);
-    return frame(fn, rawFile, l, c);
-  }
+  if (/^\s*at\s/.test(line)) return v8Frame(line);
+  if (line.includes('@')) return geckoFrame(line);
   // Safari: "[native code]" or a bare function name.
-  if (line.trim() === '[native code]') return frame('', '[native code]', undefined, undefined);
-  return null;
+  return line.trim() === '[native code]' ? frame('', '[native code]', undefined, undefined) : null;
 }
 
 /** Parse a whole trace. */

@@ -75,6 +75,21 @@ function context(c: WireContext): WireContext | undefined {
 
 type Mapped = Omit<WireEvent, 'id'> & { id?: string };
 
+/** Segment calls that are Dataflare's own events; "track" calls keep their event name. */
+const SEGMENT_EVENTS: Record<string, string> = {
+  page: '$pageview',
+  identify: '$identify',
+  group: '$groupidentify',
+};
+
+/** Properties of a Segment call: traits for identify and group calls, properties otherwise. */
+function segmentProps(type: string, r: Rec): Rec {
+  if (type === 'identify') return { $set: obj(r.traits) };
+  if (type === 'group')
+    return { $group_type: 'company', $group_key: str(r.groupId), $group_set: obj(r.traits) };
+  return obj(r.properties);
+}
+
 const MAPPERS: Record<ImportPreset, (r: Rec) => Mapped | null> = {
   raw(r) {
     const ts = toMillis(r.ts ?? r.timestamp ?? r.time);
@@ -195,23 +210,11 @@ const MAPPERS: Record<ImportPreset, (r: Rec) => Mapped | null> = {
     const type = str(r.type) ?? 'track';
     const distinct = str(r.anonymousId ?? r.userId);
     if (ts === null || !distinct) return null;
+    const event =
+      (Object.hasOwn(SEGMENT_EVENTS, type) ? SEGMENT_EVENTS[type] : undefined) ?? str(r.event);
+    if (!event) return null;
     const c = obj(r.context);
     const pg = obj(c.page);
-    const event =
-      type === 'page'
-        ? '$pageview'
-        : type === 'identify'
-          ? '$identify'
-          : type === 'group'
-            ? '$groupidentify'
-            : str(r.event);
-    if (!event) return null;
-    const props =
-      type === 'identify'
-        ? { $set: obj(r.traits) }
-        : type === 'group'
-          ? { $group_type: 'company', $group_key: str(r.groupId), $group_set: obj(r.traits) }
-          : obj(r.properties);
     const loc = obj(c.location);
     return {
       id: str(r.messageId),
@@ -222,7 +225,7 @@ const MAPPERS: Record<ImportPreset, (r: Rec) => Mapped | null> = {
       ...page(pg.url ?? obj(r.properties).url),
       referrer: str(pg.referrer) ?? null,
       title: str(pg.title) ?? null,
-      props,
+      props: segmentProps(type, r),
       context: context({ country: str(loc.country), city: str(loc.city), region: str(loc.region) }),
     };
   },

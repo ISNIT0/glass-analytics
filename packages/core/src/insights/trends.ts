@@ -47,7 +47,7 @@ import {
   type TimeRange,
   type Zone,
 } from '../time.ts';
-import { type CohortBreakdown, numericBins } from './breakdowns.ts';
+import { type CohortBreakdown, type NumericBin, numericBins } from './breakdowns.ts';
 import type { TrendsMath, TrendsSpec } from './schemas.ts';
 import { fmt, type QueryContext, type ResultBase, zoneOf } from './types.ts';
 
@@ -552,50 +552,77 @@ function formulaLines(spec: TrendsSpec, series: TrendsSeries[], buckets: number[
   });
 }
 
-export async function runTrends(input: TrendsSpec, ctx: QueryContext): Promise<TrendsResult> {
-  const spec = input as Spec;
+type Shaped = ReturnType<SeriesPlan['shape']>;
+
+/** What a trends run settles before querying. */
+interface TrendsSetup {
+  spec: Spec;
+  range: TimeRange;
+  interval: Interval;
+  zone: Zone;
+  buckets: number[];
+  index: Map<number, number>;
+  aggregation: Aggregation;
+  breakdowns: string[];
+  byCohort: boolean;
+}
+
+function trendsSetup(spec: Spec, ctx: QueryContext): TrendsSetup {
   const range = resolveRange(spec.from, spec.to, ctx.now);
   const interval = spec.interval ?? 'day';
-  if (interval === 'minute' && range.to - range.from > 2 * DAY_MS) {
+  if (interval === 'minute' && range.to - range.from > 2 * DAY_MS)
     throw new RangeError(
       '"minute" intervals work for ranges up to two days; use "hour" for longer.',
     );
-  }
-  const zone = zoneOf(spec, ctx, range);
-  const buckets = bucketsBetween(range, interval, zone);
-  const index = new Map(buckets.map((b, i) => [b, i]));
-  const limit = spec.breakdownLimit ?? 10;
-  const aggregation = parseAggregation(spec.aggregateBy);
-  const sql: string[] = [];
-  const out: TrendsSeries[] = [];
-
   const breakdowns = breakdownProperties(spec.breakdown);
   const byCohort = breakdowns.length === 1 && breakdowns[0] === 'cohort';
-  if (byCohort && !spec.cohortBreakdown?.length) {
+  if (byCohort && !spec.cohortBreakdown?.length)
     throw new TypeError(
       'breakdown "cohort" needs breakdownCohorts: the saved cohort keys to compare (list_cohorts).',
     );
-  }
-  let bins: { label: string; from: number; to: number }[] | undefined;
-  let bdExpr = breakdowns.length && !byCohort ? breakdownExpr(breakdowns, ctx.dialect) : "''";
-  if (spec.breakdownBins && breakdowns.length === 1 && !byCohort) {
-    const events = [...new Set(spec.series.flatMap((s) => eventsOf(s) ?? ['*']))];
-    const b = await numericBins(ctx, range, {
-      events,
-      filters: spec.filters as Filter[] | undefined,
-      aggregation,
-      property: breakdowns[0]!,
-      bins: spec.breakdownBins,
-    });
-    bins = b.bins;
-    bdExpr = b.expr;
-    sql.push(b.sql);
-  }
+  const zone = zoneOf(spec, ctx, range);
+  const buckets = bucketsBetween(range, interval, zone);
+  return {
+    spec,
+    range,
+    interval,
+    zone,
+    buckets,
+    index: new Map(buckets.map((b, i) => [b, i])),
+    aggregation: parseAggregation(spec.aggregateBy),
+    breakdowns,
+    byCohort,
+  };
+}
 
-  // Each series runs once, or once per cohort when breaking down by cohort.
-  const parts = spec.series.flatMap((series, i) =>
-    byCohort
-      ? spec.cohortBreakdown!.map((cohort) => ({
+/** The breakdown column, and numeric bins when the breakdown is split into ranges. */
+async function breakdownColumn(t: TrendsSetup, ctx: QueryContext, sql: string[]) {
+  const { spec, breakdowns, byCohort } = t;
+  const expr = breakdowns.length && !byCohort ? breakdownExpr(breakdowns, ctx.dialect) : "''";
+  if (!spec.breakdownBins || breakdowns.length !== 1 || byCohort) return { expr, bins: undefined };
+  const b = await numericBins(ctx, t.range, {
+    events: [...new Set(spec.series.flatMap((s) => eventsOf(s) ?? ['*']))],
+    filters: spec.filters as Filter[] | undefined,
+    aggregation: t.aggregation,
+    property: breakdowns[0]!,
+    bins: spec.breakdownBins,
+  });
+  sql.push(b.sql);
+  return { expr: b.expr, bins: b.bins };
+}
+
+interface Part {
+  series: Series;
+  i: number;
+  bd: string;
+  extra: Filter[];
+}
+
+/** Each series runs once, or once per cohort when breaking down by cohort. */
+function trendParts(t: TrendsSetup, ctx: QueryContext, bdExpr: string): Part[] {
+  return t.spec.series.flatMap((series, i) =>
+    t.byCohort
+      ? t.spec.cohortBreakdown!.map((cohort) => ({
           series,
           i,
           bd: ctx.dialect.str(cohort.label),
@@ -603,127 +630,156 @@ export async function runTrends(input: TrendsSpec, ctx: QueryContext): Promise<T
         }))
       : [{ series, i, bd: bdExpr, extra: [] as Filter[] }],
   );
-  const results = await Promise.all(
-    parts.map(async (p) => {
-      const c: CompileContext = {
-        ctx,
-        range,
-        zone,
-        interval,
-        buckets,
-        aggregation,
-        bd: p.bd,
-        extra: p.extra,
-      };
-      const plan = planFor(p.series, c, spec, p.extra);
-      sql.push(...plan.sql);
-      const rows = await Promise.all(plan.sql.map((q) => ctx.execute(q)));
-      return { ...p, shaped: plan.shape(rows) };
-    }),
-  );
+}
 
-  spec.series.forEach((series, i) => {
-    const math = mathOf(series);
-    const label = seriesLabel(series);
-    const values = new Map<string, Map<number, number>>();
-    const totals = new Map<string, number>();
-    const rank = new Map<string, number>();
-    for (const r of results.filter((x) => x.i === i)) {
-      for (const [k, v] of r.shaped.values) values.set(k, v);
-      for (const [k, v] of r.shaped.totals) totals.set(k, v);
-      for (const [k, v] of r.shaped.rank) rank.set(k, v);
-    }
-    const hasBreakdown = breakdowns.length > 0;
-    let keep: string[];
-    let other: string[] = [];
-    if (!hasBreakdown) keep = [''];
-    else if (bins || byCohort) {
-      const order = bins
-        ? [...bins.map((b) => b.label), '(none)']
-        : spec.cohortBreakdown!.map((c) => c.label);
-      keep = order.filter((k) => values.has(k) || totals.has(k));
-    } else {
-      const ranked = [...new Set([...rank.keys(), ...values.keys()])].sort(
-        (a, b) => (rank.get(b) ?? 0) - (rank.get(a) ?? 0) || a.localeCompare(b),
-      );
-      keep = ranked.slice(0, limit);
-      other = ranked.slice(limit);
-    }
-    const row = (key: string): number[] => {
-      const arr = new Array<number>(buckets.length).fill(0);
-      for (const [b, v] of values.get(key) ?? []) {
-        const slot = index.get(b);
-        if (slot !== undefined) arr[slot] = (arr[slot] ?? 0) + v;
-      }
-      return arr;
-    };
-    for (const key of keep) {
-      out.push({
-        label: hasBreakdown ? `${label} · ${key}` : label,
-        breakdown: hasBreakdown ? key : null,
-        values: row(key),
-        total: totals.get(key) ?? 0,
-        seriesIndex: i,
-        math,
-      });
-    }
-    if (other.length && ADDITIVE.has(math)) {
-      const arr = new Array<number>(buckets.length).fill(0);
-      for (const key of other)
-        row(key).forEach((v, b) => {
-          arr[b]! += v;
-        });
-      out.push({
-        label: `${label} · Other`,
-        breakdown: 'Other',
-        values: arr,
-        total: other.reduce((a, k) => a + (totals.get(k) ?? 0), 0),
-        seriesIndex: i,
-        math,
-      });
-    }
-  });
+async function runTrendPart(p: Part, t: TrendsSetup, ctx: QueryContext, sql: string[]) {
+  const c: CompileContext = {
+    ctx,
+    range: t.range,
+    zone: t.zone,
+    interval: t.interval,
+    buckets: t.buckets,
+    aggregation: t.aggregation,
+    bd: p.bd,
+    extra: p.extra,
+  };
+  const plan = planFor(p.series, c, t.spec, p.extra);
+  sql.push(...plan.sql);
+  const rows = await Promise.all(plan.sql.map((q) => ctx.execute(q)));
+  return { ...p, shaped: plan.shape(rows) };
+}
 
-  // Formulas read the shaped series, so with running totals "B / A" is cumulative B over
-  // cumulative A (it ends at the formula of the totals), not a running sum of daily ratios.
-  const shaped = out.map((l) => shape(l, spec));
-  const series = shaped.map((l) => withTrendLine(l, spec));
-  const formulas = formulaLines(spec, shaped, buckets).map((l) => withTrendLine(l, spec));
-
-  let compare: TrendsResult['compare'];
-  if (spec.compare) {
-    const length = range.to - range.from;
-    const prev = await runTrends(
-      { ...spec, from: range.from - length, to: range.from, compare: false } as TrendsSpec,
-      ctx,
-    );
-    sql.push(...prev.sql);
-    compare = {
-      range: prev.range,
-      buckets: prev.buckets,
-      series: prev.series,
-      ...(prev.formulas ? { formulas: prev.formulas } : {}),
-    };
+/** One series' values, totals and ranks, from its part (or its parts, one per cohort). */
+function mergeShaped(results: (Part & { shaped: Shaped })[], i: number): Shaped {
+  const out: Shaped = { values: new Map(), totals: new Map(), rank: new Map() };
+  for (const r of results.filter((x) => x.i === i)) {
+    for (const [k, v] of r.shaped.values) out.values.set(k, v);
+    for (const [k, v] of r.shaped.totals) out.totals.set(k, v);
+    for (const [k, v] of r.shaped.rank) out.rank.set(k, v);
   }
+  return out;
+}
 
-  const shown = spec.formulaOnly && formulas.length ? formulas : series;
+/** The breakdown values to show, and the rest (summed into "Other" where that adds up). */
+function keptKeys(
+  t: TrendsSetup,
+  m: Shaped,
+  bins: NumericBin[] | undefined,
+): { keep: string[]; other: string[] } {
+  if (!t.breakdowns.length) return { keep: [''], other: [] };
+  if (bins || t.byCohort) {
+    const order = bins
+      ? [...bins.map((b) => b.label), '(none)']
+      : t.spec.cohortBreakdown!.map((c) => c.label);
+    return { keep: order.filter((k) => m.values.has(k) || m.totals.has(k)), other: [] };
+  }
+  const limit = t.spec.breakdownLimit ?? 10;
+  const ranked = [...new Set([...m.rank.keys(), ...m.values.keys()])].sort(
+    (a, b) => (m.rank.get(b) ?? 0) - (m.rank.get(a) ?? 0) || a.localeCompare(b),
+  );
+  return { keep: ranked.slice(0, limit), other: ranked.slice(limit) };
+}
+
+/** A breakdown value's values, one per bucket. */
+function rowOf(t: TrendsSetup, m: Shaped, key: string): number[] {
+  const arr = new Array<number>(t.buckets.length).fill(0);
+  for (const [b, v] of m.values.get(key) ?? []) {
+    const slot = t.index.get(b);
+    if (slot !== undefined) arr[slot] = (arr[slot] ?? 0) + v;
+  }
+  return arr;
+}
+
+function seriesLines(
+  t: TrendsSetup,
+  i: number,
+  m: Shaped,
+  bins: NumericBin[] | undefined,
+): TrendsSeries[] {
+  const series = t.spec.series[i]!;
+  const math = mathOf(series);
+  const label = seriesLabel(series);
+  const broken = t.breakdowns.length > 0;
+  const { keep, other } = keptKeys(t, m, bins);
+  const lines: TrendsSeries[] = keep.map((key) => ({
+    label: broken ? `${label} · ${key}` : label,
+    breakdown: broken ? key : null,
+    values: rowOf(t, m, key),
+    total: m.totals.get(key) ?? 0,
+    seriesIndex: i,
+    math,
+  }));
+  if (!other.length || !ADDITIVE.has(math)) return lines;
+  const values = new Array<number>(t.buckets.length).fill(0);
+  for (const key of other)
+    rowOf(t, m, key).forEach((v, b) => {
+      values[b]! += v;
+    });
+  const total = other.reduce((a, k) => a + (m.totals.get(k) ?? 0), 0);
+  return [
+    ...lines,
+    { label: `${label} · Other`, breakdown: 'Other', values, total, seriesIndex: i, math },
+  ];
+}
+
+/** The same query over the previous period of the same length. */
+async function previousPeriod(
+  t: TrendsSetup,
+  ctx: QueryContext,
+  sql: string[],
+): Promise<TrendsResult['compare']> {
+  const length = t.range.to - t.range.from;
+  const prev = await runTrends(
+    { ...t.spec, from: t.range.from - length, to: t.range.from, compare: false } as TrendsSpec,
+    ctx,
+  );
+  sql.push(...prev.sql);
+  return {
+    range: prev.range,
+    buckets: prev.buckets,
+    series: prev.series,
+    ...(prev.formulas ? { formulas: prev.formulas } : {}),
+  };
+}
+
+function trendsSummary(t: TrendsSetup, shown: TrendsSeries[]): string {
   const head = shown
     .slice(0, 5)
     .map((s) => `${s.label}: ${fmt(s.total, Number.isInteger(s.total) ? 'count' : 'decimal')}`)
     .join('; ');
   const counted =
-    aggregation === 'person' ? '' : ` Unique counts are of ${actorNoun(aggregation)}.`;
+    t.aggregation === 'person' ? '' : ` Unique counts are of ${actorNoun(t.aggregation)}.`;
+  const zone = t.zone.name === 'UTC' ? '' : ` (${t.zone.name})`;
+  const period = `${iso(t.range.from).slice(0, 10)} to ${iso(t.range.to).slice(0, 10)} by ${t.interval}${zone}`;
+  return `${period}. ${head ? `${head}.` : 'No data.'}${counted}`;
+}
+
+export async function runTrends(input: TrendsSpec, ctx: QueryContext): Promise<TrendsResult> {
+  const spec = input as Spec;
+  const t = trendsSetup(spec, ctx);
+  const sql: string[] = [];
+  const { expr, bins } = await breakdownColumn(t, ctx, sql);
+  const results = await Promise.all(
+    trendParts(t, ctx, expr).map((p) => runTrendPart(p, t, ctx, sql)),
+  );
+  const out = spec.series.flatMap((_, i) => seriesLines(t, i, mergeShaped(results, i), bins));
+  // Formulas read the shaped series, so with running totals "B / A" is cumulative B over
+  // cumulative A (it ends at the formula of the totals), not a running sum of daily ratios.
+  const shaped = out.map((l) => shape(l, spec));
+  const series = shaped.map((l) => withTrendLine(l, spec));
+  const formulas = formulaLines(spec, shaped, t.buckets).map((l) => withTrendLine(l, spec));
+  const compare = spec.compare ? await previousPeriod(t, ctx, sql) : undefined;
   return {
     kind: 'trends',
-    interval,
-    buckets,
+    interval: t.interval,
+    buckets: t.buckets,
     series,
     ...(formulas.length ? { formulas } : {}),
     ...(compare ? { compare } : {}),
     ...(bins ? { bins } : {}),
     sql,
-    range: { from: iso(range.from), to: iso(range.to) },
-    summary: `${iso(range.from).slice(0, 10)} to ${iso(range.to).slice(0, 10)} by ${interval}${zone.name === 'UTC' ? '' : ` (${zone.name})`}. ${head ? `${head}.` : 'No data.'}${counted}`,
+    range: { from: iso(t.range.from), to: iso(t.range.to) },
+    summary: trendsSummary(t, spec.formulaOnly && formulas.length ? formulas : series),
   };
 }
 
@@ -743,6 +799,33 @@ export interface TrendsActorSelection {
  * bucket (or, for wau/mau, in the window ending there; for first_time, for the first
  * time there), with how many matching events each. Returns SQL selecting `actor` and `n`.
  */
+/** The time window behind one point: its bucket, or the whole rolling window for WAU/MAU. */
+function pointWindow(
+  selection: TrendsActorSelection,
+  math: TrendsMath,
+  t: { range: TimeRange; buckets: number[]; zone: Zone },
+): { from: number; to: number } {
+  if (selection.bucket === undefined) return { from: t.range.from, to: t.range.to };
+  const i = t.buckets.indexOf(selection.bucket);
+  if (i < 0) throw new RangeError('That bucket is not in the range of this spec.');
+  const from = selection.bucket;
+  const to = Math.min(t.buckets[i + 1] ?? t.range.to, t.range.to);
+  const days = ROLLING_DAYS[math];
+  if (!days) return { from, to };
+  const lastDay = bucketStart(Math.max(from, to - 1), 'day', t.zone);
+  const local = lastDay + offsetAt(t.zone, lastDay);
+  return {
+    from: localToUtc(t.zone, local - (days - 1) * DAY_MS),
+    to: localToUtc(t.zone, local + DAY_MS),
+  };
+}
+
+/** The cohort a selection's breakdown value names, when breaking down by cohort. */
+function selectedCohort(spec: Spec, breakdowns: string[], value: string | undefined) {
+  if (breakdowns[0] !== 'cohort' || !value) return undefined;
+  return spec.cohortBreakdown?.find((c) => c.label === value || c.key === value);
+}
+
 export function compileTrendsActors(
   input: TrendsSpec,
   ctx: QueryContext,
@@ -758,14 +841,8 @@ export function compileTrendsActors(
   const interval = spec.interval ?? 'day';
   const zone = zoneOf(spec, ctx, range);
   const buckets = bucketsBetween(range, interval, zone);
-  const aggregation = parseAggregation(spec.aggregateBy);
   const breakdowns = breakdownProperties(spec.breakdown);
-  const cohort =
-    breakdowns[0] === 'cohort' && selection.breakdown
-      ? spec.cohortBreakdown?.find(
-          (c) => c.label === selection.breakdown || c.key === selection.breakdown,
-        )
-      : undefined;
+  const cohort = selectedCohort(spec, breakdowns, selection.breakdown);
   const bd = breakdowns.length && breakdowns[0] !== 'cohort' ? breakdownExpr(breakdowns, d) : "''";
   const c: CompileContext = {
     ctx,
@@ -773,26 +850,12 @@ export function compileTrendsActors(
     zone,
     interval,
     buckets,
-    aggregation,
+    aggregation: parseAggregation(spec.aggregateBy),
     bd,
     extra: cohort ? [cohort.filter] : [],
   };
   const math = mathOf(series);
-  let from = range.from;
-  let to = range.to;
-  if (selection.bucket !== undefined) {
-    const i = buckets.indexOf(selection.bucket);
-    if (i < 0) throw new RangeError('That bucket is not in the range of this spec.');
-    from = selection.bucket;
-    to = Math.min(buckets[i + 1] ?? range.to, range.to);
-    const days = ROLLING_DAYS[math];
-    if (days) {
-      const lastDay = bucketStart(Math.max(from, to - 1), 'day', zone);
-      const local = lastDay + offsetAt(zone, lastDay);
-      from = localToUtc(zone, local - (days - 1) * DAY_MS);
-      to = localToUtc(zone, local + DAY_MS);
-    }
-  }
+  const { from, to } = pointWindow(selection, math, { range, buckets, zone });
   const bdCond =
     selection.breakdown !== undefined && !cohort && breakdowns.length
       ? `AND bd = ${d.str(selection.breakdown)}`
@@ -800,15 +863,16 @@ export function compileTrendsActors(
   const historyFrom = math === 'first_time' ? 0 : from;
   const head = `WITH ${eventsCteWith(series, c, spec, c.extra, Math.min(historyFrom, from))}`;
   const page_ = `ORDER BY n DESC, actor ASC LIMIT ${d.num(page.limit)} OFFSET ${d.num(page.offset)}`;
+  const rows = innerRows(series, c, false);
   if (math === 'first_time') {
     return `${head},
-f AS (SELECT actor, MIN(ts_ms) AS t0 FROM (${innerRows(series, c, false)}) t GROUP BY actor),
-fe AS (SELECT f.actor, f.t0, MIN(t.bd) AS bd FROM f JOIN (${innerRows(series, c, false)}) t ON t.actor = f.actor AND t.ts_ms = f.t0 GROUP BY f.actor, f.t0)
+f AS (SELECT actor, MIN(ts_ms) AS t0 FROM (${rows}) t GROUP BY actor),
+fe AS (SELECT f.actor, f.t0, MIN(t.bd) AS bd FROM f JOIN (${rows}) t ON t.actor = f.actor AND t.ts_ms = f.t0 GROUP BY f.actor, f.t0)
 SELECT actor, 1 AS n FROM fe WHERE t0 >= ${d.num(from)} AND t0 < ${d.num(to)} ${bdCond}
 ${page_}`;
   }
   return `${head}
-SELECT actor, COUNT(*) AS n FROM (${innerRows(series, c, false)}) t
+SELECT actor, COUNT(*) AS n FROM (${rows}) t
 WHERE ts_ms >= ${d.num(from)} AND ts_ms < ${d.num(to)} ${bdCond}
 GROUP BY actor
 ${page_}`;

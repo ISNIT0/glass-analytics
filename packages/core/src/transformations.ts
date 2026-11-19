@@ -161,6 +161,120 @@ function redactValue(value: unknown, patterns: RegExp[]): unknown {
   return value;
 }
 
+type RuleOf<K extends Transformation['kind']> = Extract<Transformation, { kind: K }>;
+
+/** What a rule did to one event: how many changes it made, or that the event goes. */
+type Outcome = number | 'drop';
+
+function dropProperties(t: RuleOf<'drop_properties'>, p: Parsed): Outcome {
+  let n = 0;
+  for (const name of names(p, t.properties)) {
+    const at = locate(p, name);
+    if (!at || !(at.key in at.obj)) continue;
+    delete at.obj[at.key];
+    n++;
+  }
+  return n;
+}
+
+function renameProperty(t: RuleOf<'rename_property'>, p: Parsed): Outcome {
+  const from = locate(p, t.from);
+  const to = locate(p, t.to);
+  if (!from || !to || !(from.key in from.obj)) return 0;
+  to.obj[to.key] = from.obj[from.key];
+  delete from.obj[from.key];
+  return 1;
+}
+
+function setProperty(t: RuleOf<'set_property'>, p: Parsed): Outcome {
+  const at = locate(p, t.property);
+  if (!at) return 0;
+  at.obj[at.key] = t.value;
+  return 1;
+}
+
+const blank = (v: unknown) => v === undefined || v === null || v === '';
+
+async function hashProperties(
+  t: RuleOf<'hash_properties'>,
+  p: Parsed,
+  salt: string,
+): Promise<Outcome> {
+  let n = 0;
+  for (const name of names(p, t.properties)) {
+    const at = locate(p, name);
+    const v = at?.obj[at.key];
+    if (!at || blank(v)) continue;
+    at.obj[at.key] = await sha256(
+      `${salt}:${typeof v === 'object' ? JSON.stringify(v) : String(v)}`,
+    );
+    n++;
+  }
+  return n;
+}
+
+/** The built-in patterns asked for, plus custom ones (invalid ones are skipped). */
+function redactPatterns(t: RuleOf<'redact'>): RegExp[] {
+  const custom = (t.custom ?? []).flatMap((c) => {
+    try {
+      return [new RegExp(c, 'g')];
+    } catch {
+      return [];
+    }
+  });
+  const builtIn = (t.patterns ?? ['email', 'phone']).map(
+    (k) => new RegExp(PATTERNS[k]!.source, PATTERNS[k]!.flags),
+  );
+  return [...builtIn, ...custom];
+}
+
+function redact(t: RuleOf<'redact'>, p: Parsed): Outcome {
+  const patterns = redactPatterns(t);
+  const fields = t.fields ?? ['props', 'url', 'title', 'referrer'];
+  const before = JSON.stringify([p.props, p.url, p.title, p.referrer]);
+  if (fields.includes('props')) p.props = redactValue(p.props, patterns) as Record<string, unknown>;
+  for (const f of ['url', 'title', 'referrer'] as const)
+    if (fields.includes(f)) p[f] = redactValue(p[f], patterns);
+  return JSON.stringify([p.props, p.url, p.title, p.referrer]) === before ? 0 : 1;
+}
+
+const RULES: {
+  [K in Transformation['kind']]: (
+    t: RuleOf<K>,
+    p: Parsed,
+    salt: string,
+  ) => Outcome | Promise<Outcome>;
+} = {
+  drop_event: () => 'drop',
+  drop_properties: dropProperties,
+  rename_property: renameProperty,
+  set_property: setProperty,
+  hash_properties: hashProperties,
+  redact,
+};
+
+function runRule(t: Transformation, p: Parsed, salt: string): Outcome | Promise<Outcome> {
+  return (
+    RULES[t.kind] as (t: Transformation, p: Parsed, salt: string) => Outcome | Promise<Outcome>
+  )(t, p, salt);
+}
+
+/** Run the rules on one event; false when a rule drops it. */
+async function transformOne(
+  p: Parsed,
+  rules: readonly Transformation[],
+  salt: string,
+  counts: number[],
+): Promise<boolean> {
+  for (const [i, t] of rules.entries()) {
+    if (!applies(t, p)) continue;
+    const outcome = await runRule(t, p, salt);
+    counts[i]! += outcome === 'drop' ? 1 : outcome;
+    if (outcome === 'drop') return false;
+  }
+  return true;
+}
+
 /**
  * Apply rules in order. Returns the rows to keep (dropped events are gone) and how many
  * each rule changed or dropped. `salt` keys hashing (a per-deployment secret), so hashed
@@ -176,80 +290,7 @@ export async function applyTransformations(
   const out: StoredEvent[] = [];
   for (const row of rows) {
     const p = parse(row);
-    let dropped = false;
-    for (let i = 0; i < rules.length && !dropped; i++) {
-      const t = rules[i]!;
-      if (!applies(t, p)) continue;
-      switch (t.kind) {
-        case 'drop_event':
-          dropped = true;
-          counts[i]!++;
-          break;
-        case 'drop_properties':
-          for (const name of names(p, t.properties)) {
-            const at = locate(p, name);
-            if (at && at.key in at.obj) {
-              delete at.obj[at.key];
-              counts[i]!++;
-            }
-          }
-          break;
-        case 'rename_property': {
-          const from = locate(p, t.from);
-          const to = locate(p, t.to);
-          if (from && to && from.key in from.obj) {
-            to.obj[to.key] = from.obj[from.key];
-            delete from.obj[from.key];
-            counts[i]!++;
-          }
-          break;
-        }
-        case 'set_property': {
-          const at = locate(p, t.property);
-          if (at) {
-            at.obj[at.key] = t.value;
-            counts[i]!++;
-          }
-          break;
-        }
-        case 'hash_properties':
-          for (const name of names(p, t.properties)) {
-            const at = locate(p, name);
-            const v = at?.obj[at.key];
-            if (at && v !== undefined && v !== null && v !== '') {
-              at.obj[at.key] = await sha256(
-                `${salt}:${typeof v === 'object' ? JSON.stringify(v) : String(v)}`,
-              );
-              counts[i]!++;
-            }
-          }
-          break;
-        case 'redact': {
-          const patterns = [
-            ...(t.patterns ?? ['email', 'phone']).map(
-              (k) => new RegExp(PATTERNS[k]!.source, PATTERNS[k]!.flags),
-            ),
-            ...(t.custom ?? []).flatMap((c) => {
-              try {
-                return [new RegExp(c, 'g')];
-              } catch {
-                return [];
-              }
-            }),
-          ];
-          const fields = t.fields ?? ['props', 'url', 'title', 'referrer'];
-          const before = JSON.stringify([p.props, p.url, p.title, p.referrer]);
-          if (fields.includes('props'))
-            p.props = redactValue(p.props, patterns) as Record<string, unknown>;
-          for (const f of ['url', 'title', 'referrer'] as const) {
-            if (fields.includes(f)) p[f] = redactValue(p[f], patterns);
-          }
-          if (JSON.stringify([p.props, p.url, p.title, p.referrer]) !== before) counts[i]!++;
-          break;
-        }
-      }
-    }
-    if (!dropped) out.push(serialise(p));
+    if (await transformOne(p, rules, salt, counts)) out.push(serialise(p));
   }
   return { rows: out, counts };
 }

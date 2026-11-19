@@ -202,18 +202,14 @@ UNION ALL
 ${sizes}`;
 }
 
-function table(
-  rows: { cohort: number; k: number; n: number }[],
-  spec: Spec,
-  zone: Zone,
-  now: number,
-): RetentionTable {
-  const period = spec.period ?? 'week';
-  const periods = spec.periods ?? 8;
-  const toStart = (cohort: number) =>
-    period === 'month'
-      ? localToUtc(zone, Date.UTC(Math.floor(cohort / 12), cohort % 12, 1))
-      : cohort;
+type RetentionRow = { cohort: number; k: number; n: number };
+
+/** Counts per cohort and period; with `cumulative`, period k counts everyone who got to k or later. */
+function countsByCohort(
+  rows: RetentionRow[],
+  periods: number,
+  cumulative: boolean,
+): Map<number, number[]> {
   const byCohort = new Map<number, number[]>();
   for (const row of rows) {
     if (row.k < 0 || row.k > periods) continue;
@@ -221,21 +217,40 @@ function table(
     counts[row.k] = (counts[row.k] ?? 0) + row.n;
     byCohort.set(row.cohort, counts);
   }
-  if (spec.cumulative) {
-    // Rows hold each person's furthest period: period k counts everyone whose furthest is k or more.
-    for (const counts of byCohort.values()) {
+  // Rows hold each person's furthest period: period k counts everyone whose furthest is k or more.
+  if (cumulative)
+    for (const counts of byCohort.values())
       for (let k = periods - 1; k >= 1; k--) counts[k]! += counts[k + 1]!;
-    }
-  }
-  const elapsedPeriods = (start: number) => {
-    if (period === 'month') {
-      const a = new Date(start + offsetAt(zone, start));
-      const b = new Date(now + offsetAt(zone, now));
-      return (b.getUTCFullYear() - a.getUTCFullYear()) * 12 + (b.getUTCMonth() - a.getUTCMonth());
-    }
-    return Math.floor((now - start) / fixedIntervalMs(period));
-  };
-  const cohorts: RetentionCohort[] = [...byCohort.entries()]
+  return byCohort;
+}
+
+/** Whole periods since `start` (calendar months for monthly cohorts). */
+function elapsedPeriods(start: number, now: number, period: string, zone: Zone): number {
+  if (period !== 'month')
+    return Math.floor((now - start) / fixedIntervalMs(period as 'hour' | 'day' | 'week'));
+  const a = new Date(start + offsetAt(zone, start));
+  const b = new Date(now + offsetAt(zone, now));
+  return (b.getUTCFullYear() - a.getUTCFullYear()) * 12 + (b.getUTCMonth() - a.getUTCMonth());
+}
+
+/** The average at period k over cohorts old enough to have had it: weighted by size, or simple. */
+function averageAt(cohorts: RetentionCohort[], k: number, simple: boolean): number {
+  if (simple)
+    return cohorts.length ? cohorts.reduce((a, c) => a + (c.rates[k] ?? 0), 0) / cohorts.length : 0;
+  const people = cohorts.reduce((a, c) => a + c.size, 0);
+  return people ? cohorts.reduce((a, c) => a + (c.counts[k] ?? 0), 0) / people : 0;
+}
+
+function table(rows: RetentionRow[], spec: Spec, zone: Zone, now: number): RetentionTable {
+  const period = spec.period ?? 'week';
+  const periods = spec.periods ?? 8;
+  const toStart = (cohort: number) =>
+    period === 'month'
+      ? localToUtc(zone, Date.UTC(Math.floor(cohort / 12), cohort % 12, 1))
+      : cohort;
+  const cohorts: RetentionCohort[] = [
+    ...countsByCohort(rows, periods, Boolean(spec.cumulative)).entries(),
+  ]
     .sort((a, b) => a[0] - b[0])
     .map(([cohort, counts]) => {
       const size = counts[0] ?? 0;
@@ -246,17 +261,53 @@ function table(
         rates: counts.map((c) => (size ? c / size : 0)),
       };
     });
-  const simple = spec.meanMethod === 'simple';
-  const average = Array.from({ length: periods + 1 }, (_, k) => {
-    const eligible = cohorts.filter((c) => elapsedPeriods(c.start) >= k && c.size > 0);
-    if (simple)
-      return eligible.length
-        ? eligible.reduce((a, c) => a + (c.rates[k] ?? 0), 0) / eligible.length
-        : 0;
-    const people = eligible.reduce((a, c) => a + c.size, 0);
-    return people ? eligible.reduce((a, c) => a + (c.counts[k] ?? 0), 0) / people : 0;
-  });
+  const eligible = (k: number) =>
+    cohorts.filter((c) => elapsedPeriods(c.start, now, period, zone) >= k && c.size > 0);
+  const average = Array.from({ length: periods + 1 }, (_, k) =>
+    averageAt(eligible(k), k, spec.meanMethod === 'simple'),
+  );
   return { cohorts, average };
+}
+
+/** The tables per breakdown value: chosen cohorts in order, or the biggest values first. */
+function breakdownTables(
+  rows: (RetentionRow & { bd: string })[],
+  spec: Spec,
+  byCohort: boolean,
+  zone: Zone,
+  now: number,
+): RetentionResult['breakdowns'] {
+  const values = [...new Set(rows.map((r) => r.bd))];
+  const size = (v: string) =>
+    rows.filter((r) => r.bd === v && r.k === 0).reduce((a, r) => a + r.n, 0);
+  const ordered = byCohort
+    ? spec.cohortBreakdown!.map((c) => c.label).filter((l) => values.includes(l))
+    : values.sort((a, b) => size(b) - size(a)).slice(0, spec.breakdownLimit ?? 10);
+  return ordered.map((value) => ({
+    value,
+    ...table(
+      rows.filter((r) => r.bd === value),
+      spec,
+      zone,
+      now,
+    ),
+  }));
+}
+
+function retentionSummary(spec: Spec, result: RetentionResult, aggregation: Aggregation): string {
+  const period = result.period;
+  const total = result.cohorts.reduce((a, c) => a + c.size, 0);
+  if (total === 0) return `No one did "${spec.cohortEvent.event}" in this range.`;
+  const avg = result.average;
+  const recurring = result.retentionType === 'recurring' ? 'recurring ' : '';
+  const later = result.periods >= 4 ? `, ${period} 4 ${fmt(avg[4] ?? 0, 'percent')}` : '';
+  const best = result.breakdowns?.length
+    ? ` Best ${period}-1 retention: ${[...result.breakdowns].sort((a, b) => (b.average[1] ?? 0) - (a.average[1] ?? 0))[0]!.value}.`
+    : '';
+  return (
+    `${fmt(total)} ${actorNoun(aggregation, total)} in ${result.cohorts.length} ${PERIOD_ADJECTIVE[period]} ${recurring}cohorts. ` +
+    `Average retention${spec.cumulative ? ' (on or after)' : ''}: ${period} 1 ${fmt(avg[1] ?? 0, 'percent')}${later}.${best}`
+  );
 }
 
 export async function runRetention(
@@ -273,68 +324,36 @@ export async function runRetention(
   const zone = zoneOf(spec, ctx, { from: range.from, to: horizonOf(range, period, periods) });
   const breakdowns = breakdownProperties(spec.breakdown);
   const byCohort = isCohortBreakdown(breakdowns);
-  if (byCohort && !spec.cohortBreakdown?.length) {
+  if (byCohort && !spec.cohortBreakdown?.length)
     throw new TypeError(
       'breakdown "cohort" needs breakdownCohorts: saved cohort keys (list_cohorts).',
     );
-  }
   const parts = byCohort
     ? spec.cohortBreakdown!.map((c) => ({ bd: () => d.str(c.label), extra: [c.filter] }))
     : [{ bd: breakdownOf(breakdowns, d), extra: [] as Filter[] }];
-  const recurring = (spec.retentionType ?? 'first_time') === 'recurring';
   const sql: string[] = [];
-  const rows: { cohort: number; bd: string; k: number; n: number }[] = [];
-  await Promise.all(
-    parts.map(async (p) => {
-      const q = retentionSql(spec, ctx, range, { bd: p.bd, extra: p.extra, aggregation, zone });
-      sql.push(q);
-      for (const r of await ctx.execute(q)) {
-        rows.push({ cohort: num(r.cohort), bd: text(r.bd), k: num(r.k), n: num(r.n) });
-      }
-    }),
-  );
-
-  const overall = table(rows, spec, zone, now);
+  const rows: (RetentionRow & { bd: string })[] = [];
+  const runPart = async (p: (typeof parts)[number]) => {
+    const q = retentionSql(spec, ctx, range, { bd: p.bd, extra: p.extra, aggregation, zone });
+    sql.push(q);
+    for (const r of await ctx.execute(q))
+      rows.push({ cohort: num(r.cohort), bd: text(r.bd), k: num(r.k), n: num(r.n) });
+  };
+  await Promise.all(parts.map(runPart));
   const result: RetentionResult = {
     kind: 'retention',
     period,
     periods,
-    retentionType: recurring ? 'recurring' : 'first_time',
+    retentionType:
+      (spec.retentionType ?? 'first_time') === 'recurring' ? 'recurring' : 'first_time',
     cumulative: Boolean(spec.cumulative),
-    ...overall,
+    ...table(rows, spec, zone, now),
     sql,
     range: { from: iso(range.from), to: iso(range.to) },
     summary: '',
   };
-  if (breakdowns.length) {
-    const values = [...new Set(rows.map((r) => r.bd))];
-    const size = (v: string) =>
-      rows.filter((r) => r.bd === v && r.k === 0).reduce((a, r) => a + r.n, 0);
-    const ordered = byCohort
-      ? spec.cohortBreakdown!.map((c) => c.label).filter((l) => values.includes(l))
-      : values.sort((a, b) => size(b) - size(a)).slice(0, spec.breakdownLimit ?? 10);
-    result.breakdowns = ordered.map((value) => ({
-      value,
-      ...table(
-        rows.filter((r) => r.bd === value),
-        spec,
-        zone,
-        now,
-      ),
-    }));
-  }
-  const total = overall.cohorts.reduce((a, c) => a + c.size, 0);
-  const avg = overall.average;
-  result.summary =
-    total === 0
-      ? `No one did "${spec.cohortEvent.event}" in this range.`
-      : `${fmt(total)} ${actorNoun(aggregation, total)} in ${overall.cohorts.length} ${PERIOD_ADJECTIVE[period]} ${recurring ? 'recurring ' : ''}cohorts. ` +
-        `Average retention${spec.cumulative ? ' (on or after)' : ''}: ${period} 1 ${fmt(avg[1] ?? 0, 'percent')}` +
-        (periods >= 4 ? `, ${period} 4 ${fmt(avg[4] ?? 0, 'percent')}` : '') +
-        `.` +
-        (result.breakdowns?.length
-          ? ` Best ${period}-1 retention: ${[...result.breakdowns].sort((a, b) => (b.average[1] ?? 0) - (a.average[1] ?? 0))[0]!.value}.`
-          : '');
+  if (breakdowns.length) result.breakdowns = breakdownTables(rows, spec, byCohort, zone, now);
+  result.summary = retentionSummary(spec, result, aggregation);
   return result;
 }
 

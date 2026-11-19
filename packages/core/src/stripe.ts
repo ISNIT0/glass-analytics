@@ -88,33 +88,30 @@ export function linkFromCustomer(customer: Obj, link: StripeLink): StripeCustome
   return { id: String(customer.id), person, group };
 }
 
+/** Months per billing interval: a yearly price is 1/12 of its amount a month, and so on. */
+const PER_MONTH: Record<string, number> = { year: 1 / 12, week: 52 / 12, day: 365 / 12, month: 1 };
+
+/** One subscription item's monthly amount, in minor units. */
+function itemMrr(item: Obj): number {
+  const price = obj(item.price ?? item.plan);
+  const recurring = obj(price.recurring);
+  const interval = str(recurring.interval) ?? str(price.interval) ?? 'month';
+  const count = num(recurring.interval_count ?? price.interval_count) || 1;
+  const unit =
+    price.unit_amount_decimal !== undefined
+      ? Number(price.unit_amount_decimal)
+      : num(price.unit_amount ?? price.amount);
+  const amount = unit * (num(item.quantity) || 1);
+  return (amount * (PER_MONTH[interval] ?? 1)) / count;
+}
+
 /** Monthly amount of a subscription, in its currency's major units (0 unless it's paying). */
 export function subscriptionMrr(sub: Obj): number {
-  const status = str(sub.status) ?? '';
-  if (!['active', 'past_due'].includes(status)) return 0;
-  let total = 0;
-  for (const item of (obj(sub.items).data as Obj[] | undefined) ?? []) {
-    const price = obj(item.price ?? item.plan);
-    const recurring = obj(price.recurring);
-    const interval = str(recurring.interval) ?? str(price.interval) ?? 'month';
-    const count = num(recurring.interval_count ?? price.interval_count) || 1;
-    const unit =
-      price.unit_amount_decimal !== undefined
-        ? Number(price.unit_amount_decimal)
-        : num(price.unit_amount ?? price.amount);
-    const amount = unit * (num(item.quantity) || 1);
-    const perMonth =
-      interval === 'year'
-        ? amount / 12
-        : interval === 'week'
-          ? (amount * 52) / 12
-          : interval === 'day'
-            ? (amount * 365) / 12
-            : amount;
-    total += perMonth / count;
-  }
-  const coupon = obj(obj(sub.discount).coupon);
-  if (num(coupon.percent_off) > 0) total *= 1 - num(coupon.percent_off) / 100;
+  if (!['active', 'past_due'].includes(str(sub.status) ?? '')) return 0;
+  const items = (obj(sub.items).data as Obj[] | undefined) ?? [];
+  let total = items.reduce((sum, item) => sum + itemMrr(item), 0);
+  const percentOff = num(obj(obj(sub.discount).coupon).percent_off);
+  if (percentOff > 0) total *= 1 - percentOff / 100;
   return fromMinorUnits(total, str(sub.currency) ?? 'usd');
 }
 
@@ -125,131 +122,159 @@ function productOf(lines: unknown): string | undefined {
   return idOf(price.product) ?? str(first.description);
 }
 
-/**
- * Dataflare events for one Stripe event (none for types that carry no revenue). `customer` is what's
- * known about the object's customer; without it events go to `stripe:<customer id>`.
- */
-export function stripeEvents(
-  event: {
-    id: string;
-    type: string;
-    created: number;
-    data: { object: Obj; previous_attributes?: Obj };
-  },
-  customer: StripeCustomerLink | null,
-  link: StripeLink = {},
-): Omit<WireEvent, 'project'>[] {
+type StripeEvent = {
+  id: string;
+  type: string;
+  created: number;
+  data: { object: Obj; previous_attributes?: Obj };
+};
+
+type Out = Omit<WireEvent, 'project'>;
+
+/** Builds one Dataflare event for a Stripe event: name, time, props and the id it's keyed on. */
+type Make = (name: string, ts: number, props: Obj, key?: string) => Out;
+
+/** The customer an object belongs to (a customer event is about the customer itself). */
+function customerIdOf(event: StripeEvent): string | undefined {
   const o = event.data.object;
-  const customerId =
-    idOf(o.customer) ??
-    (event.type.startsWith('customer.') && !event.type.startsWith('customer.subscription')
-      ? str(o.id)
-      : undefined);
+  const own = event.type.startsWith('customer.') && !event.type.startsWith('customer.subscription');
+  return idOf(o.customer) ?? (own ? str(o.id) : undefined);
+}
+
+/**
+ * Payments are keyed on the Stripe object, so a webhook and an import of the same invoice or
+ * charge are one event; subscription changes on the Stripe event.
+ */
+function maker(event: StripeEvent, customer: StripeCustomerLink | null, link: StripeLink): Make {
+  const customerId = customerIdOf(event);
   const person = customer?.person ?? null;
   const distinct = person ?? (customerId ? `stripe:${customerId}` : `stripe:${event.id}`);
   const groups =
     link.groupType && customerId ? { [link.groupType]: customer?.group ?? customerId } : undefined;
-  // Payments are keyed on the Stripe object, so a webhook and an import of the same invoice
-  // or charge are one event; subscription changes on the Stripe event.
-  const base = (
-    name: string,
-    ts: number,
-    props: Obj,
-    key = event.id,
-  ): Omit<WireEvent, 'project'> => ({
+  const extra = {
+    stripe_event: event.id,
+    ...(customerId ? { stripe_customer: customerId } : {}),
+    ...(groups ? { $groups: groups } : {}),
+  };
+  return (name, ts, props, key = event.id) => ({
     id: `stripe_${key}`,
     event: name,
     ts: ts * 1000,
     distinct_id: distinct,
     user_id: person,
-    props: {
-      ...props,
-      stripe_event: event.id,
-      ...(customerId ? { stripe_customer: customerId } : {}),
-      ...(groups ? { $groups: groups } : {}),
-    },
+    props: { ...props, ...extra },
   });
-  const currency = (str(o.currency) ?? 'usd').toUpperCase();
-  switch (event.type) {
-    case 'invoice.paid':
-    case 'invoice.payment_succeeded': {
-      if (event.type === 'invoice.payment_succeeded') return []; // invoice.paid covers it; listen to either
-      const paidAt = num(obj(o.status_transitions).paid_at) || event.created;
-      return [
-        base(
-          '$stripe_invoice_paid',
-          paidAt,
-          {
-            invoice: str(o.id),
-            subscription:
-              idOf(o.subscription) ?? idOf(obj(obj(o.parent).subscription_details).subscription),
-            billing_reason: str(o.billing_reason),
-            $revenue_amount: fromMinorUnits(num(o.amount_paid), currency),
-            $revenue_currency: currency,
-            ...(productOf(o.lines) ? { $revenue_product: productOf(o.lines) } : {}),
-          },
-          str(o.id) ?? event.id,
-        ),
-      ];
-    }
-    case 'charge.succeeded': {
-      // Charges for invoices are counted by invoice.paid.
-      if (o.invoice) return [];
-      return [
-        base(
-          '$stripe_charge',
-          num(o.created) || event.created,
-          {
-            charge: str(o.id),
-            description: str(o.description),
-            $revenue_amount: fromMinorUnits(num(o.amount), currency),
-            $revenue_currency: currency,
-          },
-          str(o.id) ?? event.id,
-        ),
-      ];
-    }
-    case 'charge.refunded': {
-      const before = num(event.data.previous_attributes?.amount_refunded);
-      const refunded = num(o.amount_refunded) - before;
-      if (refunded <= 0) return [];
-      return [
-        base(
-          '$stripe_refund',
-          event.created,
-          {
-            charge: str(o.id),
-            $revenue_amount: -fromMinorUnits(refunded, currency),
-            $revenue_currency: currency,
-          },
-          `${str(o.id) ?? event.id}_refund_${num(o.amount_refunded)}`,
-        ),
-      ];
-    }
-    case 'customer.subscription.created':
-    case 'customer.subscription.updated':
-    case 'customer.subscription.deleted': {
-      const status =
-        event.type === 'customer.subscription.deleted' ? 'canceled' : (str(o.status) ?? 'active');
-      const items = (obj(o.items).data as Obj[] | undefined) ?? [];
-      const price = obj(items[0]?.price ?? items[0]?.plan);
-      return [
-        base('$stripe_subscription', event.created, {
-          subscription: str(o.id),
-          change: event.type.split('.').pop(),
-          plan: str(price.nickname) ?? idOf(price.product),
-          interval: str(obj(price.recurring).interval) ?? str(price.interval),
-          $subscription_id: str(o.id),
-          $subscription_status: status,
-          $mrr_amount: status === 'canceled' ? 0 : subscriptionMrr(o),
-          $mrr_currency: currency,
-          ...(idOf(price.product) ? { $revenue_product: idOf(price.product) } : {}),
-        }),
-      ];
-    }
-    default:
-      return [];
-  }
+}
+
+const currencyOf = (o: Obj) => (str(o.currency) ?? 'usd').toUpperCase();
+
+function invoicePaid(event: StripeEvent, make: Make): Out[] {
+  const o = event.data.object;
+  const currency = currencyOf(o);
+  const product = productOf(o.lines);
+  const paidAt = num(obj(o.status_transitions).paid_at) || event.created;
+  const subscription =
+    idOf(o.subscription) ?? idOf(obj(obj(o.parent).subscription_details).subscription);
+  return [
+    make(
+      '$stripe_invoice_paid',
+      paidAt,
+      {
+        invoice: str(o.id),
+        subscription,
+        billing_reason: str(o.billing_reason),
+        $revenue_amount: fromMinorUnits(num(o.amount_paid), currency),
+        $revenue_currency: currency,
+        ...(product ? { $revenue_product: product } : {}),
+      },
+      str(o.id) ?? event.id,
+    ),
+  ];
+}
+
+function chargeSucceeded(event: StripeEvent, make: Make): Out[] {
+  const o = event.data.object;
+  // Charges for invoices are counted by invoice.paid.
+  if (o.invoice) return [];
+  const currency = currencyOf(o);
+  return [
+    make(
+      '$stripe_charge',
+      num(o.created) || event.created,
+      {
+        charge: str(o.id),
+        description: str(o.description),
+        $revenue_amount: fromMinorUnits(num(o.amount), currency),
+        $revenue_currency: currency,
+      },
+      str(o.id) ?? event.id,
+    ),
+  ];
+}
+
+function chargeRefunded(event: StripeEvent, make: Make): Out[] {
+  const o = event.data.object;
+  const refunded = num(o.amount_refunded) - num(event.data.previous_attributes?.amount_refunded);
+  if (refunded <= 0) return [];
+  const currency = currencyOf(o);
+  return [
+    make(
+      '$stripe_refund',
+      event.created,
+      {
+        charge: str(o.id),
+        $revenue_amount: -fromMinorUnits(refunded, currency),
+        $revenue_currency: currency,
+      },
+      `${str(o.id) ?? event.id}_refund_${num(o.amount_refunded)}`,
+    ),
+  ];
+}
+
+function subscriptionChanged(event: StripeEvent, make: Make): Out[] {
+  const o = event.data.object;
+  const status =
+    event.type === 'customer.subscription.deleted' ? 'canceled' : (str(o.status) ?? 'active');
+  const items = (obj(o.items).data as Obj[] | undefined) ?? [];
+  const price = obj(items[0]?.price ?? items[0]?.plan);
+  const product = idOf(price.product);
+  return [
+    make('$stripe_subscription', event.created, {
+      subscription: str(o.id),
+      change: event.type.split('.').pop(),
+      plan: str(price.nickname) ?? product,
+      interval: str(obj(price.recurring).interval) ?? str(price.interval),
+      $subscription_id: str(o.id),
+      $subscription_status: status,
+      $mrr_amount: status === 'canceled' ? 0 : subscriptionMrr(o),
+      $mrr_currency: currencyOf(o),
+      ...(product ? { $revenue_product: product } : {}),
+    }),
+  ];
+}
+
+const HANDLERS: Record<string, (event: StripeEvent, make: Make) => Out[]> = {
+  'invoice.paid': invoicePaid,
+  // invoice.paid covers it; listen to either.
+  'invoice.payment_succeeded': () => [],
+  'charge.succeeded': chargeSucceeded,
+  'charge.refunded': chargeRefunded,
+  'customer.subscription.created': subscriptionChanged,
+  'customer.subscription.updated': subscriptionChanged,
+  'customer.subscription.deleted': subscriptionChanged,
+};
+
+/**
+ * Dataflare events for one Stripe event (none for types that carry no revenue). `customer` is what's
+ * known about the object's customer; without it events go to `stripe:<customer id>`.
+ */
+export function stripeEvents(
+  event: StripeEvent,
+  customer: StripeCustomerLink | null,
+  link: StripeLink = {},
+): Out[] {
+  if (!Object.hasOwn(HANDLERS, event.type)) return [];
+  return HANDLERS[event.type]!(event, maker(event, customer, link));
 }
 
 /** The Stripe event types the webhook should send. */

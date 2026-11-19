@@ -360,28 +360,36 @@ FROM mv JOIN ptouch ON ptouch.pid = mv.pid GROUP BY ptouch.val`
   const revenueBy = new Map(
     money.map((r) => [text(r.val), { revenue: num(r.revenue), payers: num(r.payers) }]),
   );
-  const rows = main.map((r) => {
-    const visitors = num(r.visitors);
-    const m = revenueBy.get(text(r.val));
-    return {
-      value: text(r.val),
-      visitors,
-      sessions: num(r.sessions),
-      converted: num(r.converted),
-      rate: visitors ? num(r.converted) / visitors : 0,
-      bounceRate: visitors ? num(r.bounced) / visitors : 0,
-      ...(spec.revenue
-        ? {
-            revenue: Math.round((m?.revenue ?? 0) * 100) / 100,
-            payers: m?.payers ?? 0,
-            revenuePerVisitor: visitors
-              ? Math.round(((m?.revenue ?? 0) / visitors) * 100) / 100
-              : 0,
-          }
-        : {}),
-    };
-  });
+  const rows = main.map((r) =>
+    sourceRow(r, spec.revenue ? (revenueBy.get(text(r.val)) ?? { revenue: 0, payers: 0 }) : null),
+  );
   return { dimension: spec.dimension, rows, sql: revenueSql ? [sql, revenueSql] : [sql] };
+}
+
+const cents = (n: number) => Math.round(n * 100) / 100;
+
+/** One source's numbers, with revenue when it was asked for. */
+function sourceRow(
+  r: Record<string, unknown>,
+  money: { revenue: number; payers: number } | null,
+): SourceRow {
+  const visitors = num(r.visitors);
+  const share = (n: number) => (visitors ? n / visitors : 0);
+  return {
+    value: text(r.val),
+    visitors,
+    sessions: num(r.sessions),
+    converted: num(r.converted),
+    rate: share(num(r.converted)),
+    bounceRate: share(num(r.bounced)),
+    ...(money
+      ? {
+          revenue: cents(money.revenue),
+          payers: money.payers,
+          revenuePerVisitor: cents(share(money.revenue)),
+        }
+      : {}),
+  };
 }
 
 // ── Health ────────────────────────────────────────────────────────────────

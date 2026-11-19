@@ -124,6 +124,52 @@ export function bucketingId(flag: FlagDefinition, ctx: EvaluationContext): strin
   return ctx.groups?.[by] ?? null;
 }
 
+/** In the flag's holdout: the value "holdout" (not null), so reading it still logs an exposure. */
+function holdoutResult(flag: FlagDefinition, id: string): FlagEvaluation | null {
+  if (
+    !flag.holdout ||
+    bucketOf({ key: flag.holdout.key }, id, 'holdout') >= flag.holdout.percentage
+  )
+    return null;
+  return { value: HOLDOUT, reason: `in holdout ${flag.holdout.key}` };
+}
+
+/** A person's own early-access choice wins over rules and rollout. */
+function earlyAccessResult(flag: FlagDefinition, ctx: EvaluationContext): FlagEvaluation | null {
+  if (!flag.earlyAccess) return null;
+  const choices = ctx.person?.[EARLY_ACCESS_PROPERTY] as Record<string, unknown> | undefined;
+  const choice = choices?.[flag.key];
+  if (choice === true)
+    return {
+      value: flag.variants?.length ? flag.variants.at(-1)!.key : FLAG_ON,
+      reason: 'opted in',
+    };
+  return choice === false ? { value: null, reason: 'opted out' } : null;
+}
+
+/** The rule that applies (the first whose conditions all match), or what stops local evaluation. */
+function matchingRule(
+  flag: FlagDefinition,
+  ctx: EvaluationContext,
+  options: EvaluateOptions,
+): { rollout: number; variant?: string; reason: string } | FlagEvaluation {
+  for (const [i, rule] of (flag.rules ?? []).entries()) {
+    if (options.isKnown && rule.conditions.some((c) => !options.isKnown!(c.property)))
+      return {
+        value: null,
+        reason: `rule ${i + 1} needs properties local evaluation doesn't have`,
+        inconclusive: true,
+      };
+    if (rule.conditions.every((c) => matchFilter(c, ctx)))
+      return {
+        rollout: rule.rollout ?? flag.rollout,
+        variant: rule.variant,
+        reason: `rule ${i + 1}`,
+      };
+  }
+  return { rollout: flag.rollout, reason: 'rollout' };
+}
+
 /** Evaluate one flag, with the reason. Other flags it depends on must already be in `ctx.flags`. */
 export function evaluateFlagDetailed(
   flag: FlagDefinition,
@@ -133,53 +179,14 @@ export function evaluateFlagDetailed(
   if (!flag.enabled) return { value: null, reason: 'disabled' };
   const id = bucketingId(flag, ctx);
   if (id === null) return { value: null, reason: `no ${flag.bucketBy} group` };
-  if (
-    flag.holdout &&
-    bucketOf({ key: flag.holdout.key }, id, 'holdout') < flag.holdout.percentage
-  ) {
-    // The value (rather than null) means reading the flag still logs an exposure, so the
-    // holdout can be measured. Treat "holdout" as the default experience.
-    return { value: HOLDOUT, reason: `in holdout ${flag.holdout.key}` };
-  }
-  if (flag.earlyAccess) {
-    const choice = (ctx.person?.[EARLY_ACCESS_PROPERTY] as Record<string, unknown> | undefined)?.[
-      flag.key
-    ];
-    if (choice === true) {
-      return {
-        value: flag.variants?.length ? flag.variants.at(-1)!.key : FLAG_ON,
-        reason: 'opted in',
-      };
-    }
-    if (choice === false) return { value: null, reason: 'opted out' };
-  }
-  let rollout = flag.rollout;
-  let forced: string | undefined;
-  let reason = 'rollout';
-  const rules = flag.rules ?? [];
-  for (let i = 0; i < rules.length; i++) {
-    const rule = rules[i]!;
-    if (options.isKnown && rule.conditions.some((c) => !options.isKnown!(c.property))) {
-      return {
-        value: null,
-        reason: `rule ${i + 1} needs properties local evaluation doesn't have`,
-        inconclusive: true,
-      };
-    }
-    if (rule.conditions.every((c) => matchFilter(c, ctx))) {
-      rollout = rule.rollout ?? flag.rollout;
-      forced = rule.variant;
-      reason = `rule ${i + 1}`;
-      break;
-    }
-  }
-  if (bucketOf(flag, id) >= rollout)
-    return { value: null, reason: `outside ${reason} (${rollout}%)` };
-  if (forced) return { value: forced, reason };
-  return {
-    value: flag.variants && flag.variants.length > 0 ? pickVariant(flag, id) : FLAG_ON,
-    reason,
-  };
+  const early = holdoutResult(flag, id) ?? earlyAccessResult(flag, ctx);
+  if (early) return early;
+  const rule = matchingRule(flag, ctx, options);
+  if ('value' in rule) return rule;
+  if (bucketOf(flag, id) >= rule.rollout)
+    return { value: null, reason: `outside ${rule.reason} (${rule.rollout}%)` };
+  if (rule.variant) return { value: rule.variant, reason: rule.reason };
+  return { value: flag.variants?.length ? pickVariant(flag, id) : FLAG_ON, reason: rule.reason };
 }
 
 /** Evaluate one flag. Returns null when the flag is off for this context. */
