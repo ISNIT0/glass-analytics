@@ -101,6 +101,13 @@ async function liveVersion(host: string, fetcher: typeof fetch): Promise<string 
   }
 }
 
+async function existingOrNewQueues(
+  queues: Awaited<ReturnType<typeof ensureQueues>> | undefined,
+  ...args: Parameters<typeof ensureQueues>
+): Promise<Awaited<ReturnType<typeof ensureQueues>>> {
+  return queues ?? ensureQueues(...args);
+}
+
 export async function upgrade(options: UpgradeOptions, deps: UpgradeDeps = {}): Promise<void> {
   const root = deps.root ?? projectRoot();
   const env = deps.env ?? process.env;
@@ -210,7 +217,7 @@ export async function upgrade(options: UpgradeOptions, deps: UpgradeDeps = {}): 
     config.replay = replayBucketConfig(`${config.name}-replays`, config.eu, null);
   }
   // Destinations' delivery queue: created when the token allows it (otherwise the outbox delivers).
-  if (!config.queues) config.queues = await ensureQueues(wrangler, config.name, report);
+  config.queues = await existingOrNewQueues(config.queues, wrangler, config.name, report);
   // Lake schema change: a new version gets its own streams, sinks and tables (a stream's schema is
   // fixed and a sink can't write to an existing table). The Worker switches to writing the new
   // version; queries read every version together. Old tables keep their rows.

@@ -56,49 +56,49 @@ async function* list(
   }
 }
 
-export async function stripeImport(
-  options: {
-    apiKey?: string;
-    since?: string;
-    project?: string;
-    json?: boolean;
-    dryRun?: boolean;
-    personKey?: string;
-    groupType?: string;
-    groupKey?: string;
-  },
-  deps: { fetcher?: typeof fetch; stripeFetch?: typeof fetch } = {},
-): Promise<void> {
-  const key = options.apiKey ?? process.env.STRIPE_API_KEY;
-  if (!key)
-    throw new UsageError(
-      'Pass --api-key rk_… (or set STRIPE_API_KEY): a restricted key with read access is enough.',
-    );
-  const stripeFetch = deps.stripeFetch ?? fetch;
-  const project = withProject({ project: options.project }).project;
-  // How customers map to people: the Worker's Stripe settings, unless given here.
+interface ImportOptions {
+  apiKey?: string;
+  since?: string;
+  project?: string;
+  json?: boolean;
+  dryRun?: boolean;
+  personKey?: string;
+  groupType?: string;
+  groupKey?: string;
+}
+
+type ImportDeps = { fetcher?: typeof fetch; stripeFetch?: typeof fetch };
+
+/** How customers map to people: the Worker's Stripe settings, unless given here. */
+async function linkOf(
+  project: string | undefined,
+  options: ImportOptions,
+  deps: ImportDeps,
+): Promise<StripeLink> {
   const status = await call<{ config?: StripeLink }>(
     'GET',
     `/api/stripe${project ? `?project=${encodeURIComponent(project)}` : ''}`,
     undefined,
-    {
-      fetcher: deps.fetcher,
-    },
+    { fetcher: deps.fetcher },
   ).catch(() => ({}) as { config?: StripeLink });
-  const link: StripeLink = {
+  return {
     ...(status.config ?? {}),
     ...(options.personKey ? { personKey: options.personKey } : {}),
     ...(options.groupType ? { groupType: options.groupType } : {}),
     ...(options.groupKey ? { groupKey: options.groupKey } : {}),
   };
-  const since = options.since ? Math.floor(Date.parse(options.since) / 1000) : undefined;
-  if (options.since && !Number.isFinite(since))
-    throw new UsageError(`--since "${options.since}" is not a date.`);
-  const created: Record<string, string> = since ? { 'created[gte]': String(since) } : {};
+}
 
-  const customers = new Map<string, StripeCustomerLink>();
-  for await (const c of list('customers', key, stripeFetch))
-    customers.set(String(c.id), linkFromCustomer(c, link));
+/** Stripe's list filter for objects created since `--since`. */
+function createdSince(since: string | undefined): Record<string, string> {
+  if (!since) return {};
+  const seconds = Math.floor(Date.parse(since) / 1000);
+  if (!Number.isFinite(seconds)) throw new UsageError(`--since "${since}" is not a date.`);
+  return { 'created[gte]': String(seconds) };
+}
+
+/** Collects Dataflare events for Stripe objects, as the webhook would make them. */
+function collector(customers: Map<string, StripeCustomerLink>, link: StripeLink) {
   const events: WireEvent[] = [];
   const add = (type: string, createdAt: number, object: Obj, extra: Obj = {}) => {
     const customer =
@@ -111,71 +111,109 @@ export async function stripeImport(
       ),
     );
   };
-  for await (const inv of list('invoices', key, stripeFetch, { status: 'paid', ...created })) {
-    add('invoice.paid', Number(inv.created), inv);
-  }
-  for await (const ch of list('charges', key, stripeFetch, created)) {
-    if (ch.status === 'succeeded' && !ch.invoice) add('charge.succeeded', Number(ch.created), ch);
-    if (Number(ch.amount_refunded) > 0) {
-      const refunds = ((ch.refunds as Obj | undefined)?.data as Obj[] | undefined) ?? [];
-      add('charge.refunded', Number(refunds[0]?.created ?? ch.created), ch, {
-        previous_attributes: { amount_refunded: 0 },
-      });
-    }
-  }
-  // Subscriptions: their start, and their end if they ended (Stripe keeps 30 days of events, so
-  // plan changes before that aren't recoverable; the webhook records them from now on).
-  for await (const sub of list('subscriptions', key, stripeFetch, { status: 'all', ...created })) {
-    const started = Number(sub.start_date ?? sub.created);
-    add('customer.subscription.created', started, {
-      ...sub,
-      status: sub.status === 'trialing' ? 'trialing' : 'active',
-    });
-    const ended = Number(sub.ended_at ?? sub.canceled_at ?? 0);
-    if (ended && ['canceled', 'incomplete_expired', 'unpaid'].includes(String(sub.status))) {
-      add('customer.subscription.deleted', ended, sub);
-    } else if (subscriptionMrr(sub) !== subscriptionMrr({ ...sub, status: 'active' })) {
-      add('customer.subscription.updated', Math.floor(Date.now() / 1000), sub);
-    }
-  }
-  // De-duplicate (an invoice and its charge are one payment) and send.
-  const unique = [...new Map(events.map((e) => [e.id, e])).values()].sort((a, b) => a.ts - b.ts);
+  return { events, add };
+}
+
+type Add = ReturnType<typeof collector>['add'];
+
+function addCharge(ch: Obj, add: Add): void {
+  if (ch.status === 'succeeded' && !ch.invoice) add('charge.succeeded', Number(ch.created), ch);
+  if (!(Number(ch.amount_refunded) > 0)) return;
+  const refunds = ((ch.refunds as Obj | undefined)?.data as Obj[] | undefined) ?? [];
+  add('charge.refunded', Number(refunds[0]?.created ?? ch.created), ch, {
+    previous_attributes: { amount_refunded: 0 },
+  });
+}
+
+/**
+ * A subscription's start, and its end if it ended (Stripe keeps 30 days of events, so plan
+ * changes before that aren't recoverable; the webhook records them from now on).
+ */
+function addSubscription(sub: Obj, add: Add): void {
+  add('customer.subscription.created', Number(sub.start_date ?? sub.created), {
+    ...sub,
+    status: sub.status === 'trialing' ? 'trialing' : 'active',
+  });
+  const ended = Number(sub.ended_at ?? sub.canceled_at ?? 0);
+  if (ended && ['canceled', 'incomplete_expired', 'unpaid'].includes(String(sub.status)))
+    add('customer.subscription.deleted', ended, sub);
+  else if (subscriptionMrr(sub) !== subscriptionMrr({ ...sub, status: 'active' }))
+    add('customer.subscription.updated', Math.floor(Date.now() / 1000), sub);
+}
+
+async function sendImport(
+  project: string | undefined,
+  events: WireEvent[],
+  deps: ImportDeps,
+): Promise<number> {
   let accepted = 0;
-  if (!options.dryRun) {
-    for (let i = 0; i < unique.length; i += 1000) {
-      const res = await call<{ accepted: number }>(
-        'POST',
-        '/api/import',
-        { project, events: unique.slice(i, i + 1000), skip_destinations: true },
-        { fetcher: deps.fetcher },
-      );
-      accepted += res.accepted;
-    }
+  for (let i = 0; i < events.length; i += 1000) {
+    const res = await call<{ accepted: number }>(
+      'POST',
+      '/api/import',
+      { project, events: events.slice(i, i + 1000), skip_destinations: true },
+      { fetcher: deps.fetcher },
+    );
+    accepted += res.accepted;
   }
+  return accepted;
+}
+
+function reportImport(
+  customers: Map<string, StripeCustomerLink>,
+  unique: WireEvent[],
+  accepted: number,
+  link: StripeLink,
+  options: ImportOptions,
+): void {
   const counts = unique.reduce<Record<string, number>>((acc, e) => {
     acc[e.event] = (acc[e.event] ?? 0) + 1;
     return acc;
   }, {});
-  const result = {
-    customers: customers.size,
-    events: unique.length,
-    imported: options.dryRun ? 0 : accepted,
-    byType: counts,
-    dryRun: Boolean(options.dryRun),
-  };
-  if (options.json) return printJson(result);
+  if (options.json)
+    return printJson({
+      customers: customers.size,
+      events: unique.length,
+      imported: accepted,
+      byType: counts,
+      dryRun: Boolean(options.dryRun),
+    });
   ok(
     `${options.dryRun ? 'Would import' : 'Imported'} ${unique.length} Stripe events for ${customers.size} customers`,
   );
   for (const [type, n] of Object.entries(counts)) line(color.dim(`  ${type}: ${n}`));
   const unlinked = [...customers.values()].filter((c) => !c.person).length;
-  if (unlinked) {
-    line(
-      color.dim(
-        `${unlinked} customers have no "${link.personKey ?? 'dataflare_id'}" in their metadata, so their revenue is under stripe:<customer id>. Set it to your user id (what glass.identify gets), or connect Stripe with linkByEmail.`,
-      ),
+  if (!unlinked) return;
+  line(
+    color.dim(
+      `${unlinked} customers have no "${link.personKey ?? 'dataflare_id'}" in their metadata, so their revenue is under stripe:<customer id>. Set it to your user id (what glass.identify gets), or connect Stripe with linkByEmail.`,
+    ),
+  );
+}
+
+export async function stripeImport(options: ImportOptions, deps: ImportDeps = {}): Promise<void> {
+  const key = options.apiKey ?? process.env.STRIPE_API_KEY;
+  if (!key)
+    throw new UsageError(
+      'Pass --api-key rk_… (or set STRIPE_API_KEY): a restricted key with read access is enough.',
     );
-  }
+  const stripeFetch = deps.stripeFetch ?? fetch;
+  const project = withProject({ project: options.project }).project;
+  const link = await linkOf(project, options, deps);
+  const created = createdSince(options.since);
+  const customers = new Map<string, StripeCustomerLink>();
+  for await (const c of list('customers', key, stripeFetch))
+    customers.set(String(c.id), linkFromCustomer(c, link));
+  const { events, add } = collector(customers, link);
+  for await (const inv of list('invoices', key, stripeFetch, { status: 'paid', ...created }))
+    add('invoice.paid', Number(inv.created), inv);
+  for await (const ch of list('charges', key, stripeFetch, created)) addCharge(ch, add);
+  for await (const sub of list('subscriptions', key, stripeFetch, { status: 'all', ...created }))
+    addSubscription(sub, add);
+  // De-duplicate (an invoice and its charge are one payment) and send.
+  const unique = [...new Map(events.map((e) => [e.id, e])).values()].sort((a, b) => a.ts - b.ts);
+  const accepted = options.dryRun ? 0 : await sendImport(project, unique, deps);
+  reportImport(customers, unique, accepted, link, options);
 }
 
 export async function revenueRates(

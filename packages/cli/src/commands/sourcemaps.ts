@@ -40,113 +40,148 @@ export function servedPath(dir: string, file: string, prefix = '/'): string {
   return `/${trimSlashes(prefix)}/${rel}`.replace(/\/{2,}/g, '/');
 }
 
-export async function sourcemaps(
-  sub: string | undefined,
-  arg: string | undefined,
-  options: {
-    release?: string;
-    urlPrefix?: string;
-    project?: string;
-    json?: boolean;
-    dryRun?: boolean;
-  },
-  deps: { fetcher?: typeof fetch } = {},
+interface Options {
+  release?: string;
+  urlPrefix?: string;
+  project?: string;
+  json?: boolean;
+  dryRun?: boolean;
+}
+
+type Deps = { fetcher?: typeof fetch };
+
+/** The query string: the project when there is one, plus the rest. */
+const queryOf = (project: string | undefined, rest: Record<string, string> = {}) =>
+  new URLSearchParams({ ...(project ? { project } : {}), ...rest });
+
+async function listMaps(project: string | undefined, options: Options, deps: Deps): Promise<void> {
+  const q = queryOf(project, options.release ? { release: options.release } : {});
+  const res = await call<{
+    sourcemaps: { release: string; path: string; bytes: number; uploadedAt: string }[];
+    summary: string;
+  }>('GET', `/api/sourcemaps?${q}`, undefined, { fetcher: deps.fetcher });
+  if (options.json) return printJson(res);
+  line(res.summary);
+  if (!res.sourcemaps.length) return;
+  table(
+    ['Release', 'Path', 'KB', 'Uploaded'],
+    res.sourcemaps.map((m) => [
+      m.release,
+      m.path,
+      String(Math.round(m.bytes / 1024)),
+      m.uploadedAt.slice(0, 16),
+    ]),
+  );
+}
+
+async function deleteMaps(
+  project: string | undefined,
+  options: Options,
+  deps: Deps,
 ): Promise<void> {
-  const project = withProject({ project: options.project }).project;
-  if (sub === 'list') {
-    const q = new URLSearchParams({
-      ...(project ? { project } : {}),
-      ...(options.release ? { release: options.release } : {}),
-    });
-    const res = await call<{
-      sourcemaps: { release: string; path: string; bytes: number; uploadedAt: string }[];
-      summary: string;
-    }>('GET', `/api/sourcemaps?${q}`, undefined, { fetcher: deps.fetcher });
-    if (options.json) return printJson(res);
-    line(res.summary);
-    if (res.sourcemaps.length) {
-      table(
-        ['Release', 'Path', 'KB', 'Uploaded'],
-        res.sourcemaps.map((m) => [
-          m.release,
-          m.path,
-          String(Math.round(m.bytes / 1024)),
-          m.uploadedAt.slice(0, 16),
-        ]),
-      );
-    }
-    return;
-  }
-  if (sub === 'delete') {
-    if (!options.release)
-      throw new UsageError('Usage: dataflare sourcemaps delete --release <version>');
-    const q = new URLSearchParams({ ...(project ? { project } : {}), release: options.release });
-    const res = await call<{ deleted: number; summary: string }>(
-      'DELETE',
-      `/api/sourcemaps?${q}`,
-      undefined,
-      { fetcher: deps.fetcher },
-    );
-    if (options.json) return printJson(res);
-    return ok(res.summary);
-  }
-  if (sub !== 'upload' || !arg) {
+  if (!options.release)
+    throw new UsageError('Usage: dataflare sourcemaps delete --release <version>');
+  const q = queryOf(project, { release: options.release });
+  const res = await call<{ deleted: number; summary: string }>(
+    'DELETE',
+    `/api/sourcemaps?${q}`,
+    undefined,
+    {
+      fetcher: deps.fetcher,
+    },
+  );
+  if (options.json) return printJson(res);
+  return ok(res.summary);
+}
+
+/** The maps under `dir`, after checking the command has what an upload needs. */
+function mapsToUpload(dir: string | undefined, release: string | undefined): string[] {
+  if (!dir)
     throw new UsageError(
       'Usage: dataflare sourcemaps upload <dir> --release <version> [--url-prefix /assets]',
       'Also: dataflare sourcemaps list [--release <version>], dataflare sourcemaps delete --release <version>.',
     );
-  }
-  if (!options.release) {
+  if (!release)
     throw new UsageError(
       'Pass --release with the version your app sends, e.g. --release "$GITHUB_SHA".',
       'Set the same value in glass.init({ release }) or data-release on the script tag.',
     );
-  }
+  let isDir = false;
   try {
-    if (!statSync(arg).isDirectory()) throw new Error();
+    isDir = statSync(dir).isDirectory();
   } catch {
-    throw new UsageError(`${arg} is not a directory.`);
+    // Missing: same message as a file.
   }
-  const files = mapFiles(arg);
+  if (!isDir) throw new UsageError(`${dir} is not a directory.`);
+  const files = mapFiles(dir);
   if (files.length === 0)
     throw new UsageError(
-      `No .js.map files in ${arg}.`,
+      `No .js.map files in ${dir}.`,
       'Build with source maps on (e.g. build.sourcemap: true in Vite).',
     );
+  return files;
+}
+
+/** PUT one map. The file is the one the user named: sending it is the point of the command. */
+async function putMap(
+  fetcher: typeof fetch,
+  project: string | undefined,
+  release: string,
+  path: string,
+  text: string,
+): Promise<void> {
   const conn = connection();
-  const fetcher = deps.fetcher ?? fetch;
-  const uploaded: { path: string; bytes: number }[] = [];
-  for (const file of files) {
-    const path = servedPath(arg, file, options.urlPrefix);
-    const text = readFileSync(file, 'utf8');
-    if (!options.dryRun) {
-      const q = new URLSearchParams({
-        ...(project ? { project } : {}),
-        release: options.release,
-        path,
-      });
-      const res = await fetcher(`${conn.host}/api/sourcemaps?${q}`, {
-        method: 'PUT',
-        headers: { Authorization: `Bearer ${conn.key}`, 'Content-Type': 'application/json' },
-        body: text,
-      });
-      if (!res.ok) {
-        const err = (await res.json().catch(() => ({}))) as { error?: string; hint?: string };
-        throw new UsageError(`Uploading ${path}: ${err.error ?? `HTTP ${res.status}`}`, err.hint);
-      }
-    }
-    uploaded.push({ path, bytes: text.length });
-  }
+  const res = await fetcher(`${conn.host}/api/sourcemaps?${queryOf(project, { release, path })}`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${conn.key}`, 'Content-Type': 'application/json' },
+    body: text,
+  });
+  if (res.ok) return;
+  const err = (await res.json().catch(() => ({}))) as { error?: string; hint?: string };
+  throw new UsageError(`Uploading ${path}: ${err.error ?? `HTTP ${res.status}`}`, err.hint);
+}
+
+function reportUpload(uploaded: { path: string; bytes: number }[], options: Options): void {
   const result = { release: options.release, files: uploaded, dryRun: Boolean(options.dryRun) };
   if (options.json) return printJson(result);
+  const n = uploaded.length;
   ok(
-    `${options.dryRun ? 'Would upload' : 'Uploaded'} ${uploaded.length} source map${uploaded.length === 1 ? '' : 's'} for release ${options.release}`,
+    `${options.dryRun ? 'Would upload' : 'Uploaded'} ${n} source map${n === 1 ? '' : 's'} for release ${options.release}`,
   );
   for (const u of uploaded.slice(0, 10)) line(color.dim(`  ${u.path}`));
-  if (uploaded.length > 10) line(color.dim(`  … and ${uploaded.length - 10} more`));
+  if (n > 10) line(color.dim(`  … and ${n - 10} more`));
   line(
     color.dim(
       "Maps don't need to be deployed with your site: delete them from the build output if you'd rather not serve them.",
     ),
   );
+}
+
+async function uploadMaps(
+  dir: string | undefined,
+  project: string | undefined,
+  options: Options,
+  deps: Deps,
+): Promise<void> {
+  const files = mapsToUpload(dir, options.release);
+  const uploaded: { path: string; bytes: number }[] = [];
+  for (const file of files) {
+    const path = servedPath(dir!, file, options.urlPrefix);
+    const text = readFileSync(file, 'utf8');
+    if (!options.dryRun) await putMap(deps.fetcher ?? fetch, project, options.release!, path, text);
+    uploaded.push({ path, bytes: text.length });
+  }
+  reportUpload(uploaded, options);
+}
+
+export async function sourcemaps(
+  sub: string | undefined,
+  arg: string | undefined,
+  options: Options,
+  deps: Deps = {},
+): Promise<void> {
+  const project = withProject({ project: options.project }).project;
+  if (sub === 'list') return listMaps(project, options, deps);
+  if (sub === 'delete') return deleteMaps(project, options, deps);
+  return uploadMaps(sub === 'upload' ? arg : undefined, project, options, deps);
 }

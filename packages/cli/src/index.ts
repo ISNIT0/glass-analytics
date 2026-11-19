@@ -172,6 +172,135 @@ const BOOLEAN_OPTIONS = [
   'delete',
 ];
 
+type Flags = Record<string, string | boolean | undefined>;
+
+/** A parsed command line: the flags, and the words after the command. */
+interface Invocation {
+  flags: Flags;
+  sub?: string;
+  arg?: string;
+  rest: string[];
+}
+
+const yes = (v: unknown) => (v === true ? true : undefined);
+const no = (v: unknown) => (v ? false : undefined);
+const num = (v: unknown) => (v === undefined || v === false ? undefined : Number(v));
+
+const runInit = ({ flags }: Invocation) =>
+  init({
+    token: str(flags.token),
+    account: str(flags.account),
+    project: str(flags.project),
+    name: str(flags.name),
+    route: str(flags.route),
+    noRoute: Boolean(flags['no-route']),
+    // Given and not empty: 0 is a valid answer (keep events forever).
+    retentionDays: flags['retention-days'] ? Number(flags['retention-days']) : undefined,
+    lake: yes(flags.lake),
+    eu: yes(flags.eu),
+    replay: no(flags['no-replay']),
+    agentFiles: no(flags['no-agent-files']),
+    ci: no(flags['no-ci']),
+    dryRun: Boolean(flags['dry-run']),
+    json: Boolean(flags.json),
+  });
+
+const runUpgrade = ({ flags }: Invocation) =>
+  upgrade({
+    token: str(flags.token),
+    json: Boolean(flags.json),
+    ci: yes(flags.ci),
+    local: Boolean(flags.local),
+    allowDowngrade: Boolean(flags['allow-downgrade']),
+    retentionDays: num(flags['retention-days']),
+    replay: no(flags['no-replay']),
+  });
+
+const runStripe = ({ flags, sub }: Invocation) => {
+  if (sub !== 'import')
+    throw new UsageError('Usage: dataflare stripe import --api-key rk_… [--since 2024-01-01]');
+  return stripeImport({
+    apiKey: str(flags['api-key']),
+    since: str(flags.since),
+    project: str(flags.project),
+    personKey: str(flags['person-key']),
+    groupType: str(flags['group-type']),
+    groupKey: str(flags['group-key']),
+    json: Boolean(flags.json),
+    dryRun: Boolean(flags['dry-run']),
+  });
+};
+
+const runRevenue = ({ flags, sub }: Invocation) => {
+  if (sub !== 'rates') throw new UsageError('Usage: dataflare revenue rates [--since 2024-01-01]');
+  return revenueRates({ since: str(flags.since), json: Boolean(flags.json) });
+};
+
+const runLake = ({ flags, sub }: Invocation) => {
+  if (sub !== 'maintain')
+    throw new UsageError('Unknown lake command.', 'Run `dataflare lake maintain`.');
+  return lakeMaintain({
+    token: str(flags.token),
+    json: Boolean(flags.json),
+    dryRun: Boolean(flags['dry-run']),
+  });
+};
+
+const COMMANDS: Record<string, (c: Invocation) => Promise<void> | void> = {
+  init: runInit,
+  upgrade: runUpgrade,
+  deploy: runUpgrade,
+  ci: ({ flags }) =>
+    ci({ branch: str(flags.branch), secret: str(flags.secret), json: Boolean(flags.json) }),
+  status: ({ flags }) => status({ json: Boolean(flags.json) }),
+  doctor: ({ flags }) => status({ json: Boolean(flags.json) }),
+  import: ({ flags, sub }) =>
+    importEvents(sub, {
+      format: str(flags.format),
+      preset: str(flags.preset),
+      project: str(flags.project),
+      json: Boolean(flags.json),
+      dryRun: Boolean(flags['dry-run']),
+    }),
+  stripe: runStripe,
+  revenue: runRevenue,
+  sourcemaps: ({ flags, sub, arg }) =>
+    sourcemaps(sub, arg, {
+      release: str(flags.release),
+      urlPrefix: str(flags['url-prefix']),
+      project: str(flags.project),
+      json: Boolean(flags.json),
+      dryRun: Boolean(flags['dry-run']),
+    }),
+  key: ({ flags }) =>
+    key({ read: Boolean(flags.read), server: Boolean(flags.server), json: Boolean(flags.json) }),
+  query: ({ flags, sub }) => query(sub, flags),
+  sql: ({ flags, sub }) => sql(sub, flags),
+  events: ({ flags, sub }) => events(sub, flags),
+  person: ({ flags, sub }) => person(sub, flags),
+  persons: ({ flags, sub }) => person(sub, flags),
+  groups: ({ flags, sub }) => groups(sub, flags),
+  group: ({ flags, sub, arg }) => group(sub, arg, flags),
+  replays: ({ flags, sub, arg }) => replays(sub, arg, flags),
+  projects: ({ flags, sub, arg }) => projects(sub, arg, flags),
+  flags: ({ flags, sub, arg }) => flagCommands(sub, arg, flags),
+  experiments: ({ flags, sub, arg, rest }) => experiments(sub, arg, rest, flags),
+  lake: runLake,
+  mcp: () => mcpBridge(),
+};
+
+/** Commands that don't warn about an outdated Worker first (setup, status and the MCP bridge). */
+const SKIP_UPGRADE_WARNING = new Set([
+  'init',
+  'upgrade',
+  'deploy',
+  'ci',
+  'status',
+  'doctor',
+  'mcp',
+  'key',
+]);
+
 export async function main(argv: string[]): Promise<void> {
   const { values, positionals } = parseArgs({
     args: argv,
@@ -184,145 +313,19 @@ export async function main(argv: string[]): Promise<void> {
       version: { type: 'boolean', short: 'v' },
     },
   });
-  const flags = values as Record<string, string | boolean | undefined>;
+  const flags = values as Flags;
   const [command, sub, arg, ...rest] = positionals;
-
   if (flags.version) return line(GLASS_VERSION);
-  if (!command || command === 'help' || (flags.help && !command)) return line(HELP);
-
-  // Surface an outdated Worker before the real command (skip setup/status/mcp noise).
-  const skipUpgradeWarn = new Set([
-    'init',
-    'upgrade',
-    'deploy',
-    'ci',
-    'status',
-    'doctor',
-    'mcp',
-    'key',
-  ]);
-  if (command && !skipUpgradeWarn.has(command)) {
-    await warnIfOutdated({ json: Boolean(flags.json) });
-  }
-
-  switch (command) {
-    case 'init':
-      return init({
-        token: str(flags.token),
-        account: str(flags.account),
-        project: str(flags.project),
-        name: str(flags.name),
-        route: str(flags.route),
-        noRoute: Boolean(flags['no-route']),
-        retentionDays: flags['retention-days'] ? Number(flags['retention-days']) : undefined,
-        lake: flags.lake === true ? true : undefined,
-        eu: flags.eu === true ? true : undefined,
-        replay: flags['no-replay'] ? false : undefined,
-        agentFiles: flags['no-agent-files'] ? false : undefined,
-        ci: flags['no-ci'] ? false : undefined,
-        dryRun: Boolean(flags['dry-run']),
-        json: Boolean(flags.json),
-      });
-    case 'upgrade':
-    case 'deploy':
-      return upgrade({
-        token: str(flags.token),
-        json: Boolean(flags.json),
-        ci: flags.ci === true ? true : undefined,
-        local: Boolean(flags.local),
-        allowDowngrade: Boolean(flags['allow-downgrade']),
-        retentionDays:
-          flags['retention-days'] !== undefined ? Number(flags['retention-days']) : undefined,
-        replay: flags['no-replay'] ? false : undefined,
-      });
-    case 'ci':
-      return ci({
-        branch: str(flags.branch),
-        secret: str(flags.secret),
-        json: Boolean(flags.json),
-      });
-    case 'status':
-    case 'doctor':
-      return status({ json: Boolean(flags.json) });
-    case 'import':
-      return importEvents(sub, {
-        format: typeof flags.format === 'string' ? flags.format : undefined,
-        preset: typeof flags.preset === 'string' ? flags.preset : undefined,
-        project: typeof flags.project === 'string' ? flags.project : undefined,
-        json: Boolean(flags.json),
-        dryRun: Boolean(flags['dry-run']),
-      });
-    case 'stripe':
-      if (sub !== 'import')
-        throw new UsageError('Usage: dataflare stripe import --api-key rk_… [--since 2024-01-01]');
-      return stripeImport({
-        apiKey: typeof flags['api-key'] === 'string' ? flags['api-key'] : undefined,
-        since: typeof flags.since === 'string' ? flags.since : undefined,
-        project: typeof flags.project === 'string' ? flags.project : undefined,
-        personKey: typeof flags['person-key'] === 'string' ? flags['person-key'] : undefined,
-        groupType: typeof flags['group-type'] === 'string' ? flags['group-type'] : undefined,
-        groupKey: typeof flags['group-key'] === 'string' ? flags['group-key'] : undefined,
-        json: Boolean(flags.json),
-        dryRun: Boolean(flags['dry-run']),
-      });
-    case 'revenue':
-      if (sub !== 'rates')
-        throw new UsageError('Usage: dataflare revenue rates [--since 2024-01-01]');
-      return revenueRates({
-        since: typeof flags.since === 'string' ? flags.since : undefined,
-        json: Boolean(flags.json),
-      });
-    case 'sourcemaps':
-      return sourcemaps(sub, arg, {
-        release: typeof flags.release === 'string' ? flags.release : undefined,
-        urlPrefix: typeof flags['url-prefix'] === 'string' ? flags['url-prefix'] : undefined,
-        project: typeof flags.project === 'string' ? flags.project : undefined,
-        json: Boolean(flags.json),
-        dryRun: Boolean(flags['dry-run']),
-      });
-    case 'key':
-      return key({
-        read: Boolean(flags.read),
-        server: Boolean(flags.server),
-        json: Boolean(flags.json),
-      });
-    case 'query':
-      return query(sub, flags);
-    case 'sql':
-      return sql(sub, flags);
-    case 'events':
-      return events(sub, flags);
-    case 'person':
-    case 'persons':
-      return person(sub, flags);
-    case 'groups':
-      return groups(sub, flags);
-    case 'group':
-      return group(sub, arg, flags);
-    case 'replays':
-      return replays(sub, arg, flags);
-    case 'projects':
-      return projects(sub, arg, flags);
-    case 'flags':
-      return flagCommands(sub, arg, flags);
-    case 'experiments':
-      return experiments(sub, arg, rest, flags);
-    case 'lake':
-      if (sub !== 'maintain')
-        throw new UsageError('Unknown lake command.', 'Run `dataflare lake maintain`.');
-      return lakeMaintain({
-        token: str(flags.token),
-        json: Boolean(flags.json),
-        dryRun: Boolean(flags['dry-run']),
-      });
-    case 'mcp':
-      return mcpBridge();
-    default:
-      throw new UsageError(
-        `Unknown command "${command}".`,
-        'Run `dataflare help` for the list of commands.',
-      );
-  }
+  if (!command || command === 'help') return line(HELP);
+  const run = Object.hasOwn(COMMANDS, command) ? COMMANDS[command] : undefined;
+  if (!run)
+    throw new UsageError(
+      `Unknown command "${command}".`,
+      'Run `dataflare help` for the list of commands.',
+    );
+  // Surface an outdated Worker before the real command.
+  if (!SKIP_UPGRADE_WARNING.has(command)) await warnIfOutdated({ json: Boolean(flags.json) });
+  return run({ flags, sub, arg, rest });
 }
 
 function str(v: string | boolean | undefined): string | undefined {

@@ -154,6 +154,14 @@ async function settle<T>(fn: () => Promise<T>, pollMs: number, attempts = 8): Pr
   }
 }
 
+/** The delivery queues: the ones already set up, else created (when the token allows it). */
+async function deliveryQueues(
+  existing: { queues?: Awaited<ReturnType<typeof ensureQueues>> } | null | undefined,
+  ...args: Parameters<typeof ensureQueues>
+): Promise<Awaited<ReturnType<typeof ensureQueues>>> {
+  return existing?.queues ?? ensureQueues(...args);
+}
+
 export async function init(options: InitOptions, deps: InitDeps = {}): Promise<void> {
   const root = deps.root ?? projectRoot();
   const dir = glassDir(root);
@@ -296,7 +304,7 @@ export async function init(options: InitOptions, deps: InitDeps = {}): Promise<v
         }
       : null;
 
-    const queues = existing?.queues ?? (await ensureQueues(wrangler, name, report));
+    const queues = await deliveryQueues(existing, wrangler, name, report);
     const config: GlassConfig = {
       name,
       accountId: account.id,

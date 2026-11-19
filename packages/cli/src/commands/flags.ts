@@ -70,6 +70,15 @@ export async function flags(
   );
 }
 
+/** What an experiment measures: its goal event, or (created with metrics) its first metric. */
+function goalOf(e: {
+  goal: { event: string } | null;
+  metrics?: { event?: string; name?: string; kind: string }[];
+}): string {
+  const m = e.metrics?.[0];
+  return e.goal?.event ?? m?.name ?? m?.event ?? m?.kind ?? '–';
+}
+
 export async function experiments(
   sub: string | undefined,
   key: string | undefined,
@@ -93,16 +102,7 @@ export async function experiments(
       );
     table(
       ['Experiment', 'Status', 'Goal'],
-      // Experiments created with metrics have no single goal event.
-      r.experiments.map((e) => [
-        e.key,
-        e.status,
-        e.goal?.event ??
-          e.metrics?.[0]?.name ??
-          e.metrics?.[0]?.event ??
-          e.metrics?.[0]?.kind ??
-          '–',
-      ]),
+      r.experiments.map((e) => [e.key, e.status, goalOf(e)]),
     );
     return;
   }

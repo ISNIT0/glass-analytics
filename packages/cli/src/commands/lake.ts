@@ -92,6 +92,23 @@ interface Pending {
   kind?: string;
 }
 
+/** Erasures of people: their ids. */
+function personDeletions(pending: Pending[]) {
+  return pending
+    .filter((p) => (p.kind ?? 'person') === 'person')
+    .map((p) => ({ id: p.id, project: p.project, ids: JSON.parse(p.ids) as string[] }));
+}
+
+/** Erasures of groups: [type, key]. */
+function groupDeletions(pending: Pending[]) {
+  return pending
+    .filter((p) => p.kind === 'group')
+    .map((p) => {
+      const [type, key] = JSON.parse(p.ids) as [string, string];
+      return { id: p.id, project: p.project, type, key };
+    });
+}
+
 export async function lakeMaintain(
   options: LakeMaintainOptions,
   deps: LakeMaintainDeps = {},
@@ -171,19 +188,8 @@ export async function lakeMaintain(
         (config.lake?.versions ?? [1]).map((v) => lakeTableName(table, v)),
       ]),
     ),
-    deletions: pending
-      .filter((p) => (p.kind ?? 'person') === 'person')
-      .map((p) => ({
-        id: p.id,
-        project: p.project,
-        ids: JSON.parse(p.ids) as string[],
-      })),
-    group_deletions: pending
-      .filter((p) => p.kind === 'group')
-      .map((p) => {
-        const [type, key] = JSON.parse(p.ids) as [string, string];
-        return { id: p.id, project: p.project, type, key };
-      }),
+    deletions: personDeletions(pending),
+    group_deletions: groupDeletions(pending),
     retention_cutoff_ms: cutoff,
   };
   const out = await (deps.run ?? runWithUv)(maintainScript(), JSON.stringify(job));

@@ -486,6 +486,24 @@ export class Dataflare {
   }
 
   /** Every flag's value for a user, with payloads. Locally when possible. */
+  /**
+   * Every flag from the polled definitions, or null when the Worker has to answer: no
+   * definitions, or a rule needs what local evaluation doesn't know (unless told to stay local).
+   */
+  private evaluateLocally(distinctId: string, o: FlagOptions) {
+    if (!this.local || !this.definitions) return null;
+    const { ctx, isKnown } = this.localContext(distinctId, o);
+    const results: Record<string, FlagEvaluation> = evaluateFlagsDetailed(
+      this.definitions.flags,
+      ctx,
+      { isKnown },
+    );
+    if (Object.values(results).some((r) => r.inconclusive) && !o.onlyEvaluateLocally) return null;
+    const flags: Record<string, string> = {};
+    for (const [k, r] of Object.entries(results)) if (r.value !== null) flags[k] = r.value;
+    return { flags, payloads: payloadsFor(this.definitions.flags, flags), evaluatedLocally: true };
+  }
+
   async getAllFlagsAndPayloads(
     distinctId: string,
     o: FlagOptions = {},
@@ -495,24 +513,8 @@ export class Dataflare {
     evaluatedLocally: boolean;
   }> {
     if (this.local && !this.definitions) await this.reloadFeatureFlags();
-    if (this.local && this.definitions) {
-      const { ctx, isKnown } = this.localContext(distinctId, o);
-      const results: Record<string, FlagEvaluation> = evaluateFlagsDetailed(
-        this.definitions.flags,
-        ctx,
-        { isKnown },
-      );
-      const inconclusive = Object.values(results).some((r) => r.inconclusive);
-      if (!inconclusive || o.onlyEvaluateLocally) {
-        const flags: Record<string, string> = {};
-        for (const [k, r] of Object.entries(results)) if (r.value !== null) flags[k] = r.value;
-        return {
-          flags,
-          payloads: payloadsFor(this.definitions.flags, flags),
-          evaluatedLocally: true,
-        };
-      }
-    }
+    const local = this.evaluateLocally(distinctId, o);
+    if (local) return local;
     if (o.onlyEvaluateLocally) return { flags: {}, payloads: {}, evaluatedLocally: true };
     try {
       return { ...(await this.remote(distinctId, o)), evaluatedLocally: false };

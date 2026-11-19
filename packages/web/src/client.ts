@@ -47,6 +47,12 @@ function overrideMap(entries: Iterable<[string, string | null]>): Record<string,
   return out;
 }
 
+/** Which autocapture is on: everything by default, nothing with `false`, or the options given. */
+function autocaptureOf(option: GlassOptions['autocapture']): AutocaptureOptions {
+  if (option === false) return { pageviews: false, clicks: false, errors: false, webVitals: false };
+  return option === true || !option ? {} : option;
+}
+
 export class Dataflare {
   readonly version = GLASS_VERSION;
   private options: GlassOptions | null = null;
@@ -89,50 +95,51 @@ export class Dataflare {
       `web/${GLASS_VERSION}`,
       options.flushIntervalMs ?? 5000,
     );
+    this.restoreFlags(options.bootstrap);
+    if (options.webExperiments !== false) this.startWebExperiments(options.antiFlickerMs ?? 1000);
+    if (options.flags !== false) void this.reloadFlags();
+    this.startAutocapture(autocaptureOf(options.autocapture));
+    void this.maybeStartReplay();
+    return this;
+  }
 
-    const boot = options.bootstrap;
-    if (boot?.distinctId && !this.store.cookieless) this.store.set('id', boot.distinctId);
-    if (boot?.userId) this.store.setUserId(boot.userId);
+  /** Flags from the last visit, or from the server's bootstrap (usable at once). */
+  private restoreFlags(boot: GlassOptions['bootstrap']): void {
+    const store = this.store!;
+    if (boot?.distinctId && !store.cookieless) store.set('id', boot.distinctId);
+    if (boot?.userId) store.setUserId(boot.userId);
     try {
-      this.flagValues = JSON.parse(this.store.get('flags') ?? '{}') as Record<string, string>;
-      this.flagPayloads = JSON.parse(this.store.get('flag_payloads') ?? '{}') as Record<
-        string,
-        unknown
-      >;
+      this.flagValues = JSON.parse(store.get('flags') ?? '{}') as Record<string, string>;
+      this.flagPayloads = JSON.parse(store.get('flag_payloads') ?? '{}') as Record<string, unknown>;
       this.overrides = overrideMap(
         Object.entries(
-          JSON.parse(this.store.get('flag_overrides') ?? '{}') as Record<string, string | null>,
+          JSON.parse(store.get('flag_overrides') ?? '{}') as Record<string, string | null>,
         ),
       );
     } catch {
       this.flagValues = {};
     }
-    if (boot?.flags) {
-      this.flagValues = {};
-      for (const [k, v] of Object.entries(boot.flags)) {
-        if (v === true) this.flagValues[k] = 'on';
-        else if (typeof v === 'string') this.flagValues[k] = v;
-      }
-      this.flagPayloads = boot.payloads ?? {};
-      // Bootstrapped values are usable at once; the Worker's answer replaces them when it arrives.
-      this.flagsLoaded = true;
+    if (!boot?.flags) return;
+    this.flagValues = {};
+    for (const [k, v] of Object.entries(boot.flags)) {
+      if (v === true) this.flagValues[k] = 'on';
+      else if (typeof v === 'string') this.flagValues[k] = v;
     }
-    if (options.webExperiments !== false) {
-      // Hide what cached web experiments change until the fresh values apply (no flash).
-      const selectors = Object.values(this.flagPayloads)
-        .filter(isWebPayload)
-        .flatMap((p) => p.transforms.map((t) => t.selector));
-      this.reveal = hideUntilApplied(selectors, options.antiFlickerMs ?? 1000);
-      if (this.flagsLoaded) this.applyWebExperiments();
-    }
-    if (options.flags !== false) void this.reloadFlags();
+    this.flagPayloads = boot.payloads ?? {};
+    // Bootstrapped values are usable at once; the Worker's answer replaces them when it arrives.
+    this.flagsLoaded = true;
+  }
 
-    const auto: AutocaptureOptions =
-      options.autocapture === false
-        ? { pageviews: false, clicks: false, errors: false, webVitals: false }
-        : options.autocapture === true || !options.autocapture
-          ? {}
-          : options.autocapture;
+  /** Hide what cached web experiments change until the fresh values apply (no flash). */
+  private startWebExperiments(antiFlickerMs: number): void {
+    const selectors = Object.values(this.flagPayloads)
+      .filter(isWebPayload)
+      .flatMap((p) => p.transforms.map((t) => t.selector));
+    this.reveal = hideUntilApplied(selectors, antiFlickerMs);
+    if (this.flagsLoaded) this.applyWebExperiments();
+  }
+
+  private startAutocapture(auto: AutocaptureOptions): void {
     const hooks = {
       pageview: () => {
         this.pageStart = Date.now();
@@ -143,24 +150,13 @@ export class Dataflare {
       pageleave: () => this.capture('$pageleave', { duration_ms: Date.now() - this.pageStart }),
       capture: (event: string, props: Record<string, unknown>) => this.capture(event, props),
     };
-    let reportVitals: (() => void) | null = null;
-    if (auto.webVitals !== false) {
-      reportVitals = observeVitals((metric, value) =>
-        this.capture('$web_vitals', { metric, value }),
-      );
-    }
+    let reportVitals =
+      auto.webVitals === false
+        ? null
+        : observeVitals((metric, value) => this.capture('$web_vitals', { metric, value }));
     if (auto.pageviews !== false) this.teardown.push(trackPageviews(hooks));
     if (auto.clicks !== false) this.teardown.push(trackClicks(hooks));
-    if (auto.errors !== false) {
-      // An error uploads a buffered replay, so sessions with errors can be watched.
-      const onError = () => {
-        this.replay?.noteError();
-        this.replay?.flushBuffer();
-        if (this.replayMode === 'buffer') this.replayMode = 'record';
-      };
-      this.teardown.push(trackErrors(hooks, onError));
-    }
-
+    if (auto.errors !== false) this.teardown.push(trackErrors(hooks, () => this.onError()));
     const onHide = () => {
       if (document.visibilityState !== 'hidden') return;
       reportVitals?.();
@@ -174,9 +170,13 @@ export class Dataflare {
       removeEventListener('visibilitychange', onHide);
       removeEventListener('pagehide', onHide);
     });
+  }
 
-    void this.maybeStartReplay();
-    return this;
+  /** An error uploads a buffered replay, so sessions with errors can be watched. */
+  private onError(): void {
+    this.replay?.noteError();
+    this.replay?.flushBuffer();
+    if (this.replayMode === 'buffer') this.replayMode = 'record';
   }
 
   /**
