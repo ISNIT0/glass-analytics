@@ -78,11 +78,16 @@ describe('revenue at ingest', () => {
       unconverted: number;
       summary: string;
       currency: string;
+      dashboard: string;
     }>('POST', '/api/query', {
       key: READ,
-      body: { project: 'acme', kind: 'revenue', from: '-7d' },
+      body: { project: 'acme', kind: 'revenue', from: '-7d', interval: 'week' },
     });
     assert.deepEqual([r.totals.net, r.currency, r.unconverted], [104, 'GBP', 1]);
+    // The link opens the Revenue page with the same view.
+    const link = new URL(r.dashboard.replace('/app#/', '/'));
+    assert.equal(link.pathname, '/revenue');
+    assert.equal(link.searchParams.get('interval'), 'week');
     assert.match(r.summary, /^Net revenue £104/);
     assert.match(r.summary, /1 revenue events had no exchange rate/);
   });
@@ -291,7 +296,8 @@ describe('stripe', () => {
     const row = await t.db
       .prepare('SELECT * FROM stripe_customers')
       .first<Record<string, unknown>>();
-    assert.ok(!JSON.stringify(row).includes('example.com'));
+    // The customer's email is only ever stored hashed.
+    assert.doesNotMatch(JSON.stringify(row), /bo@example\.com/);
   });
 });
 

@@ -192,13 +192,22 @@ describe('funnels through the service', () => {
       dropped.actors.map((a) => [a.id, a.properties.plan]),
       [['bob', 'free']],
     );
-    const correlation = await t.json<{ kind: string; converters: number; dropOffs: number }>(
-      'POST',
-      '/api/query',
-      { body: { kind: 'funnel_correlation', project: 'acme', ...spec } },
-    );
+    const correlation = await t.json<{
+      kind: string;
+      converters: number;
+      dropOffs: number;
+      dashboard: string;
+    }>('POST', '/api/query', {
+      body: { kind: 'funnel_correlation', project: 'acme', ...spec, limit: 5 },
+    });
     assert.equal(correlation.kind, 'funnel_correlation');
     assert.equal(correlation.converters, 1);
     assert.equal(correlation.dropOffs, 1);
+    // The link opens the funnel editor (where the correlation table lives), not a missing insight.
+    const link = new URL(correlation.dashboard.replace('/app#/', '/'));
+    assert.equal(link.pathname, '/insights/funnel');
+    const linked = JSON.parse(link.searchParams.get('spec')!);
+    assert.equal(linked.limit, undefined);
+    assert.deepEqual(linked.steps, spec.steps);
   });
 });

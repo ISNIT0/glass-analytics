@@ -1171,8 +1171,6 @@ export class GlassService {
     const { def, spec, resolved, ctx } = await this.prepareSpec(kind, input);
     const run = def.run as unknown as (s: unknown, c: QueryContext) => Promise<ResultBase>;
     const result = await run(resolved, ctx);
-    // Web lives under Reports; trends/funnel/retention stay as ephemeral Insights links.
-    const route = kind === 'web' ? 'reports' : `insights/${kind}`;
     const annotations =
       kind === 'trends' || kind === 'web'
         ? await this.annotationsBetween(ctx.project, result.range.from, result.range.to)
@@ -1181,8 +1179,29 @@ export class GlassService {
       ...result,
       ...(annotations?.length ? { annotations } : {}),
       project: ctx.project,
-      dashboard: this.link(route, { project: ctx.project, spec: { ...spec, project: undefined } }),
+      dashboard: this.resultLink(kind, spec as Record<string, unknown>, ctx.project),
     };
+  }
+
+  /** Where a query result opens in the dashboard: each kind has its own page or editor. */
+  private resultLink(kind: string, spec: Record<string, unknown>, project: string): string {
+    const shared: Record<string, unknown> = { ...spec, project: undefined };
+    if (kind === 'web') return this.link('reports', { project, spec: shared });
+    if (kind === 'revenue')
+      return this.link('revenue', {
+        project,
+        from: spec.from,
+        to: spec.to,
+        interval: spec.interval,
+        breakdown: spec.breakdown,
+        by: spec.aggregateBy,
+      });
+    if (kind === 'funnel_correlation') {
+      // The correlation table sits under the funnel it explains.
+      const { correlation: _c, properties: _p, exclude: _e, limit: _l, ...funnel } = shared;
+      return this.link('insights/funnel', { project, spec: funnel });
+    }
+    return this.link(`insights/${kind}`, { project, spec: shared });
   }
 
   // ── Actors ───────────────────────────────────────────────────────────────
