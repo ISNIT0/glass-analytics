@@ -75,7 +75,14 @@ export interface DevServer {
 }
 
 export async function startDevServer(
-  options: { port?: number; demoPort?: number; memory?: boolean; dataDir?: string } = {},
+  options: {
+    port?: number;
+    demoPort?: number;
+    memory?: boolean;
+    dataDir?: string;
+    /** The SDK and dashboard bundles to serve; the built ones by default. Tests that only call the API pass `TEST_ASSETS`, so they run before `pnpm build` (as CI does). */
+    assets?: Assets;
+  } = {},
 ): Promise<DevServer> {
   const dataDir = options.dataDir ?? join(repo, '.glass-dev');
   const env: Env = {
@@ -86,7 +93,7 @@ export async function startDevServer(
     GLASS_SALT_SECRET: 'dev-salt',
   };
   await createProject(env.DB, { id: 'demo', name: 'Demo site' });
-  const app = createApp({ assets: loadAssets() });
+  const app = createApp({ assets: options.assets ?? loadAssets() });
 
   const glass = createServer(async (req, res) => {
     try {

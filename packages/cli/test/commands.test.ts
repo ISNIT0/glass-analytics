@@ -4,6 +4,7 @@
  */
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
+import { TEST_ASSETS } from '../../worker/test/harness.ts';
 import { type DevServer, startDevServer } from '../../worker/test/server.ts';
 import { group, groups, person, projects, query, sql } from '../src/commands/data.ts';
 import { experiments, flags } from '../src/commands/flags.ts';
@@ -42,7 +43,8 @@ const api = async (method: string, path: string, body?: unknown) => {
 
 describe('data and flag commands', () => {
   before(async () => {
-    server = await startDevServer({ port: 0, demoPort: 0, memory: true });
+    // Only the API is used, so the stub bundles do: this runs before `pnpm build` in CI.
+    server = await startDevServer({ port: 0, demoPort: 0, memory: true, assets: TEST_ASSETS });
     process.env.GLASS_HOST = server.glassUrl;
     process.env.GLASS_API_KEY = 'dev-admin-key';
     process.env.GLASS_PROJECT = 'demo';
