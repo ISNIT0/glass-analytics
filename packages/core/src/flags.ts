@@ -282,15 +282,43 @@ export function payloadsFor(
 }
 
 const FLAG_KEY = /^[a-z0-9][a-z0-9_.-]{0,99}$/i;
-const MAX_PAYLOAD_BYTES = 10_000;
+/** The most payload JSON one flag may carry, in UTF-8 bytes of compact JSON. */
+export const MAX_PAYLOAD_BYTES = 10_000;
 
-/** Validate a definition, returning a list of human-readable problems (empty when valid). */
-export function validateFlag(flag: FlagDefinition): string[] {
+/** How big payloads are, as stored and sent: UTF-8 bytes of compact JSON. */
+export function payloadBytes(payloads: unknown): number {
+  return new TextEncoder().encode(JSON.stringify(payloads) ?? '').length;
+}
+
+/**
+ * Problems with a web experiment payload (`{ type: "web", transforms: [...] }`), or none.
+ * Other payloads are any JSON and aren't checked here.
+ */
+export function webPayloadProblems(payload: unknown): string[] {
+  if (!payload || typeof payload !== 'object' || (payload as { type?: unknown }).type !== 'web')
+    return [];
+  const transforms = (payload as { transforms?: unknown }).transforms;
+  if (!Array.isArray(transforms)) return ['a web payload needs a "transforms" list'];
+  return transforms.flatMap((t, i) => webTransformProblems(t, i + 1));
+}
+
+const TRANSFORM_KINDS = ['text', 'html', 'css', 'attributes', 'hide'] as const;
+
+function webTransformProblems(t: unknown, n: number): string[] {
+  if (!t || typeof t !== 'object') return [`change ${n} must be an object`];
+  const change = t as Record<string, unknown>;
   const problems: string[] = [];
-  if (!FLAG_KEY.test(flag.key))
-    problems.push('key must be 1-100 characters: letters, digits, "_", "-", "."');
-  if (!(flag.rollout >= 0 && flag.rollout <= 100))
-    problems.push('rollout must be between 0 and 100');
+  if (typeof change.selector !== 'string' || !change.selector.trim())
+    problems.push(`change ${n} needs a "selector", e.g. "h1" or "#signup"`);
+  const kinds = TRANSFORM_KINDS.filter((k) => change[k] !== undefined);
+  if (kinds.length === 0)
+    problems.push(`change ${n} needs one of ${TRANSFORM_KINDS.map((k) => `"${k}"`).join(', ')}`);
+  return problems;
+}
+
+type Problems = string[];
+
+function variantProblems(flag: FlagDefinition, problems: Problems): Set<string> {
   const keys = new Set<string>();
   for (const v of flag.variants ?? []) {
     if (!FLAG_KEY.test(v.key)) problems.push(`variant "${v.key}" has an invalid key`);
@@ -300,29 +328,47 @@ export function validateFlag(flag: FlagDefinition): string[] {
   }
   if (flag.variants && flag.variants.length === 1)
     problems.push('a multivariate flag needs at least two variants');
+  return keys;
+}
+
+function ruleProblems(flag: FlagDefinition, variants: Set<string>, problems: Problems): void {
   for (const rule of flag.rules ?? []) {
-    if (rule.variant && !keys.has(rule.variant))
+    if (rule.variant && !variants.has(rule.variant))
       problems.push(`rule forces unknown variant "${rule.variant}"`);
-    if (rule.rollout !== undefined && !(rule.rollout >= 0 && rule.rollout <= 100)) {
+    if (rule.rollout !== undefined && !inPercent(rule.rollout))
       problems.push('rule rollout must be between 0 and 100');
-    }
   }
-  if (flag.payloads) {
-    const values = flag.variants?.length ? keys : new Set([FLAG_ON]);
-    for (const k of Object.keys(flag.payloads)) {
-      if (!values.has(k))
-        problems.push(
-          `payload for "${k}", which this flag never returns (${[...values].join(', ')})`,
-        );
-    }
-    if (JSON.stringify(flag.payloads).length > MAX_PAYLOAD_BYTES)
-      problems.push('payloads must be at most 10 KB of JSON');
+}
+
+function payloadProblems(flag: FlagDefinition, variants: Set<string>, problems: Problems): void {
+  if (!flag.payloads) return;
+  const values = flag.variants?.length ? variants : new Set([FLAG_ON]);
+  for (const [k, payload] of Object.entries(flag.payloads)) {
+    if (!values.has(k))
+      problems.push(
+        `payload for "${k}", which this flag never returns (${[...values].join(', ')})`,
+      );
+    for (const p of webPayloadProblems(payload)) problems.push(`payload for "${k}": ${p}`);
   }
-  if (flag.bucketBy && flag.bucketBy !== 'device' && flag.bucketBy !== 'person') {
-    if (!/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,49}$/.test(flag.bucketBy))
-      problems.push('bucketBy must be "device", "person" or a group type');
-  }
-  if (flag.holdout && !(flag.holdout.percentage >= 0 && flag.holdout.percentage <= 100))
+  if (payloadBytes(flag.payloads) > MAX_PAYLOAD_BYTES)
+    problems.push('payloads must be at most 10 KB of JSON');
+}
+
+const inPercent = (n: number) => n >= 0 && n <= 100;
+
+/** Validate a definition, returning a list of human-readable problems (empty when valid). */
+export function validateFlag(flag: FlagDefinition): string[] {
+  const problems: string[] = [];
+  if (!FLAG_KEY.test(flag.key))
+    problems.push('key must be 1-100 characters: letters, digits, "_", "-", "."');
+  if (!inPercent(flag.rollout)) problems.push('rollout must be between 0 and 100');
+  const variants = variantProblems(flag, problems);
+  ruleProblems(flag, variants, problems);
+  payloadProblems(flag, variants, problems);
+  const groupBucket = flag.bucketBy && flag.bucketBy !== 'device' && flag.bucketBy !== 'person';
+  if (groupBucket && !/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,49}$/.test(flag.bucketBy!))
+    problems.push('bucketBy must be "device", "person" or a group type');
+  if (flag.holdout && !inPercent(flag.holdout.percentage))
     problems.push('holdout percentage must be between 0 and 100');
   if (flagDependencies(flag).includes(flag.key)) problems.push('a flag cannot depend on itself');
   return problems;

@@ -3558,33 +3558,44 @@ input.palette-input:focus {
   min-width: 0;
 }
 
-.sql-editor-wrap {
+/* Code editors (components/code-field.ts): a transparent textarea over its highlighted copy. */
+.code-field {
   position: relative;
+  display: flex;
   border: 1px solid var(--hairline-strong);
   border-radius: var(--radius-sm);
   background: var(--surface-2);
   overflow: hidden;
 }
 
-.sql-editor-wrap:focus-within {
+.code-field:focus-within {
   border-color: var(--glass-green);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--glass-green) 15%, transparent);
 }
 
-.sql-highlight,
-textarea.sql-editor {
+.code-field.invalid {
+  border-color: var(--bad);
+}
+
+.code-stack {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.code-highlight,
+textarea.code-input {
   margin: 0;
-  padding: 12px 14px;
+  padding: 10px 12px;
   font-family: var(--mono);
   font-size: 13px;
   line-height: 1.6;
   tab-size: 2;
   white-space: pre-wrap;
   word-break: break-word;
-  min-height: 220px;
 }
 
-.sql-highlight {
+.code-highlight {
   position: absolute;
   inset: 0;
   overflow: hidden;
@@ -3592,9 +3603,10 @@ textarea.sql-editor {
   color: var(--ink);
 }
 
-textarea.sql-editor {
+textarea.code-input {
   position: relative;
   display: block;
+  width: 100%;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -3604,13 +3616,142 @@ textarea.sql-editor {
   box-shadow: none;
 }
 
-textarea.sql-editor:focus {
+textarea.code-input:focus {
   box-shadow: none;
 }
 
-textarea.sql-editor::selection {
+textarea.code-input::selection {
   background: color-mix(in srgb, var(--glass-cobalt) 25%, transparent);
   color: transparent;
+}
+
+.code-sql textarea.code-input,
+.code-sql .code-highlight {
+  min-height: 220px;
+  padding: 12px 14px;
+}
+
+.code-field.numbered .code-highlight,
+.code-field.numbered textarea.code-input {
+  white-space: pre;
+  word-break: normal;
+}
+
+.code-gutter {
+  display: flex;
+  flex-direction: column;
+  padding: 10px 8px 10px 10px;
+  overflow: hidden;
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.6;
+  text-align: right;
+  color: var(--muted);
+  border-right: 1px solid var(--hairline);
+  user-select: none;
+}
+
+.code-error {
+  text-decoration: wavy underline var(--bad);
+  text-decoration-skip-ink: none;
+  text-underline-offset: 3px;
+}
+
+.code-message:empty {
+  display: none;
+}
+
+.code-message {
+  margin-top: 6px;
+  font-size: 12.5px;
+  color: var(--bad);
+}
+
+.t-key {
+  color: var(--glass-cobalt);
+}
+
+.t-lit {
+  color: var(--glass-amber);
+}
+
+.t-punct {
+  color: var(--muted);
+}
+
+.t-bad {
+  color: var(--bad);
+}
+
+.t-match {
+  background: color-mix(in srgb, var(--glass-green) 22%, transparent);
+  border-radius: 2px;
+}
+
+/* JSON editor and flag payloads */
+.json-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.json-status {
+  display: flex;
+  gap: 10px;
+  font-size: 12.5px;
+}
+
+.json-problem,
+.json-size.over {
+  color: var(--bad);
+}
+
+.json-size {
+  color: var(--muted);
+}
+
+.json-size.near {
+  color: var(--warn);
+}
+
+.json-tools {
+  display: flex;
+  gap: 4px;
+}
+
+.payload-list {
+  display: grid;
+  gap: 8px;
+}
+
+.payload-fold {
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+}
+
+.payload-fold > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.payload-fold[open] > summary {
+  margin-bottom: 8px;
+}
+
+.payload-fold.orphan {
+  border-color: color-mix(in srgb, var(--bad) 40%, var(--hairline));
+}
+
+.payload-orphan {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
 }
 
 .t-kw {

@@ -8,6 +8,7 @@ import { lineChart } from '../components/charts.ts';
 import { icon } from '../components/icons.ts';
 import { knownGroupTypes } from '../components/insight-options.ts';
 import { toggle } from '../components/menu.ts';
+import { payloadEditors } from '../components/payload-editors.ts';
 import { cleanFlagRules, type FlagRuleRow, flagRulesEditor } from '../components/rich-editors.ts';
 import {
   copyButton,
@@ -19,9 +20,127 @@ import {
   table,
   toast,
 } from '../components/ui.ts';
-import { h, mount } from '../dom.ts';
+import { type Child, h, mount } from '../dom.ts';
 import { ago, dateTime } from '../format.ts';
 import { go, href, type Route, scope } from '../state.ts';
+
+const field = (label: string, ...control: Child[]) =>
+  h('label', { class: 'field' }, h('span', {}, label), ...control);
+
+function rolloutField(flag: FlagDefinition | null) {
+  const input = h('input', {
+    type: 'range',
+    min: 0,
+    max: 100,
+    step: 1,
+    value: flag?.rollout ?? 100,
+  });
+  const shown = h('output', {}, `${flag?.rollout ?? 100}%`);
+  input.addEventListener('input', () => {
+    shown.textContent = `${input.value}%`;
+  });
+  return {
+    el: field('Rollout', h('div', { class: 'range' }, input, shown)),
+    value: () => Number(input.value),
+  };
+}
+
+/** "control:50, test:50" → variants; empty for an on/off flag. */
+function parseVariants(text: string): { key: string; weight: number }[] {
+  if (!text.trim()) return [];
+  return text.split(',').map((part) => {
+    const [k, w] = part.trim().split(':');
+    return { key: k!.trim(), weight: Number(w ?? 1) };
+  });
+}
+
+function bucketField(flag: FlagDefinition | null, project: string | undefined) {
+  const option = (v: string, label: string) =>
+    h('option', { value: v, selected: (flag?.bucketBy ?? 'device') === v }, label);
+  const select = h(
+    'select',
+    {},
+    option('device', 'Device (default)'),
+    option('person', 'Person (same value on every device)'),
+  );
+  const addType = (t: string) => {
+    if (![...select.options].some((o) => o.value === t)) select.append(option(t, `${t} (group)`));
+  };
+  for (const t of knownGroupTypes(project, () =>
+    knownGroupTypes(project, () => {}).forEach(addType),
+  ))
+    addType(t);
+  if (flag?.bucketBy) addType(flag.bucketBy);
+  return {
+    el: field('Same value for the same', select),
+    value: () => (select.value === 'device' ? null : select.value),
+  };
+}
+
+function earlyAccessSection(flag: FlagDefinition | null) {
+  const ea = flag?.earlyAccess;
+  let on = Boolean(ea);
+  const text = (value: string | undefined, placeholder: string, type = 'text') =>
+    h('input', { type, value: value ?? '', placeholder });
+  const name = text(ea?.name, 'New editor');
+  const description = text(ea?.description, 'What people get by opting in');
+  const docs = text(ea?.docsUrl, 'https://… (optional)', 'url');
+  const stage = h(
+    'select',
+    {},
+    ['concept', 'alpha', 'beta'].map((v) =>
+      h('option', { value: v, selected: (ea?.stage ?? 'beta') === v }, v),
+    ),
+  );
+  const fields = h(
+    'div',
+    { class: 'stack tight', hidden: !on },
+    field('Name shown to people', name),
+    field('Description', description),
+    h('div', { class: 'grid-2' }, field('Stage', stage), field('Docs', docs)),
+  );
+  const el = h(
+    'div',
+    { class: 'stack tight' },
+    toggle({
+      checked: on,
+      label: 'Early access: people can opt in themselves (glass.earlyAccessFeatures())',
+      onChange: (c) => {
+        on = c;
+        fields.hidden = !c;
+      },
+    }),
+    fields,
+  );
+  const value = () => {
+    if (!on) return null;
+    if (!name.value.trim())
+      throw new Error('Give the early access feature a name people will see.');
+    return {
+      name: name.value.trim(),
+      stage: stage.value,
+      ...(description.value.trim() ? { description: description.value.trim() } : {}),
+      ...(docs.value.trim() ? { docsUrl: docs.value.trim() } : {}),
+    };
+  };
+  return { el, value };
+}
+
+function enabledToggle(checked: boolean) {
+  const input = h('input', { type: 'checkbox', checked });
+  const el = h(
+    'label',
+    { class: 'toggle' },
+    input,
+    h(
+      'span',
+      { class: 'toggle-track', 'aria-hidden': 'true' },
+      h('span', { class: 'toggle-thumb' }),
+    ),
+    h('span', { class: 'toggle-label' }, 'Enabled'),
+  );
+  return { el, value: () => input.checked };
+}
 
 function editor(flag: FlagDefinition | null): HTMLElement {
   const project = scope().project;
@@ -38,116 +157,33 @@ function editor(flag: FlagDefinition | null): HTMLElement {
     value: flag?.description ?? '',
     placeholder: 'What this flag controls',
   });
-  const enabled = h('input', { type: 'checkbox', checked: flag?.enabled ?? true });
-  const rollout = h('input', {
-    type: 'range',
-    min: 0,
-    max: 100,
-    step: 1,
-    value: flag?.rollout ?? 100,
-  });
-  const rolloutValue = h('output', {}, `${flag?.rollout ?? 100}%`);
-  rollout.addEventListener('input', () => {
-    rolloutValue.textContent = `${rollout.value}%`;
-  });
+  const enabled = enabledToggle(flag?.enabled ?? true);
+  const rollout = rolloutField(flag);
   const variants = h('input', {
     type: 'text',
     value: (flag?.variants ?? []).map((v) => `${v.key}:${v.weight}`).join(', '),
     placeholder: 'control:50, test:50 (leave empty for on/off)',
   });
-  const ruleRows = structuredClone((flag?.rules ?? []) as FlagRuleRow[]);
   const variantKeys = () =>
-    variants.value
-      .split(',')
-      .map((part) => part.trim().split(':')[0]!.trim())
+    parseVariants(variants.value)
+      .map((v) => v.key)
       .filter(Boolean);
+  const ruleRows = structuredClone((flag?.rules ?? []) as FlagRuleRow[]);
   const rules = flagRulesEditor(ruleRows, variantKeys, project);
-  const payloads = h(
-    'textarea',
-    {
-      rows: 3,
-      spellcheck: false,
-      placeholder: '{"control":{"price":10},"test":{"price":12}}  or  {"on":{"banner":"Hello"}}',
-    },
-    flag?.payloads ? JSON.stringify(flag.payloads, null, 2) : '',
-  );
-  const groupTypes = knownGroupTypes(project, () => {
-    for (const t of knownGroupTypes(project, () => {}))
-      if (![...bucketBy.options].some((o) => o.value === t))
-        bucketBy.append(h('option', { value: t }, `${t} (group)`));
-  });
-  const bucketBy = h(
-    'select',
-    {},
-    [
-      ['device', 'Device (default)'],
-      ['person', 'Person (same value on every device)'],
-      ...groupTypes.map((t) => [t, `${t} (group)`]),
-    ].map(([v, label]) =>
-      h('option', { value: v, selected: (flag?.bucketBy ?? 'device') === v }, label),
-    ),
-  );
-  if (flag?.bucketBy && ![...bucketBy.options].some((o) => o.value === flag.bucketBy))
-    bucketBy.append(h('option', { value: flag.bucketBy, selected: true }, flag.bucketBy));
-  let earlyAccess = Boolean(flag?.earlyAccess);
-  const eaName = h('input', {
-    type: 'text',
-    value: flag?.earlyAccess?.name ?? '',
-    placeholder: 'New editor',
-  });
-  const eaDescription = h('input', {
-    type: 'text',
-    value: flag?.earlyAccess?.description ?? '',
-    placeholder: 'What people get by opting in',
-  });
-  const eaDocs = h('input', {
-    type: 'url',
-    value: flag?.earlyAccess?.docsUrl ?? '',
-    placeholder: 'https://… (optional)',
-  });
-  const eaStage = h(
-    'select',
-    {},
-    ['concept', 'alpha', 'beta'].map((v) =>
-      h('option', { value: v, selected: (flag?.earlyAccess?.stage ?? 'beta') === v }, v),
-    ),
-  );
-  const eaFields = h(
-    'div',
-    { class: 'stack tight', hidden: !earlyAccess },
-    h('label', { class: 'field' }, h('span', {}, 'Name shown to people'), eaName),
-    h('label', { class: 'field' }, h('span', {}, 'Description'), eaDescription),
-    h(
-      'div',
-      { class: 'grid-2' },
-      h('label', { class: 'field' }, h('span', {}, 'Stage'), eaStage),
-      h('label', { class: 'field' }, h('span', {}, 'Docs'), eaDocs),
-    ),
-  );
+  const valuesNow = () => (variantKeys().length ? variantKeys() : ['on']);
+  const payloads = payloadEditors(flag?.payloads, valuesNow());
+  variants.addEventListener('input', () => payloads.sync(valuesNow()));
+  const bucketBy = bucketField(flag, project);
+  const earlyAccess = earlyAccessSection(flag);
   const error = h('div', {});
   const form = h(
     'form',
     { class: 'stack' },
-    h('label', { class: 'field' }, h('span', {}, 'Key'), key),
-    h('label', { class: 'field' }, h('span', {}, 'Description'), description),
-    h(
-      'label',
-      { class: 'toggle' },
-      enabled,
-      h(
-        'span',
-        { class: 'toggle-track', 'aria-hidden': 'true' },
-        h('span', { class: 'toggle-thumb' }),
-      ),
-      h('span', { class: 'toggle-label' }, 'Enabled'),
-    ),
-    h(
-      'label',
-      { class: 'field' },
-      h('span', {}, 'Rollout'),
-      h('div', { class: 'range' }, rollout, rolloutValue),
-    ),
-    h('label', { class: 'field' }, h('span', {}, 'Variants'), variants),
+    field('Key', key),
+    field('Description', description),
+    enabled.el,
+    rollout.el,
+    field('Variants', variants),
     h(
       'div',
       { class: 'field' },
@@ -160,26 +196,18 @@ function editor(flag: FlagDefinition | null): HTMLElement {
       ),
     ),
     h(
-      'label',
+      'div',
       { class: 'field' },
-      h('span', {}, 'Payloads (JSON, optional)'),
-      payloads,
+      h('span', {}, 'Payloads (optional)'),
       h(
         'small',
         { class: 'muted' },
-        'Data per value, read with glass.flagPayload(key): copy, prices, config.',
+        'JSON per value, read with glass.flagPayload(key): copy, prices, config, or page changes for a web experiment.',
       ),
+      payloads.el,
     ),
-    h('label', { class: 'field' }, h('span', {}, 'Same value for the same'), bucketBy),
-    toggle({
-      checked: earlyAccess,
-      label: 'Early access: people can opt in themselves (glass.earlyAccessFeatures())',
-      onChange: (c) => {
-        earlyAccess = c;
-        eaFields.hidden = !c;
-      },
-    }),
-    eaFields,
+    bucketBy.el,
+    earlyAccess.el,
     error,
     h(
       'div',
@@ -190,34 +218,23 @@ function editor(flag: FlagDefinition | null): HTMLElement {
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     try {
-      const parsedVariants = variants.value.trim()
-        ? variants.value.split(',').map((part) => {
-            const [k, w] = part.trim().split(':');
-            return { key: k!.trim(), weight: Number(w ?? 1) };
-          })
-        : [];
-      const body = {
+      const collected = payloads.collect();
+      if (!collected.ok) {
+        collected.focus();
+        throw new Error(collected.message);
+      }
+      const parsedVariants = parseVariants(variants.value);
+      await api.put(`/api/flags/${encodeURIComponent(key.value)}`, {
         project,
         description: description.value || undefined,
-        enabled: enabled.checked,
-        rollout: Number(rollout.value),
+        enabled: enabled.value(),
+        rollout: rollout.value(),
         variants: parsedVariants.length ? parsedVariants : undefined,
         rules: cleanFlagRules(ruleRows),
-        payloads: payloads.value.trim() ? JSON.parse(payloads.value) : null,
-        bucketBy: bucketBy.value === 'device' ? null : bucketBy.value,
-        earlyAccess:
-          earlyAccess && eaName.value.trim()
-            ? {
-                name: eaName.value.trim(),
-                stage: eaStage.value,
-                ...(eaDescription.value.trim() ? { description: eaDescription.value.trim() } : {}),
-                ...(eaDocs.value.trim() ? { docsUrl: eaDocs.value.trim() } : {}),
-              }
-            : null,
-      };
-      if (earlyAccess && !eaName.value.trim())
-        throw new Error('Give the early access feature a name people will see.');
-      await api.put(`/api/flags/${encodeURIComponent(key.value)}`, body);
+        payloads: collected.payloads,
+        bucketBy: bucketBy.value(),
+        earlyAccess: earlyAccess.value(),
+      });
       toast(flag ? 'Flag saved' : 'Flag created');
       go('flags');
     } catch (err) {

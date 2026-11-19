@@ -11,6 +11,8 @@ import { chromium, type Page } from 'playwright';
 import { startDevServer } from '../packages/worker/test/server.ts';
 
 const out = process.argv[2] ?? 'test-results/ui';
+/** UI_ONLY=flag,insights-map runs just those pages, for a quick look while working on them. */
+const only = process.env.UI_ONLY ? new Set(process.env.UI_ONLY.split(',')) : null;
 mkdirSync(out, { recursive: true });
 const server = await startDevServer({ port: 0, demoPort: 0, memory: true });
 const base = server.glassUrl;
@@ -636,6 +638,22 @@ const checks: Record<string, (p: Page) => Promise<string | null>> = {
       : null;
   },
 };
+checks.flag = async (p) => {
+  // A payload with a mistake is marked at its line, and saving says what's wrong.
+  const editor = p.locator('.payload-fold[open] textarea.code-input').first();
+  if (!(await editor.count())) return 'no open payload editor';
+  await editor.fill('{\n  "cta": "Buy now"\n  "size": 2\n}');
+  const status = await p.locator('.payload-fold[open] .json-status').first().textContent();
+  const marked = await p.locator('.payload-fold[open] .code-error').count();
+  if (!status?.includes('Line 3, column 3') || marked === 0)
+    return `invalid JSON is not marked at its line (status: ${status}, squiggles: ${marked})`;
+  await p.getByRole('button', { name: 'Save changes' }).click();
+  await p.waitForTimeout(300);
+  const error = (await p.locator('form .error, form [role=alert]').allTextContents()).join(' ');
+  return /Payload for "control"/.test(error)
+    ? null
+    : `saving invalid JSON did not explain why (${error})`;
+};
 const MOBILE = new Set([
   'insights-map',
   'insights-pie',
@@ -666,6 +684,7 @@ for (const [theme, width, height, suffix] of [
   const page = await session(theme, width, height);
   for (const [name, route] of routes) {
     if (suffix === '-mobile' && !MOBILE.has(name)) continue;
+    if (only && !only.has(name)) continue;
     await page.goto(`${base}/app#/${route}`);
     await page.waitForTimeout(900);
     const text = await page
