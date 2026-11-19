@@ -20,7 +20,7 @@ export type Scope = 'read' | 'admin' | 'server';
 const derived = new Map<string, string>();
 
 /** The server key for this deployment (explicit, or derived from the admin key). */
-export async function serverKey(env: Env): Promise<string | null> {
+async function serverKey(env: Env): Promise<string | null> {
   if (env.GLASS_SERVER_KEY) return env.GLASS_SERVER_KEY;
   if (!env.GLASS_ADMIN_KEY) return null;
   let key = derived.get(env.GLASS_ADMIN_KEY);
@@ -47,7 +47,7 @@ export async function authenticate(request: Request, env: Env): Promise<Scope | 
 }
 
 /** Whether a key's scope covers what an action needs: admin covers everything, the others only themselves. */
-export function covers(scope: Scope, needed: Scope): boolean {
+function covers(scope: Scope, needed: Scope): boolean {
   return scope === 'admin' || scope === needed;
 }
 

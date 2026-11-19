@@ -574,5 +574,3 @@ export class Dataflare {
     return { distinctId, ...(o.userId ? { userId: o.userId } : {}), flags, payloads };
   }
 }
-
-export default Dataflare;

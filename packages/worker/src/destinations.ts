@@ -37,7 +37,7 @@ export const MAX_ATTEMPTS = 6;
 /** Events that are bookkeeping, not behaviour: not forwarded unless named explicitly. */
 const BOOKKEEPING = new Set(['$pageleave', '$web_vitals', '$exposure']);
 
-export interface DestinationMatch {
+interface DestinationMatch {
   /** Event names; ["*"] for everything. */
   events?: string[];
   filters?: Filter[];
@@ -88,7 +88,7 @@ export function encryptionKey(env: Env): Promise<CryptoKey> {
 }
 
 /** Inputs whose values are stored encrypted and never shown again. */
-export function secretInputs(template: DestinationTemplate): Set<string> {
+function secretInputs(template: DestinationTemplate): Set<string> {
   return new Set(
     template.inputs.filter((i) => i.type === 'secret' || i.key === 'headers').map((i) => i.key),
   );
@@ -339,10 +339,7 @@ export function deliveryEvent(row: StoredEvent): DeliveryEvent {
   };
 }
 
-export function matches(
-  d: { template: string; match: DestinationMatch },
-  e: DeliveryEvent,
-): boolean {
+function matches(d: { template: string; match: DestinationMatch }, e: DeliveryEvent): boolean {
   const events = d.match.events?.length
     ? d.match.events
     : (TEMPLATES[d.template]?.defaultEvents ?? []);
@@ -429,7 +426,7 @@ export interface DeliveryOutcome {
 }
 
 /** Render and send one delivery. */
-export async function deliver(
+async function deliver(
   m: DeliveryMessage,
   destination: {
     template: string;
@@ -479,7 +476,7 @@ export async function deliver(
 }
 
 /** Backoff before attempt n (1-based): 10s, 40s, 2.5m, 10m, 40m… */
-export const backoffSeconds = (attempt: number) => Math.min(6 * 3600, 10 * 4 ** (attempt - 1));
+const backoffSeconds = (attempt: number) => Math.min(6 * 3600, 10 * 4 ** (attempt - 1));
 
 type Counter = Map<
   string,
@@ -588,7 +585,7 @@ export async function consumeDeliveries(
 }
 
 /** Outbox deliveries per five-minute tick: keeps the tick inside the Free plan's 50 subrequests. */
-export const OUTBOX_PER_TICK = 20;
+const OUTBOX_PER_TICK = 20;
 
 /**
  * Maintenance: deliver what is due in the outbox (no queue bound, failed enqueues, retries).

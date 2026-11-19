@@ -39,7 +39,7 @@ export interface ExperimentGoal {
 }
 
 /** Analysis options stored with an experiment. */
-export interface ExperimentSettings {
+interface ExperimentSettings {
   engine?: 'bayesian' | 'frequentist';
   confidence?: 0.9 | 0.95 | 0.99;
   exposure?: {
@@ -180,7 +180,7 @@ export interface CreateExperimentInput extends ExperimentSettings {
 }
 
 /** One change a web experiment variant makes to the page. */
-export interface WebTransform {
+interface WebTransform {
   selector: string;
   text?: string;
   html?: string;

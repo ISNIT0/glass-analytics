@@ -490,7 +490,7 @@ export async function upsertPerson(
 const typeCache = new Map<string, { types: Set<string>; until: number }>();
 
 /** Group types the project already has, cached briefly per isolate. */
-export async function groupTypes(db: D1Database, project: string, fresh = false) {
+async function groupTypes(db: D1Database, project: string, fresh = false) {
   const hit = typeCache.get(project);
   if (!fresh && hit && hit.until > Date.now()) return hit.types;
   const { results } = await db

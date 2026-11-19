@@ -44,7 +44,7 @@ export function clearRateCache(): void {
 const dayOf = (ms: number) => new Date(ms).toISOString().slice(0, 10);
 
 /** The rates in force on a day: the latest ECB day on or before it. */
-export async function ratesFor(env: Env, day: string): Promise<RateTable> {
+async function ratesFor(env: Env, day: string): Promise<RateTable> {
   const hit = tables.get(day);
   if (hit) return hit;
   const { results } = await env.DB.prepare(
@@ -78,7 +78,7 @@ export async function storeRates(env: Env, rates: FxRate[]): Promise<number> {
 }
 
 /** The latest day the ECB has published by `now` (working days, after 16:00 UTC). */
-export function expectedRateDay(now: number): string {
+function expectedRateDay(now: number): string {
   const d = new Date(now);
   if (d.getUTCHours() < 16) d.setUTCDate(d.getUTCDate() - 1);
   while (d.getUTCDay() === 0 || d.getUTCDay() === 6) d.setUTCDate(d.getUTCDate() - 1);

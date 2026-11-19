@@ -69,7 +69,7 @@ const INTERVAL_MS: Record<string, number> = {
 };
 
 /** The bucket a moment falls in, or null when it is outside the chart. */
-export function bucketIndex(buckets: number[], at: number, interval: string): number | null {
+function bucketIndex(buckets: number[], at: number, interval: string): number | null {
   if (!buckets.length || at < buckets[0]!) return null;
   let i = buckets.length - 1;
   while (i > 0 && buckets[i]! > at) i--;

@@ -128,7 +128,7 @@ interface Member {
 }
 
 /** Person ids from pasted text or an uploaded CSV: an id column if there's a header, else the first. */
-export function parseIds(text: string): string[] {
+function parseIds(text: string): string[] {
   const lines = text
     .split(/\r?\n/)
     .map((l) => l.trim())

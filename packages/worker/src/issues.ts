@@ -535,7 +535,7 @@ function bucket(env: Env) {
 }
 
 /** The path a map is filed under: the served path of the minified file, e.g. "/assets/index-BxT8.js". */
-export function normalisePath(path: string): string {
+function normalisePath(path: string): string {
   const p = framePath(path.trim()).replace(/\.map$/, '');
   return p.startsWith('/') || /^[a-z]+:/i.test(p) ? p : `/${p}`;
 }

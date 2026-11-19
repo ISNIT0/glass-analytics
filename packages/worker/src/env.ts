@@ -50,7 +50,7 @@ export interface R2Bucket {
 }
 
 /** A Cloudflare Queues producer binding. */
-export interface QueueProducer {
+interface QueueProducer {
   send(body: unknown, options?: { delaySeconds?: number }): Promise<void>;
   sendBatch(messages: { body: unknown; delaySeconds?: number }[]): Promise<void>;
 }

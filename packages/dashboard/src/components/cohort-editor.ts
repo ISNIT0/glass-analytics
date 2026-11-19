@@ -11,9 +11,9 @@ import { cleanFilters, type FilterRow, filterEditor } from './filter-editor.ts';
 import { icon } from './icons.ts';
 import { eventPicker } from './picker.ts';
 
-export type Condition = { type: string } & Record<string, unknown>;
+type Condition = { type: string } & Record<string, unknown>;
 
-export interface CohortGroup {
+interface CohortGroup {
   match?: 'all' | 'any';
   conditions: Condition[];
 }
@@ -42,7 +42,7 @@ const TYPES: [string, string][] = [
 ];
 
 /** A new condition of a type, with sensible windows filled in. */
-export function newCondition(type: string): Condition {
+function newCondition(type: string): Condition {
   switch (type) {
     case 'property':
       return { type, property: '', op: 'eq', value: '' };

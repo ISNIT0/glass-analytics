@@ -24,7 +24,7 @@ import { HttpError } from './http.ts';
 import type { EventStore } from './stores/types.ts';
 
 /** Static cohorts the lake can read inline. */
-export const STATIC_LAKE_LIMIT = 10_000;
+const STATIC_LAKE_LIMIT = 10_000;
 /** Dynamic cohorts recomputed per maintenance tick, and how stale they may get. */
 const REFRESH_PER_TICK = 5;
 const REFRESH_AFTER_MS = 60 * 60_000;

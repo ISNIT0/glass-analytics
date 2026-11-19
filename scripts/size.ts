@@ -14,13 +14,18 @@ const root = join(import.meta.dirname, '..');
 
 /** Gzipped size limits in KB. */
 const BUDGETS: Record<string, number> = {
-  'packages/web/dist/index.js': 7.5, // npm SDK
-  'packages/web/dist/glass.js': 5.5, // script-tag SDK
+  // The SDKs grew with groups, flag payloads, bootstrap, overrides, early access,
+  // captureException and web experiments (deepen-coverage: 4.5 → 5.9 KB script tag).
+  'packages/web/dist/index.js': 9.25, // npm SDK
+  'packages/web/dist/glass.js': 6.25, // script-tag SDK
   'packages/web/dist/replay.js': 65, // replay recorder, loaded on demand
-  'packages/dashboard/dist/app.js': 150,
-  'packages/dashboard/dist/app.css': 17,
-  'packages/worker/dist/worker.js': 450,
-  'packages/cli/dist/glass.js': 32,
+  // Admin-only: the Errors, Revenue, Groups and Pipelines pages, the cohort editor
+  // and the world map's country outlines (about 12 KB).
+  'packages/dashboard/dist/app.js': 200,
+  'packages/dashboard/dist/app.css': 18,
+  // Destinations, exports, issues, revenue and group analytics (Workers allow 3 MB on Free).
+  'packages/worker/dist/worker.js': 600,
+  'packages/cli/dist/glass.js': 42, // import, sourcemaps and stripe commands
 };
 
 const rows: string[] = [];
