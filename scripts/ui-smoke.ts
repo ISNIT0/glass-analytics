@@ -619,6 +619,23 @@ const actions: Record<string, (p: Page) => Promise<void>> = {
     await p.waitForTimeout(700);
   },
 };
+/** Assertions on what a page shows, run in every theme and width; each returns a problem or null. */
+const checks: Record<string, (p: Page) => Promise<string | null>> = {
+  // Countries with data are shaded: the stylesheet's grey once won over the shade.
+  'insights-map': async (p) => {
+    const fills = await p.evaluate(() => {
+      const fill = (el: Element | null) => (el ? getComputedStyle(el).fill : null);
+      return {
+        shaded: fill(document.querySelector('.world-map .country.has-value')),
+        plain: fill(document.querySelector('.world-map .country:not(.has-value)')),
+      };
+    });
+    if (!fills.shaded) return 'no country on the map has a value';
+    return fills.shaded === fills.plain
+      ? `countries with values are not shaded (both ${fills.shaded})`
+      : null;
+  },
+};
 const MOBILE = new Set([
   'insights-map',
   'insights-pie',
@@ -667,6 +684,8 @@ for (const [theme, width, height, suffix] of [
       );
     await shot(page, `${out}/${name}${suffix}.png`);
     for (const gap of await touchingBlocks(page)) problems.push(`${name}${suffix}: ${gap}`);
+    const problem = await checks[name]?.(page).catch((e: Error) => `check failed: ${e.message}`);
+    if (problem) problems.push(`${name}${suffix}: ${problem}`);
     const act = actions[name];
     if (act && suffix !== '-mobile') {
       await act(page).catch((e) => problems.push(`${name}${suffix}: action failed: ${e.message}`));

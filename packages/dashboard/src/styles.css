@@ -6128,6 +6128,10 @@ input.tiny {
   transition: opacity 0.12s ease;
 }
 
+.world-map .country.has-value {
+  fill: var(--country-fill);
+}
+
 .world-map .country:hover {
   opacity: 0.8;
 }

@@ -284,40 +284,51 @@ function breakdownEditor(
   );
 }
 
-function sanitizeSpec(kind: Kind, spec: Spec): Spec {
-  const out = structuredClone(spec) as Spec;
-  const global = cleanFilters(out.filters as FilterRow[] | undefined);
-  if (global) out.filters = global;
-  else delete out.filters;
+/** Set `key` when there is a value, or leave it out. */
+function setOrDelete(out: Spec, key: string, value: unknown): void {
+  if (value === undefined) delete out[key];
+  else out[key] = value;
+}
 
-  const clean = <T extends { filters?: FilterRow[] }>(s: T): T => {
-    const filters = cleanFilters(s.filters);
-    const next = { ...s };
-    if (filters) next.filters = filters;
-    else delete next.filters;
-    return next;
-  };
-  if (kind === 'trends') out.series = (out.series as SeriesSpec[]).map(clean);
-  if (kind === 'funnel') {
-    out.steps = (out.steps as StepSpec[]).map(clean);
+/** A series, step or event with its unfinished filter rows dropped. */
+function withCleanFilters<T extends { filters?: FilterRow[] }>(s: T): T {
+  const next = { ...s };
+  const filters = cleanFilters(s.filters);
+  if (filters) next.filters = filters;
+  else delete next.filters;
+  return next;
+}
+
+const KIND_CLEANERS: Partial<Record<Kind, (out: Spec) => void>> = {
+  trends: (out) => {
+    out.series = (out.series as SeriesSpec[]).map(withCleanFilters);
+  },
+  funnel: (out) => {
+    out.steps = (out.steps as StepSpec[]).map(withCleanFilters);
     // Exclusions without an event yet are still being filled in.
     const exclusions = ((out.exclusions as { event: string }[] | undefined) ?? []).filter(
       (x) => x.event,
     );
-    if (exclusions.length) out.exclusions = exclusions;
-    else delete out.exclusions;
-  }
-  if (kind === 'retention') {
+    setOrDelete(out, 'exclusions', exclusions.length ? exclusions : undefined);
+  },
+  retention: (out) => {
     for (const key of ['cohortEvent', 'returnEvent'] as const) {
       const step = out[key] as StepSpec | undefined;
-      if (step) out[key] = clean(step);
+      if (step) out[key] = withCleanFilters(step);
     }
-  }
+  },
+};
+
+function sanitizeSpec(kind: Kind, spec: Spec): Spec {
+  const out = structuredClone(spec) as Spec;
+  setOrDelete(out, 'filters', cleanFilters(out.filters as FilterRow[] | undefined));
+  KIND_CLEANERS[kind]?.(out);
   const breakdowns = readBreakdowns(out)
     .map((v) => v.trim())
     .filter(Boolean);
-  if (breakdowns.length) out.breakdown = breakdowns;
-  else delete out.breakdown;
+  setOrDelete(out, 'breakdown', breakdowns.length ? breakdowns : undefined);
+  // A map wants every country, not the top ten, however the breakdown got there.
+  if (out.display === 'world_map' && breakdowns.join() === 'country') out.breakdownLimit ??= 50;
   return out;
 }
 

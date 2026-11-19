@@ -4,7 +4,7 @@
  * charts.ts.)
  */
 
-import { h, mount, s } from '../dom.ts';
+import { type Child, h, mount, s } from '../dom.ts';
 import { bucketLabel, count, countryFlag, countryName, percent } from '../format.ts';
 import { barList, SERIES } from './charts.ts';
 import { table } from './ui.ts';
@@ -116,59 +116,32 @@ export function pieChart(
   );
 }
 
-/**
- * A choropleth of values by country (ISO alpha-2 codes), shaded on a square-root
- * scale so mid-sized countries still show, with the exact numbers listed below.
- */
-export function worldMap(
-  rows: { code: string; value: number }[],
-  fmt: (n: number) => string = count,
-): HTMLElement {
+/** Country codes that are not a place on the map: no country, the overflow line, Tor and unknown. */
+const NOT_A_COUNTRY = new Set(['(NONE)', 'OTHER', 'XX', 'T1', '']);
+
+/** Sum values by upper-case ISO alpha-2 code (UK is GB); anything that isn't a country is kept apart. */
+function countryValues(rows: { code: string; value: number }[]): {
+  values: Map<string, number>;
+  unknown: number;
+} {
   const values = new Map<string, number>();
+  let unknown = 0;
   for (const r of rows) {
-    const code = r.code.toUpperCase();
-    values.set(code, (values.get(code) ?? 0) + r.value);
+    const raw = r.code.trim().toUpperCase();
+    const code = raw === 'UK' ? 'GB' : raw;
+    if (NOT_A_COUNTRY.has(code) || !/^[A-Z]{2}$/.test(code)) unknown += r.value;
+    else values.set(code, (values.get(code) ?? 0) + r.value);
   }
-  const max = Math.max(0, ...values.values());
-  const total = [...values.values()].reduce((n, v) => n + v, 0);
-  const shade = (v: number) =>
-    `color-mix(in srgb, var(--glass-green) ${Math.round(12 + 78 * Math.sqrt(v / (max || 1)))}%, var(--surface-2))`;
+  return { values, unknown };
+}
+
+/** The fill for a country's value, on a square-root scale so mid-sized countries still show. */
+const shadeFor = (max: number) => (v: number) =>
+  `color-mix(in srgb, var(--glass-green) ${Math.round(12 + 78 * Math.sqrt(v / (max || 1)))}%, var(--surface-2))`;
+
+/** The floating label that follows the pointer over the map. */
+function mapReadout(svg: SVGElement): HTMLElement {
   const readout = h('div', { class: 'readout map-readout', hidden: true });
-  const svg = s(
-    'svg',
-    {
-      viewBox: `0 0 ${WORLD_WIDTH} ${WORLD_HEIGHT}`,
-      class: 'world-map',
-      role: 'img',
-      'aria-label': `Map of ${values.size} countries`,
-    },
-    ...Object.entries(WORLD_PATHS).map(([code, d]) => {
-      const v = values.get(code);
-      const path = s('path', {
-        d,
-        class: v ? 'country has-value' : 'country',
-        fill: v ? shade(v) : null,
-      });
-      path.addEventListener('mouseenter', () => {
-        if (code.startsWith('_')) return;
-        readout.hidden = false;
-        mount(
-          readout,
-          h('strong', {}, `${countryFlag(code)} ${countryName(code)}`),
-          h(
-            'span',
-            { class: 'readout-row' },
-            h('span', { class: 'readout-label' }, v ? percent(v / (total || 1), 1) : 'No data'),
-            h('span', { class: 'readout-value' }, v ? fmt(v) : '–'),
-          ),
-        );
-      });
-      path.addEventListener('mouseleave', () => {
-        readout.hidden = true;
-      });
-      return path;
-    }),
-  );
   svg.addEventListener('mousemove', (event: Event) => {
     const e = event as MouseEvent;
     const box = svg.getBoundingClientRect();
@@ -178,6 +151,76 @@ export function worldMap(
     readout.style.transform =
       x > box.width * 0.62 ? 'translate(calc(-100% - 14px), -100%)' : 'translate(14px, -100%)';
   });
+  return readout;
+}
+
+function showCountry(
+  readout: HTMLElement,
+  code: string,
+  v: number | undefined,
+  total: number,
+  fmt: (n: number) => string,
+): void {
+  readout.hidden = false;
+  mount(
+    readout,
+    h('strong', {}, `${countryFlag(code)} ${countryName(code)}`),
+    h(
+      'span',
+      { class: 'readout-row' },
+      h('span', { class: 'readout-label' }, v ? percent(v / (total || 1), 1) : 'No data'),
+      h('span', { class: 'readout-value' }, v ? fmt(v) : '–'),
+    ),
+  );
+}
+
+/**
+ * One country's outline. The shade goes in a custom property, not the `fill`
+ * attribute: the stylesheet's `.country` fill would win over an attribute.
+ */
+function countryPath(
+  code: string,
+  d: string,
+  v: number | undefined,
+  shade: (v: number) => string,
+  hover: (code: string, v: number | undefined) => void,
+  leave: () => void,
+): SVGElement {
+  const path = s('path', {
+    d,
+    class: v ? 'country has-value' : 'country',
+    style: v ? `--country-fill:${shade(v)}` : null,
+  });
+  if (!code.startsWith('_')) path.addEventListener('mouseenter', () => hover(code, v));
+  path.addEventListener('mouseleave', leave);
+  return path;
+}
+
+/**
+ * A choropleth of values by country (ISO alpha-2 codes), shaded on a square-root
+ * scale so mid-sized countries still show, with the exact numbers listed below.
+ */
+export function worldMap(
+  rows: { code: string; value: number }[],
+  fmt: (n: number) => string = count,
+): HTMLElement {
+  const { values, unknown } = countryValues(rows);
+  const max = Math.max(0, ...values.values());
+  const total = [...values.values()].reduce((n, v) => n + v, 0) + unknown;
+  const shade = shadeFor(max);
+  const svg = s('svg', {
+    viewBox: `0 0 ${WORLD_WIDTH} ${WORLD_HEIGHT}`,
+    class: 'world-map',
+    role: 'img',
+    'aria-label': `Map of ${values.size} countries`,
+  });
+  const readout = mapReadout(svg);
+  const hover = (code: string, v: number | undefined) => showCountry(readout, code, v, total, fmt);
+  const leave = () => {
+    readout.hidden = true;
+  };
+  for (const [code, d] of Object.entries(WORLD_PATHS))
+    svg.append(countryPath(code, d, values.get(code), shade, hover, leave));
   const unmapped = [...values.keys()].filter((c) => !WORLD_PATHS[c]);
   return h(
     'div',
@@ -201,12 +244,17 @@ export function worldMap(
         format: fmt,
       },
     ),
-    unmapped.length
-      ? h(
-          'p',
-          { class: 'muted small' },
-          `Too small for the map, listed above: ${unmapped.map((c) => countryName(c)).join(', ')}.`,
-        )
-      : null,
+    mapFootnote(unmapped, unknown, fmt),
   );
+}
+
+/** What the map can't show: countries too small to draw, and values with no country. */
+function mapFootnote(unmapped: string[], unknown: number, fmt: (n: number) => string): Child {
+  const notes: string[] = [];
+  if (unmapped.length)
+    notes.push(
+      `Too small for the map, listed above: ${unmapped.map((c) => countryName(c)).join(', ')}.`,
+    );
+  if (unknown > 0) notes.push(`Unknown or other countries: ${fmt(unknown)}.`);
+  return notes.length ? h('p', { class: 'muted small' }, notes.join(' ')) : null;
 }
