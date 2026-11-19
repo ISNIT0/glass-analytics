@@ -29,7 +29,7 @@ interface Entry {
   status: HTMLElement;
 }
 
-export type PayloadsResult =
+type PayloadsResult =
   | { ok: true; payloads: Record<string, unknown> | null }
   | { ok: false; message: string; focus: () => void };
 

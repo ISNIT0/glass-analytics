@@ -313,17 +313,38 @@ export function iconButton(
   );
 }
 
-export function toast(message: string, kind: 'ok' | 'error' = 'ok'): void {
+/** A short message at the bottom of the screen, with an optional action such as Undo. */
+export function toast(
+  message: string,
+  kind: 'ok' | 'error' = 'ok',
+  action?: { label: string; run: () => void },
+): void {
   for (const old of document.querySelectorAll('.toast')) old.remove();
   const el = h(
     'div',
     { class: `toast ${kind}`, role: 'status' },
     icon(kind === 'ok' ? 'check' : 'alert', 16),
     message,
+    action
+      ? h(
+          'button',
+          {
+            type: 'button',
+            class: 'toast-action',
+            onclick: () => {
+              el.remove();
+              action.run();
+            },
+          },
+          action.label,
+        )
+      : null,
   );
   document.body.appendChild(el);
-  setTimeout(() => el.classList.add('leaving'), 2800);
-  setTimeout(() => el.remove(), 3200);
+  // A toast with an action stays long enough to use it.
+  const stay = action ? 6000 : 2800;
+  setTimeout(() => el.classList.add('leaving'), stay);
+  setTimeout(() => el.remove(), stay + 400);
 }
 
 /** An initials avatar with a stable colour. */

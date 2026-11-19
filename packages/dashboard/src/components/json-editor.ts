@@ -30,9 +30,7 @@ export interface JsonEditorOptions {
 }
 
 /** What the editor holds: nothing, a valid value, or a problem to show. */
-export type JsonState =
-  | { ok: true; empty: boolean; value: unknown }
-  | { ok: false; message: string };
+type JsonState = { ok: true; empty: boolean; value: unknown } | { ok: false; message: string };
 
 export interface JsonEditor {
   el: HTMLElement;

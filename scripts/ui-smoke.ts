@@ -542,6 +542,10 @@ async function touchingBlocks(page: Page): Promise<string[]> {
 }
 
 const actions: Record<string, (p: Page) => Promise<void>> = {
+  'insights-funnel': async (p) => {
+    await p.locator('.fold > summary').first().click();
+    await p.waitForTimeout(300);
+  },
   'insights-trends': async (p) => {
     await p.getByRole('button', { name: 'People' }).first().click();
     await p.waitForTimeout(700);
@@ -637,6 +641,26 @@ const checks: Record<string, (p: Page) => Promise<string | null>> = {
       ? `countries with values are not shaded (both ${fills.shaded})`
       : null;
   },
+};
+checks['insights-trends'] = async (p) => {
+  // A setting hidden in the closed "More options" fold still shows as a chip.
+  const chips = await p.locator('.fold:not([open]) .setting-chip').allTextContents();
+  if (!chips.some((c) => /company/.test(c)))
+    return `the closed fold shows no chip for counting by company (${chips.join(', ')})`;
+  // The formula editor suggests what comes next, and checks as you type.
+  const field = p.locator('.formula-row textarea.code-input').first();
+  await field.click();
+  await field.fill('B / ');
+  await p.waitForTimeout(100);
+  const hints = await p.locator('.formula-hints:not([hidden]) li').allTextContents();
+  if (!hints.some((t) => t.startsWith('A')))
+    return `no series suggested after "B / " (${hints.join(' | ')})`;
+  await field.fill('B / D');
+  const message = (await p.locator('.formula-row .code-message').first().textContent()) ?? '';
+  if (!/D isn't a series/.test(message))
+    return `no inline error for an unknown series (${message})`;
+  await field.fill('B / A * 100');
+  return null;
 };
 checks.flag = async (p) => {
   // A payload with a mistake is marked at its line, and saving says what's wrong.

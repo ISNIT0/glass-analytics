@@ -14,7 +14,7 @@ export interface CodeToken {
 }
 
 /** An error to underline, from `start` to `end` (character offsets), with what's wrong. */
-export interface CodeMarker {
+interface CodeMarker {
   start: number;
   end: number;
   message: string;
@@ -135,6 +135,11 @@ export function codeField(options: CodeFieldOptions): CodeField {
   };
   const grow = () => {
     if (!options.autoGrow) return;
+    // Not on the page yet: there's nothing to measure, so measure once it is.
+    if (!input.isConnected) {
+      requestAnimationFrame(() => input.isConnected && grow());
+      return;
+    }
     input.style.height = 'auto';
     input.style.height = `${Math.min(options.autoGrow, input.scrollHeight + 2)}px`;
   };

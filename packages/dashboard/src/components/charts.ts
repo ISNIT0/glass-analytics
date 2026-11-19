@@ -28,6 +28,8 @@ export interface LineSeries {
   previous?: number[];
   /** A fitted trend, drawn as a thin dashed line in the series colour. */
   trend?: number[];
+  /** How to print this line's values (e.g. a percent formula); the chart's format otherwise. */
+  format?: (n: number) => string;
 }
 
 /** A note pinned to a moment, shown as a marker on time charts. */
@@ -358,7 +360,7 @@ export function lineChart(
             }),
           );
           if (options.showValues && roomy && n * groups <= 120)
-            valueLabel(bx + bw / 2, top - 5, fmt(v));
+            valueLabel(bx + bw / 2, top - 5, (line.format ?? fmt)(v));
         });
         if (line.trend)
           marks.push(
@@ -402,7 +404,7 @@ export function lineChart(
           marks.push(s('circle', { cx: x(0), cy: y(line.values[0] ?? 0), r: 4, fill: color }));
         if (options.showValues && roomy && n * series.length <= 120)
           line.values.forEach((v, i) => {
-            valueLabel(x(i), y(v) - 8, fmt(v));
+            valueLabel(x(i), y(v) - 8, (line.format ?? fmt)(v));
           });
       });
     }
@@ -495,8 +497,8 @@ export function lineChart(
               'span',
               { class: 'readout-value' },
               stacked
-                ? `${percent(shares[si]![i]!, 0)} · ${fmt(line.values[i] ?? 0)}`
-                : fmt(line.values[i] ?? 0),
+                ? `${percent(shares[si]![i]!, 0)} · ${(line.format ?? fmt)(line.values[i] ?? 0)}`
+                : (line.format ?? fmt)(line.values[i] ?? 0),
             ),
             line.previous ? changeText(line.values[i] ?? 0, line.previous[i] ?? 0) : null,
           ),
@@ -513,7 +515,7 @@ export function lineChart(
           ? h(
               'span',
               { class: 'readout-prev muted' },
-              `Previous: ${series.map((l) => (l.previous ? fmt(l.previous[i] ?? 0) : '–')).join(' · ')}`,
+              `Previous: ${series.map((l) => (l.previous ? (l.format ?? fmt)(l.previous[i] ?? 0) : '–')).join(' · ')}`,
             )
           : null,
       );
