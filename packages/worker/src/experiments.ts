@@ -192,67 +192,60 @@ interface WebTransform {
 const KEY = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 
 /** Create an experiment, creating its flag (disabled until start) if needed. */
-export async function createExperiment(
-  db: D1Database,
-  project: string,
-  input: CreateExperimentInput,
-  actor = '',
-): Promise<Experiment> {
-  if (!KEY.test(input.key)) {
+function checkInput(input: CreateExperimentInput): void {
+  if (!KEY.test(input.key))
     throw new HttpError(
       400,
       `Invalid experiment key "${input.key}"`,
       'Use lowercase letters, numbers, hyphens or underscores.',
     );
-  }
-  if (!input.goal && !input.metrics?.length) {
+  if (!input.goal && !input.metrics?.length)
     throw new HttpError(400, 'An experiment needs a goal or at least one metric');
-  }
+}
+
+/** Every variant gets a web payload (control's is empty), so the SDK knows to record exposures. */
+function webPayloads(input: CreateExperimentInput, variantKeys: string[]) {
+  if (!input.transforms) return undefined;
+  const unknown = Object.keys(input.transforms).filter((v) => !variantKeys.includes(v));
+  if (unknown.length)
+    throw new HttpError(400, `transforms for unknown variants: ${unknown.join(', ')}`);
+  return Object.fromEntries(
+    variantKeys.map((v) => [v, { type: 'web', transforms: input.transforms![v] ?? [] }]),
+  );
+}
+
+const DEFAULT_VARIANTS = [
+  { key: 'control', weight: 50 },
+  { key: 'test', weight: 50 },
+];
+
+/** The experiment's flag: created off (with its variants) when new, given the page changes when not. */
+async function experimentFlag(
+  db: D1Database,
+  project: string,
+  input: CreateExperimentInput,
+  actor: string,
+): Promise<FlagDefinition> {
   const flagKey = input.flag ?? input.key;
-  let flag = await getFlag(db, project, flagKey);
-  // Every variant gets a web payload (control's is empty), so the SDK knows to record exposures.
-  const variantKeys = (
-    flag?.variants ??
-    input.variants ?? [{ key: 'control' }, { key: 'test' }]
-  ).map((v) => v.key);
-  if (input.transforms) {
-    const unknown = Object.keys(input.transforms).filter((v) => !variantKeys.includes(v));
-    if (unknown.length)
-      throw new HttpError(400, `transforms for unknown variants: ${unknown.join(', ')}`);
-  }
-  const payloads = input.transforms
-    ? Object.fromEntries(
-        variantKeys.map((v) => [v, { type: 'web', transforms: input.transforms![v] ?? [] }]),
-      )
-    : undefined;
-  if (!flag) {
-    flag = (
-      await saveFlag(
-        db,
-        project,
-        {
-          key: flagKey,
-          description: `Experiment: ${input.hypothesis ?? input.key}`,
-          enabled: false,
-          rollout: 100,
-          variants: input.variants ?? [
-            { key: 'control', weight: 50 },
-            { key: 'test', weight: 50 },
-          ],
-          ...(payloads ? { payloads } : {}),
-        },
-        actor,
-      )
-    ).flag;
-  } else if (payloads) {
-    flag = (await saveFlag(db, project, { key: flagKey, payloads }, actor)).flag;
-  }
-  if (!flag.variants || flag.variants.length < 2) {
-    throw new HttpError(400, `Flag "${flagKey}" needs at least two variants to run an experiment`);
-  }
-  if (input.holdout) await applyHoldout(db, project, flagKey, input.holdout, actor);
-  const now = Date.now();
-  const definition: Definition = {
+  const flag = await getFlag(db, project, flagKey);
+  const variantKeys = (flag?.variants ?? input.variants ?? DEFAULT_VARIANTS).map((v) => v.key);
+  const payloads = webPayloads(input, variantKeys);
+  if (flag && !payloads) return flag;
+  const fields = flag
+    ? { key: flagKey, payloads }
+    : {
+        key: flagKey,
+        description: `Experiment: ${input.hypothesis ?? input.key}`,
+        enabled: false,
+        rollout: 100,
+        variants: input.variants ?? DEFAULT_VARIANTS,
+        ...(payloads ? { payloads } : {}),
+      };
+  return (await saveFlag(db, project, fields, actor)).flag;
+}
+
+function newDefinition(input: CreateExperimentInput): Definition {
+  return {
     goal: input.goal ?? null,
     metrics: input.metrics ?? [],
     secondary: (input.secondary ?? []).map(asMetric),
@@ -266,11 +259,25 @@ export async function createExperiment(
     mde: input.mde,
     filterTestAccounts: input.filterTestAccounts,
   };
+}
+
+export async function createExperiment(
+  db: D1Database,
+  project: string,
+  input: CreateExperimentInput,
+  actor = '',
+): Promise<Experiment> {
+  checkInput(input);
+  const flag = await experimentFlag(db, project, input, actor);
+  if (!flag.variants || flag.variants.length < 2)
+    throw new HttpError(400, `Flag "${flag.key}" needs at least two variants to run an experiment`);
+  if (input.holdout) await applyHoldout(db, project, flag.key, input.holdout, actor);
+  const now = Date.now();
   await db
     .prepare(
       'INSERT INTO experiments (project, key, flag_key, definition, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
     )
-    .bind(project, input.key, flagKey, JSON.stringify(definition), 'draft', now, now)
+    .bind(project, input.key, flag.key, JSON.stringify(newDefinition(input)), 'draft', now, now)
     .run()
     .catch((err: unknown) => {
       if (String(err).includes('UNIQUE'))

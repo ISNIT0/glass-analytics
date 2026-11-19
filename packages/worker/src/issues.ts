@@ -91,18 +91,28 @@ function alertText(
   return `Spike in ${project}: ${what} happened ${extra.count} times in ${extra.minutes} minutes`;
 }
 
-/**
- * The ingest step (registered in extensions.ts): fingerprint exceptions, create or update their
- * issues, drop exceptions of suppressed issues and those over the per-minute limit, and alert.
- */
-export async function assignIssues(
+type Alert = { kind: AlertKind; id: string; p: Parsed; count?: number; minutes?: number };
+type Settings = EnrichContext['project']['settings'];
+type Group = { known?: Known; items: Parsed[] };
+
+/** One ingest batch's issue work: what to write, what to drop, what to alert on. */
+interface IssueRun {
+  db: Env['DB'];
+  project: string;
+  now: number;
+  minute: number;
+  limit: number;
+  alertsOn: Settings['errorAlerts'];
+  known: Map<string, Known>;
+  drop: Set<StoredEvent>;
+  writes: D1PreparedStatement[];
+  alerts: Alert[];
+}
+
+async function parseExceptions(
   rows: StoredEvent[],
-  ctx: EnrichContext,
-): Promise<StoredEvent[]> {
-  if (!rows.some((r) => r.event === '$exception')) return rows;
-  const project = ctx.project.id;
-  const settings = ctx.project.settings;
-  const db = ctx.env.DB;
+  settings: Settings,
+): Promise<Map<StoredEvent, Parsed>> {
   const parsed = new Map<StoredEvent, Parsed>();
   for (const row of rows) {
     if (row.event !== '$exception') continue;
@@ -115,7 +125,14 @@ export async function assignIssues(
     const info = exceptionInfo(props, row.host, settings.inAppIncludes);
     parsed.set(row, { row, props, info, fp: await fingerprint(info, props.$fingerprint) });
   }
-  const fps = [...new Set([...parsed.values()].map((p) => p.fp))];
+  return parsed;
+}
+
+async function knownIssues(
+  db: Env['DB'],
+  project: string,
+  fps: string[],
+): Promise<Map<string, Known>> {
   const { results } = await db
     .prepare(
       `SELECT f.fingerprint, i.id, i.status, i.resolved_at, i.window_start, i.window_count, i.spike_alerted_at, i.occurrences
@@ -124,186 +141,239 @@ export async function assignIssues(
     )
     .bind(project, JSON.stringify(fps))
     .all<Known>();
-  const known = new Map(results.map((r) => [r.fingerprint, r]));
+  return new Map(results.map((r) => [r.fingerprint, r]));
+}
 
-  // Group by issue.
-  const groups = new Map<string, { known?: Known; items: Parsed[] }>();
-  for (const p of parsed.values()) {
+function groupByIssue(parsed: Iterable<Parsed>, known: Map<string, Known>): Map<string, Group> {
+  const groups = new Map<string, Group>();
+  for (const p of parsed) {
     const k = known.get(p.fp);
     const id = k?.id ?? issueIdFor(p.fp);
     const g = groups.get(id) ?? { known: k, items: [] };
     g.items.push(p);
     groups.set(id, g);
   }
+  return groups;
+}
 
-  const now = ctx.now;
-  const minute = Math.floor(now / 60_000);
-  const limit = settings.errorRateLimitPerMinute ?? DEFAULT_RATE_PER_MINUTE;
-  const alertsOn = settings.errorAlerts;
-  const spike = alertsOn?.spike;
-  const drop = new Set<StoredEvent>();
-  const writes: D1PreparedStatement[] = [];
-  const alerts: { kind: AlertKind; id: string; p: Parsed; count?: number; minutes?: number }[] = [];
-
-  for (const [id, g] of groups) {
-    const items = g.items.sort((a, b) => a.row.ts_ms - b.row.ts_ms);
-    const first = items[0]!;
-    const latest = items.at(-1)!;
-    const isNew = !g.known;
-    if (isNew) {
-      writes.push(
-        db
-          .prepare(
-            `INSERT OR IGNORE INTO error_issues (project, id, status, type, message, first_seen, last_seen, occurrences,
-               first_release, last_release, created_at, updated_at)
-             VALUES (?, ?, 'active', ?, ?, ?, ?, 0, ?, ?, ?, ?)`,
-          )
-          .bind(
-            project,
-            id,
-            first.info.type,
-            first.info.message,
-            first.row.ts_ms,
-            latest.row.ts_ms,
-            first.info.release,
-            latest.info.release,
-            now,
-            now,
-          ),
-      );
-    }
-    for (const fp of new Set(items.map((p) => p.fp))) {
-      if (!known.has(fp)) {
-        writes.push(
-          db
-            .prepare(
-              'INSERT OR IGNORE INTO error_fingerprints (project, fingerprint, issue_id, first_seen) VALUES (?, ?, ?, ?)',
-            )
-            .bind(project, fp, id, now),
-        );
-      }
-    }
-    // Suppressed issues keep nothing; others keep up to the per-minute limit.
-    const keep: Parsed[] = [];
-    for (const p of items) {
-      if (g.known?.status === 'suppressed') {
-        drop.add(p.row);
-        continue;
-      }
-      const key = `${project}\u0000${id}`;
-      const rate = rates.get(key);
-      const n = rate && rate.minute === minute ? rate.n : 0;
-      if (n >= limit) {
-        drop.add(p.row);
-        continue;
-      }
-      rates.set(key, { minute, n: n + 1 });
-      keep.push(p);
-    }
-    if (rates.size > 10_000) for (const [k, r] of rates) if (r.minute < minute) rates.delete(k);
-    const dropped = items.length - keep.length;
-    for (const p of keep) {
-      p.props.$issue_id = id;
-      p.props.$exception_fingerprint = p.fp.slice(0, 32);
-    }
-
-    // Spike windows (tumbling), only when spike alerts are on.
-    let windowStart = g.known?.window_start ?? 0;
-    let windowCount = g.known?.window_count ?? 0;
-    let spikeAlertedAt = g.known?.spike_alerted_at ?? null;
-    if (spike && keep.length) {
-      const span = spike.minutes * 60_000;
-      if (now - windowStart >= span) {
-        windowStart = now;
-        windowCount = 0;
-      }
-      windowCount += keep.length;
-      if (windowCount >= spike.count && (spikeAlertedAt === null || spikeAlertedAt < windowStart)) {
-        spikeAlertedAt = now;
-        alerts.push({ kind: 'spike', id, p: latest, count: windowCount, minutes: spike.minutes });
-      }
-    }
-    const kept = keep.at(-1);
-    writes.push(
-      db
+/** A new issue's row, and a row for each fingerprint not seen before. */
+function creationWrites(run: IssueRun, id: string, g: Group, items: Parsed[]): void {
+  const first = items[0]!;
+  const latest = items.at(-1)!;
+  if (!g.known)
+    run.writes.push(
+      run.db
         .prepare(
-          `UPDATE error_issues SET occurrences = occurrences + ?, dropped = dropped + ?,
-             last_seen = MAX(last_seen, ?), first_seen = MIN(first_seen, ?),
-             last_release = COALESCE(?, last_release), sample = COALESCE(?, sample),
-             window_start = ?, window_count = ?, spike_alerted_at = ?, updated_at = ?
-           WHERE project = ? AND id = ?`,
+          `INSERT OR IGNORE INTO error_issues (project, id, status, type, message, first_seen, last_seen, occurrences,
+             first_release, last_release, created_at, updated_at)
+           VALUES (?, ?, 'active', ?, ?, ?, ?, 0, ?, ?, ?, ?)`,
         )
         .bind(
-          keep.length,
-          dropped,
-          latest.row.ts_ms,
-          first.row.ts_ms,
-          kept?.info.release ?? null,
-          kept ? sampleOf(kept) : null,
-          windowStart,
-          windowCount,
-          spikeAlertedAt,
-          now,
-          project,
+          run.project,
           id,
+          first.info.type,
+          first.info.message,
+          first.row.ts_ms,
+          latest.row.ts_ms,
+          first.info.release,
+          latest.info.release,
+          run.now,
+          run.now,
         ),
     );
-    // A resolved issue that happens again (after it was resolved) is a regression.
-    const resolvedAt = g.known?.status === 'resolved' ? (g.known.resolved_at ?? 0) : null;
-    if (resolvedAt !== null && kept && kept.row.ts_ms > resolvedAt) {
-      writes.push(
-        db
-          .prepare(
-            `UPDATE error_issues SET status = 'active', resolved_at = NULL, regressed_at = ?, regressions = regressions + 1
-             WHERE project = ? AND id = ? AND status = 'resolved'`,
-          )
-          .bind(now, project, id),
-      );
-      if (alertsOn?.onRegression !== false) alerts.push({ kind: 'regression', id, p: kept });
-    }
-    if (isNew && kept && alertsOn?.onNew !== false) alerts.push({ kind: 'new', id, p: kept });
+  for (const fp of new Set(items.map((p) => p.fp))) {
+    if (run.known.has(fp)) continue;
+    run.writes.push(
+      run.db
+        .prepare(
+          'INSERT OR IGNORE INTO error_fingerprints (project, fingerprint, issue_id, first_seen) VALUES (?, ?, ?, ?)',
+        )
+        .bind(run.project, fp, id, run.now),
+    );
   }
-  if (writes.length) await db.batch(writes);
+}
 
-  if (alertsOn && alerts.length) {
-    const recent = alerts.filter((a) => a.p.row.ts_ms >= now - ALERT_WITHIN_MS);
-    const messages: DeliveryMessage[] = recent.map((a) => {
-      const base = deliveryEvent(a.p.row);
-      const link = ctx.base
-        ? `${ctx.base}/app#/errors/${encodeURIComponent(a.id)}?project=${encodeURIComponent(project)}`
-        : '';
-      const text = alertText(a.kind, project, a.p, a);
-      return {
-        v: 1,
-        project,
-        destination: alertsOn.destination,
-        event: {
-          ...base,
-          id: `alert-${a.id}-${a.kind}-${now}`,
-          event: '$issue_alert',
-          ts_ms: now,
-          props: {
-            alert: a.kind,
-            issue_id: a.id,
-            type: a.p.info.type,
-            message: a.p.info.message,
-            release: a.p.info.release,
-            ...(a.count ? { count: a.count, minutes: a.minutes } : {}),
-            link,
-            $alert_text: link ? `${text} ${link}` : text,
-          },
-        },
-      };
-    });
-    try {
-      await sendMessages(ctx.env, messages);
-    } catch (err) {
-      console.error('[glass] issue alert failed', err);
-    }
+/** Under the per-minute limit for this issue (counted per isolate)? Counts it when it is. */
+function withinRate(run: IssueRun, id: string): boolean {
+  const key = `${run.project}\u0000${id}`;
+  const rate = rates.get(key);
+  const n = rate && rate.minute === run.minute ? rate.n : 0;
+  if (n >= run.limit) return false;
+  rates.set(key, { minute: run.minute, n: n + 1 });
+  return true;
+}
+
+/** Suppressed issues keep nothing; others keep up to the per-minute limit. The rest are dropped. */
+function keptOf(run: IssueRun, id: string, g: Group, items: Parsed[]): Parsed[] {
+  const suppressed = g.known?.status === 'suppressed';
+  const keep = items.filter((p) => !suppressed && withinRate(run, id));
+  for (const p of items) if (!keep.includes(p)) run.drop.add(p.row);
+  if (rates.size > 10_000) for (const [k, r] of rates) if (r.minute < run.minute) rates.delete(k);
+  for (const p of keep) {
+    p.props.$issue_id = id;
+    p.props.$exception_fingerprint = p.fp.slice(0, 32);
   }
+  return keep;
+}
 
+/** The spike window (tumbling) after these exceptions, alerting once per window when it fills. */
+function spikeWindow(run: IssueRun, id: string, g: Group, kept: number, latest: Parsed) {
+  const w = {
+    start: g.known?.window_start ?? 0,
+    count: g.known?.window_count ?? 0,
+    alertedAt: g.known?.spike_alerted_at ?? null,
+  };
+  const spike = run.alertsOn?.spike;
+  if (!spike || !kept) return w;
+  if (run.now - w.start >= spike.minutes * 60_000) {
+    w.start = run.now;
+    w.count = 0;
+  }
+  w.count += kept;
+  if (w.count >= spike.count && (w.alertedAt === null || w.alertedAt < w.start)) {
+    w.alertedAt = run.now;
+    run.alerts.push({ kind: 'spike', id, p: latest, count: w.count, minutes: spike.minutes });
+  }
+  return w;
+}
+
+function updateWrite(
+  run: IssueRun,
+  id: string,
+  items: Parsed[],
+  keep: Parsed[],
+  w: ReturnType<typeof spikeWindow>,
+) {
+  const kept = keep.at(-1);
+  return run.db
+    .prepare(
+      `UPDATE error_issues SET occurrences = occurrences + ?, dropped = dropped + ?,
+         last_seen = MAX(last_seen, ?), first_seen = MIN(first_seen, ?),
+         last_release = COALESCE(?, last_release), sample = COALESCE(?, sample),
+         window_start = ?, window_count = ?, spike_alerted_at = ?, updated_at = ?
+       WHERE project = ? AND id = ?`,
+    )
+    .bind(
+      keep.length,
+      items.length - keep.length,
+      items.at(-1)!.row.ts_ms,
+      items[0]!.row.ts_ms,
+      kept?.info.release ?? null,
+      kept ? sampleOf(kept) : null,
+      w.start,
+      w.count,
+      w.alertedAt,
+      run.now,
+      run.project,
+      id,
+    );
+}
+
+/** A resolved issue that happens again (after it was resolved) is a regression. */
+function regression(run: IssueRun, id: string, g: Group, kept: Parsed | undefined): void {
+  const resolvedAt = g.known?.status === 'resolved' ? (g.known.resolved_at ?? 0) : null;
+  if (resolvedAt === null || !kept || kept.row.ts_ms <= resolvedAt) return;
+  run.writes.push(
+    run.db
+      .prepare(
+        `UPDATE error_issues SET status = 'active', resolved_at = NULL, regressed_at = ?, regressions = regressions + 1
+         WHERE project = ? AND id = ? AND status = 'resolved'`,
+      )
+      .bind(run.now, run.project, id),
+  );
+  if (run.alertsOn?.onRegression !== false) run.alerts.push({ kind: 'regression', id, p: kept });
+}
+
+function processIssue(run: IssueRun, id: string, g: Group): void {
+  const items = g.items.sort((a, b) => a.row.ts_ms - b.row.ts_ms);
+  creationWrites(run, id, g, items);
+  const keep = keptOf(run, id, g, items);
+  const w = spikeWindow(run, id, g, keep.length, items.at(-1)!);
+  run.writes.push(updateWrite(run, id, items, keep, w));
+  const kept = keep.at(-1);
+  regression(run, id, g, kept);
+  if (!g.known && kept && run.alertsOn?.onNew !== false)
+    run.alerts.push({ kind: 'new', id, p: kept });
+}
+
+function alertMessage(
+  a: Alert,
+  ctx: EnrichContext,
+  destination: string,
+  now: number,
+): DeliveryMessage {
+  const project = ctx.project.id;
+  const link = ctx.base
+    ? `${ctx.base}/app#/errors/${encodeURIComponent(a.id)}?project=${encodeURIComponent(project)}`
+    : '';
+  const text = alertText(a.kind, project, a.p, a);
+  return {
+    v: 1,
+    project,
+    destination,
+    event: {
+      ...deliveryEvent(a.p.row),
+      id: `alert-${a.id}-${a.kind}-${now}`,
+      event: '$issue_alert',
+      ts_ms: now,
+      props: {
+        alert: a.kind,
+        issue_id: a.id,
+        type: a.p.info.type,
+        message: a.p.info.message,
+        release: a.p.info.release,
+        ...(a.count ? { count: a.count, minutes: a.minutes } : {}),
+        link,
+        $alert_text: link ? `${text} ${link}` : text,
+      },
+    },
+  };
+}
+
+/** Alerts for exceptions from the last hour only (not for an import of old errors). */
+async function sendAlerts(run: IssueRun, ctx: EnrichContext): Promise<void> {
+  if (!run.alertsOn || !run.alerts.length) return;
+  const destination = run.alertsOn.destination;
+  const recent = run.alerts.filter((a) => a.p.row.ts_ms >= run.now - ALERT_WITHIN_MS);
+  try {
+    await sendMessages(
+      ctx.env,
+      recent.map((a) => alertMessage(a, ctx, destination, run.now)),
+    );
+  } catch (err) {
+    console.error('[glass] issue alert failed', err);
+  }
+}
+
+/**
+ * The ingest step (registered in extensions.ts): fingerprint exceptions, create or update their
+ * issues, drop exceptions of suppressed issues and those over the per-minute limit, and alert.
+ */
+export async function assignIssues(
+  rows: StoredEvent[],
+  ctx: EnrichContext,
+): Promise<StoredEvent[]> {
+  if (!rows.some((r) => r.event === '$exception')) return rows;
+  const settings = ctx.project.settings;
+  const parsed = await parseExceptions(rows, settings);
+  const fps = [...new Set([...parsed.values()].map((p) => p.fp))];
+  const run: IssueRun = {
+    db: ctx.env.DB,
+    project: ctx.project.id,
+    now: ctx.now,
+    minute: Math.floor(ctx.now / 60_000),
+    limit: settings.errorRateLimitPerMinute ?? DEFAULT_RATE_PER_MINUTE,
+    alertsOn: settings.errorAlerts,
+    known: await knownIssues(ctx.env.DB, ctx.project.id, fps),
+    drop: new Set(),
+    writes: [],
+    alerts: [],
+  };
+  for (const [id, g] of groupByIssue(parsed.values(), run.known)) processIssue(run, id, g);
+  if (run.writes.length) await run.db.batch(run.writes);
+  await sendAlerts(run, ctx);
   return rows
-    .filter((r) => !drop.has(r))
+    .filter((r) => !run.drop.has(r))
     .map((r) => {
       const p = parsed.get(r);
       return p ? { ...r, props: JSON.stringify(p.props) } : r;
@@ -643,6 +713,64 @@ interface SymbolicatedCache {
   mapped: number;
 }
 
+const MAPPED_FRAMES = 20;
+
+function hostOfUrl(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * The uploaded map for each of these frames' files. An exception with a release uses that
+ * release's maps only (another build's map would point at the wrong lines); one without uses the
+ * newest map uploaded for the file.
+ */
+async function mapKeys(
+  env: Env,
+  project: string,
+  frames: StackFrame[],
+  release: string | null | undefined,
+): Promise<Map<string, string>> {
+  const paths = [
+    ...new Set(
+      frames
+        .filter((f) => f.line !== null)
+        .slice(0, MAPPED_FRAMES)
+        .map((f) => framePath(f.file)),
+    ),
+  ];
+  const keyFor = new Map<string, string>();
+  if (!paths.length) return keyFor;
+  const { results } = await env.DB.prepare(
+    `SELECT path, release, object_key, uploaded_at FROM sourcemaps
+     WHERE project = ?1 AND path IN (SELECT value FROM json_each(?2)) ORDER BY uploaded_at DESC`,
+  )
+    .bind(project, JSON.stringify(paths))
+    .all<{ path: string; release: string; object_key: string }>();
+  for (const r of results)
+    if (release ? r.release === release : !keyFor.has(r.path)) keyFor.set(r.path, r.object_key);
+  return keyFor;
+}
+
+/** Map one frame to its source position; true when it was mapped. */
+async function mapFrame(env: Env, f: SymbolicatedFrame, key: string | undefined): Promise<boolean> {
+  if (!key || f.line === null) return false;
+  try {
+    const map = await loadMap(env, key);
+    const pos = map ? originalPositionFor(map, f.line, f.column ?? 1) : null;
+    if (!pos) return false;
+    f.original = pos;
+    f.inApp = !/(^|\/)node_modules\//.test(pos.source);
+    return true;
+  } catch (err) {
+    console.error('[glass] symbolication failed', err);
+    return false;
+  }
+}
+
 /**
  * The sample's frames, mapped to source where a map was uploaded for the frame's file (for the
  * exception's release, else the latest upload for that path). Cached on the issue.
@@ -656,53 +784,17 @@ export async function symbolicatedFrames(
   inAppIncludes?: readonly string[],
 ): Promise<{ frames: SymbolicatedFrame[]; mapped: number }> {
   if (cached && cached.event_id === sample.event_id) return cached;
-  let host = '';
-  try {
-    host = new URL(sample.url).host;
-  } catch {
-    // no page
-  }
-  const frames: SymbolicatedFrame[] = markInApp(parseStack(sample.stack), host, inAppIncludes);
+  const frames: SymbolicatedFrame[] = markInApp(
+    parseStack(sample.stack),
+    hostOfUrl(sample.url),
+    inAppIncludes,
+  );
   let mapped = 0;
   if (env.REPLAYS) {
-    const paths = [
-      ...new Set(
-        frames
-          .filter((f) => f.line !== null)
-          .slice(0, 20)
-          .map((f) => framePath(f.file)),
-      ),
-    ];
-    const { results } = paths.length
-      ? await env.DB.prepare(
-          `SELECT path, release, object_key, uploaded_at FROM sourcemaps
-           WHERE project = ?1 AND path IN (SELECT value FROM json_each(?2)) ORDER BY uploaded_at DESC`,
-        )
-          .bind(project, JSON.stringify(paths))
-          .all<{ path: string; release: string; object_key: string }>()
-      : { results: [] };
-    // An exception with a release uses that release's maps only (another build's map would point
-    // at the wrong lines); one without uses the newest map uploaded for the file.
-    const keyFor = new Map<string, string>();
-    for (const r of results) {
-      if (sample.release ? r.release === sample.release : !keyFor.has(r.path))
-        keyFor.set(r.path, r.object_key);
-    }
-    for (const f of frames.slice(0, 20)) {
-      const key = f.line !== null ? keyFor.get(framePath(f.file)) : undefined;
-      if (!key) continue;
-      try {
-        const map = await loadMap(env, key);
-        const pos = map ? originalPositionFor(map, f.line!, f.column ?? 1) : null;
-        if (pos) {
-          f.original = pos;
-          f.inApp = !/(^|\/)node_modules\//.test(pos.source);
-          mapped++;
-        }
-      } catch (err) {
-        console.error('[glass] symbolication failed', err);
-      }
-    }
+    const keyFor = await mapKeys(env, project, frames, sample.release);
+    for (const f of frames.slice(0, MAPPED_FRAMES))
+      if (await mapFrame(env, f, f.line !== null ? keyFor.get(framePath(f.file)) : undefined))
+        mapped++;
   }
   const result = { event_id: sample.event_id, frames, mapped };
   await env.DB.prepare('UPDATE error_issues SET symbolicated = ? WHERE project = ? AND id = ?')

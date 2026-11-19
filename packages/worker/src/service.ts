@@ -16,7 +16,7 @@ import {
 import { TEMPLATES } from '@dataflare/core/destinations/index';
 import { MAX_GROUP_TYPES } from '@dataflare/core/events';
 import { COHORT_PROPERTY, type CohortMembers, type Filter, toList } from '@dataflare/core/filters';
-import { evaluateFlagsDetailed, payloadsFor } from '@dataflare/core/flags';
+import { evaluateFlagsDetailed, type FlagDefinition, payloadsFor } from '@dataflare/core/flags';
 import {
   experimentSpec,
   filterSchema,
@@ -72,7 +72,7 @@ import {
 import { assertSafeKey } from '@dataflare/core/sql/dialect';
 import { propertyText } from '@dataflare/core/sql/filters';
 import { assertReadOnlySql } from '@dataflare/core/sql/guard';
-import { eventsCte, num, text } from '@dataflare/core/sql/source';
+import { type Aggregation, eventsCte, num, text } from '@dataflare/core/sql/source';
 import { DAY_MS, parseTime, resolveRange } from '@dataflare/core/time';
 import { applyTransformations, transformationSchema } from '@dataflare/core/transformations';
 import { estimateUsage } from '@dataflare/core/usage';
@@ -84,6 +84,7 @@ import {
 } from '@dataflare/core/version';
 import { z } from 'zod/v4';
 import {
+  type CohortRow,
   cohortContext,
   cohortsUsedByFlags,
   loadCohorts,
@@ -137,6 +138,7 @@ import { DEFAULT_INSIGHTS } from './insight-defaults.ts';
 import {
   deleteSourcemaps,
   getIssueRow,
+  type IssueSample,
   listIssueRows,
   listSourcemaps,
   mergeIssues,
@@ -1072,6 +1074,208 @@ function cohortNames(cohorts: Map<string, { key: string; name: string }>): Map<s
   return new Map([...cohorts.values()].map((c) => [c.key, c.name]));
 }
 
+const actorType = (aggregation: Aggregation) =>
+  aggregation === 'person' ? 'person' : aggregation === 'session' ? 'session' : 'group';
+
+const actorNounOf = (aggregation: Aggregation) =>
+  typeof aggregation === 'object'
+    ? `${aggregation.group} groups`
+    : aggregation === 'person'
+      ? 'people'
+      : 'sessions';
+
+function actorsSummary(
+  actors: { id: string; properties: Record<string, unknown> }[],
+  hasMore: boolean,
+  noun: string,
+  offset: number,
+): string {
+  if (!actors.length) return `No ${noun} for that selection.`;
+  const names = actors
+    .slice(0, 5)
+    .map((a) => (a.properties.email as string) ?? (a.properties.name as string) ?? a.id)
+    .join(', ');
+  return `${actors.length}${hasMore ? '+' : ''} ${noun}${offset ? ` from #${offset + 1}` : ''}. Most active: ${names}.`;
+}
+
+function personSummary(
+  id: string,
+  identified: boolean,
+  events: number,
+  replays: number,
+  groups: { type: string; key: string }[],
+  revenue: { orders: number; net: number; currency: string } | null,
+): string {
+  const parts = [
+    `${identified ? 'Identified person' : 'Anonymous device'} "${id}": ${events} events in 90 days`,
+    replays ? `${replays} recorded sessions` : '',
+    groups.length ? `in ${groups.map((g) => `${g.type} ${g.key}`).join(', ')}` : '',
+    revenue?.orders
+      ? `${revenue.orders} payments worth ${revenue.net} ${revenue.currency} net`
+      : '',
+  ];
+  return `${parts.filter(Boolean).join(', ')}.`;
+}
+
+/** Retention of a cohort's people, from the event that defines it (or pageviews). */
+function cohortRetentionSpec(row: CohortRow) {
+  const performed = row.definition.groups[0]?.conditions.find((c) => c.type === 'performed');
+  const event =
+    performed && performed.type === 'performed' && performed.event !== '*'
+      ? performed.event
+      : '$pageview';
+  return {
+    cohortEvent: { event },
+    returnEvent: { event: '$pageview' },
+    period: 'week',
+    periods: 8,
+    filters: [{ property: COHORT_PROPERTY, value: row.key }],
+  };
+}
+
+function cohortsSummary(cohorts: { name: string; count: number; kind: string }[]): string {
+  if (!cohorts.length) return 'No cohorts yet. Save a person filter from the People tab.';
+  const list = cohorts
+    .map((c) => `${c.name} (${c.count}${c.kind === 'static' ? ', static' : ''})`)
+    .join(', ');
+  return `${cohorts.length} cohort${cohorts.length === 1 ? '' : 's'}: ${list}.`;
+}
+
+/** A cohort key from the one given, or from the name; lowercase letters, numbers, - and _. */
+function cohortKey(given: string | undefined, name: string): string {
+  const key = (given?.trim() || slugKey(name)).slice(0, 64);
+  if (!/^[a-z0-9][a-z0-9_-]*$/.test(key))
+    throw new HttpError(
+      400,
+      `Invalid cohort key "${key}"`,
+      'Use lowercase letters, numbers, hyphens or underscores.',
+    );
+  return key;
+}
+
+function flagSummary(
+  key: string,
+  result: { flag: FlagDefinition; created: boolean; changed: string[] },
+): string {
+  const f = result.flag;
+  const what = [
+    f.enabled ? `${f.rollout}% rollout` : 'disabled',
+    f.bucketBy && f.bucketBy !== 'device' ? `bucketed by ${f.bucketBy}` : '',
+    f.payloads ? 'with payloads' : '',
+    f.earlyAccess ? `early access (${f.earlyAccess.stage})` : '',
+  ].filter(Boolean);
+  const changed = result.changed.length && !result.created ? ` (${result.changed.join(', ')})` : '';
+  const read = `glass.flag("${key}")${f.payloads ? ` and glass.flagPayload("${key}")` : ''}`;
+  return `${result.created ? 'Created' : 'Updated'} flag "${key}"${changed}: ${what.join(', ')}. Read it with ${read}.`;
+}
+
+/** The fields that have a value: undefined and null go; 0 and false stay. */
+function definedOnly(fields: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(fields).filter(([, v]) => v !== undefined && v !== null),
+  );
+}
+
+/** A flag bucketed by a group type experiments per group; device and person are the default. */
+const groupBucket = (bucketBy: string | undefined) =>
+  bucketBy && bucketBy !== 'device' && bucketBy !== 'person' ? bucketBy : undefined;
+
+type IssueTotals = Map<string, { events: number; users: number; sessions: number }>;
+
+/** Exceptions per issue; those of merged issues count towards the issue they were merged into. */
+function issueTotals(
+  rows: { issue: string; events: number; users: number; sessions: number }[],
+  merged: Map<string, string>,
+): IssueTotals {
+  const totals: IssueTotals = new Map();
+  for (const c of rows) {
+    const id = merged.get(c.issue) ?? c.issue;
+    const t = totals.get(id) ?? { events: 0, users: 0, sessions: 0 };
+    t.events += c.events;
+    t.users += c.users;
+    t.sessions += c.sessions;
+    totals.set(id, t);
+  }
+  return totals;
+}
+
+type IssueOrderRow = { lastSeen: string; firstSeen: string; users: number; events: number };
+
+const ISSUE_ORDER: Record<string, (a: IssueOrderRow, b: IssueOrderRow) => number> = {
+  last_seen: (a, b) => b.lastSeen.localeCompare(a.lastSeen),
+  first_seen: (a, b) => b.firstSeen.localeCompare(a.firstSeen),
+  users: (a, b) => b.users - a.users || b.events - a.events,
+  events: (a, b) => b.events - a.events || b.lastSeen.localeCompare(a.lastSeen),
+};
+
+/** An issue's series with the series of the issues merged into it added. */
+function mergedSeries(
+  series: Record<string, number[]>,
+  merged: Map<string, string>,
+  id: string,
+): number[] {
+  const out = [...(series[id] ?? [])];
+  for (const [m, into] of merged) {
+    if (into !== id) continue;
+    series[m]?.forEach((n, i) => {
+      out[i] = (out[i] ?? 0) + n;
+    });
+  }
+  return out;
+}
+
+function issuesSummary(
+  rows: {
+    type: string;
+    message: string;
+    events: number;
+    users: number;
+    status: string;
+    regressedAt: string | null;
+  }[],
+  totals: IssueTotals,
+): string {
+  if (!rows.length) return 'No exceptions in this range.';
+  const total = [...totals.values()].reduce((n, t) => n + t.events, 0);
+  const top = rows
+    .slice(0, 3)
+    .map(
+      (r) =>
+        `${r.type}: ${r.message.slice(0, 80)} (${r.events}×, ${r.users} people${r.status === 'active' && r.regressedAt ? ', regressed' : ''})`,
+    )
+    .join('; ');
+  return `${totals.size} issue${totals.size === 1 ? '' : 's'} with ${total} exceptions in range. Top: ${top}.`;
+}
+
+/** Where it happened: the top frame of your own code (or the top frame), in source when mapped. */
+function topFrame(
+  frames: {
+    inApp: boolean;
+    file: string;
+    line: number | null;
+    original?: { source: string; line: number; name: string | null };
+  }[],
+): string {
+  const top = frames.find((f) => f.inApp) ?? frames[0];
+  if (!top) return 'no stack';
+  if (!top.original) return `${top.file}:${top.line ?? '?'}`;
+  return `${top.original.source}:${top.original.line}${top.original.name ? ` in ${top.original.name}` : ''}`;
+}
+
+function sampleView(sample: IssueSample) {
+  return {
+    eventId: sample.event_id,
+    at: new Date(sample.ts).toISOString(),
+    url: sample.url,
+    release: sample.release,
+    handled: sample.handled,
+    level: sample.level,
+    browser: sample.browser,
+    os: sample.os,
+    person: sample.person_id,
+  };
+}
+
 export class GlassService {
   readonly env: Env;
   readonly store: EventStore;
@@ -1215,47 +1419,16 @@ export class GlassService {
       ...args.spec,
       ...(args.project ? { project: args.project } : {}),
     });
-    if (args.saveAsCohort) {
-      if (aggregationOf(resolved as { aggregateBy?: string }) !== 'person') {
-        throw new HttpError(
-          400,
-          'Only people can be saved as a cohort; this spec counts sessions or groups.',
-        );
-      }
-      const all = await this.store.query(
-        compile(resolved, ctx, args.selection as ActorSelection, {
-          limit: STATIC_COHORT_LIMIT + 1,
-          offset: 0,
-        }),
-      );
-      if (all.length > STATIC_COHORT_LIMIT) {
-        throw new HttpError(
-          400,
-          `More than ${STATIC_COHORT_LIMIT.toLocaleString('en-US')} people: too many for a static cohort`,
-          'Save a dynamic cohort with conditions instead.',
-        );
-      }
-      return this.saveCohort({
-        project: ctx.project,
-        key: args.saveAsCohort.key,
-        name: args.saveAsCohort.name,
-        description: `Saved from a ${args.kind} selection on ${new Date().toISOString().slice(0, 10)}`,
-        static: true,
-        ids: all.map((r) => text(r.actor)),
-      });
-    }
+    const select = (limit: number, offset: number) =>
+      compile(resolved, ctx, args.selection as ActorSelection, { limit, offset });
+    if (args.saveAsCohort) return this.saveActorsAsCohort(args, resolved, ctx.project, select);
     const limit = args.limit ?? 100;
     const offset = args.offset ?? 0;
-    const sql = compile(resolved, ctx, args.selection as ActorSelection, {
-      limit: limit + 1,
-      offset,
-    });
+    const sql = select(limit + 1, offset);
     const rows = await this.store.query(sql);
     const hasMore = rows.length > limit;
     const page = rows.slice(0, limit).map((r) => ({ id: text(r.actor), n: num(r.n) }));
     const aggregation = aggregationOf(resolved as { aggregateBy?: string });
-    const type =
-      aggregation === 'person' ? 'person' : aggregation === 'session' ? 'session' : 'group';
     const details = await this.actorDetails(
       ctx.project,
       aggregation,
@@ -1263,26 +1436,12 @@ export class GlassService {
     );
     const actors = page.map((a) => ({
       id: a.id,
-      type,
+      type: actorType(aggregation),
       ...(typeof aggregation === 'object' ? { groupType: aggregation.group } : {}),
       events: a.n,
       properties: details.get(a.id) ?? {},
-      dashboard:
-        type === 'person'
-          ? this.link(`users/${encodeURIComponent(a.id)}`, { project: ctx.project })
-          : type === 'group'
-            ? this.link(
-                `groups/${encodeURIComponent((aggregation as { group: string }).group)}/${encodeURIComponent(a.id)}`,
-                { project: ctx.project },
-              )
-            : this.replayLink(ctx.project, a.id),
+      dashboard: this.actorLink(aggregation, ctx.project, a.id),
     }));
-    const noun =
-      type === 'person'
-        ? 'people'
-        : type === 'session'
-          ? 'sessions'
-          : `${(aggregation as { group: string }).group} groups`;
     const result = {
       project: ctx.project,
       kind: args.kind,
@@ -1291,15 +1450,47 @@ export class GlassService {
       offset,
       hasMore,
       sql: [sql],
-      summary: actors.length
-        ? `${actors.length}${hasMore ? '+' : ''} ${noun}${offset ? ` from #${offset + 1}` : ''}. Most active: ${actors
-            .slice(0, 5)
-            .map((a) => (a.properties.email as string) ?? (a.properties.name as string) ?? a.id)
-            .join(', ')}.`
-        : `No ${noun} for that selection.`,
+      summary: actorsSummary(actors, hasMore, actorNounOf(aggregation), offset),
     };
-    if (args.format === 'csv') return { ...result, csv: actorsCsv(actors) };
-    return result;
+    return args.format === 'csv' ? { ...result, csv: actorsCsv(actors) } : result;
+  }
+
+  /** Everyone behind the number, saved as a static cohort (people only, and not too many). */
+  private async saveActorsAsCohort(
+    args: z.infer<typeof inputs.actors>,
+    resolved: unknown,
+    project: string,
+    select: (limit: number, offset: number) => string,
+  ) {
+    if (aggregationOf(resolved as { aggregateBy?: string }) !== 'person')
+      throw new HttpError(
+        400,
+        'Only people can be saved as a cohort; this spec counts sessions or groups.',
+      );
+    const all = await this.store.query(select(STATIC_COHORT_LIMIT + 1, 0));
+    if (all.length > STATIC_COHORT_LIMIT)
+      throw new HttpError(
+        400,
+        `More than ${STATIC_COHORT_LIMIT.toLocaleString('en-US')} people: too many for a static cohort`,
+        'Save a dynamic cohort with conditions instead.',
+      );
+    return this.saveCohort({
+      project,
+      key: args.saveAsCohort!.key,
+      name: args.saveAsCohort!.name,
+      description: `Saved from a ${args.kind} selection on ${new Date().toISOString().slice(0, 10)}`,
+      static: true,
+      ids: all.map((r) => text(r.actor)),
+    });
+  }
+
+  /** Where a person, group or session opens in the dashboard. */
+  private actorLink(aggregation: Aggregation, project: string, id: string): string {
+    if (aggregation === 'person') return this.link(`users/${encodeURIComponent(id)}`, { project });
+    if (aggregation === 'session') return this.replayLink(project, id);
+    return this.link(`groups/${encodeURIComponent(aggregation.group)}/${encodeURIComponent(id)}`, {
+      project,
+    });
   }
 
   private async actorDetails(
@@ -1676,6 +1867,30 @@ GROUP BY event ORDER BY cur DESC, event ASC LIMIT 50`;
   // ── Usage and cost ──────────────────────────────────────────────────────
 
   /** What this deployment adds to the Cloudflare bill, projected to a month, with ways to cut it. */
+  /** Recorded sessions per project since a time (none when replays are off). */
+  private async replaysSince(since: number) {
+    type Row = { project: string; sessions: number; chunks: number; bytes: number };
+    if (!replaysEnabled(this.env)) return { results: [] as Row[] };
+    return this.env.DB.prepare(
+      'SELECT project, COUNT(*) AS sessions, SUM(chunks) AS chunks, SUM(bytes) AS bytes FROM replays WHERE started_at >= ? GROUP BY project',
+    )
+      .bind(since)
+      .all<Row>();
+  }
+
+  private async replayBytes() {
+    if (!replaysEnabled(this.env)) return { bytes: 0 };
+    return this.env.DB.prepare('SELECT COALESCE(SUM(bytes), 0) AS bytes FROM replays').first<{
+      bytes: number;
+    }>();
+  }
+
+  /** Events stored in D1 (the lake doesn't count them here). */
+  private async storedEvents() {
+    if (this.store.kind !== 'd1') return { n: 0 };
+    return this.env.DB.prepare('SELECT COUNT(*) AS n FROM events').first<{ n: number }>();
+  }
+
   async usage(input: unknown) {
     const spec = inputs.usage.parse(input ?? {});
     const days = spec.days ?? 7;
@@ -1689,23 +1904,9 @@ FROM ${d.table('events')} WHERE ts_ms >= ${since} GROUP BY project`),
         this.store.query(
           `SELECT event, COUNT(*) AS n FROM ${d.table('events')} WHERE ts_ms >= ${since} GROUP BY event ORDER BY n DESC, event ASC LIMIT 10`,
         ),
-        replaysEnabled(this.env)
-          ? this.env.DB.prepare(
-              'SELECT project, COUNT(*) AS sessions, SUM(chunks) AS chunks, SUM(bytes) AS bytes FROM replays WHERE started_at >= ? GROUP BY project',
-            )
-              .bind(since)
-              .all<{ project: string; sessions: number; chunks: number; bytes: number }>()
-          : Promise.resolve({
-              results: [] as { project: string; sessions: number; chunks: number; bytes: number }[],
-            }),
-        replaysEnabled(this.env)
-          ? this.env.DB.prepare('SELECT COALESCE(SUM(bytes), 0) AS bytes FROM replays').first<{
-              bytes: number;
-            }>()
-          : Promise.resolve({ bytes: 0 }),
-        this.store.kind === 'd1'
-          ? this.env.DB.prepare('SELECT COUNT(*) AS n FROM events').first<{ n: number }>()
-          : Promise.resolve({ n: 0 }),
+        this.replaysSince(since),
+        this.replayBytes(),
+        this.storedEvents(),
         this.env.DB.prepare('SELECT 1 AS one').run(),
         this.env.DB.prepare(
           'SELECT COALESCE(SUM(delivered + failed + skipped), 0) AS n FROM destination_stats WHERE hour >= ?',
@@ -2087,6 +2288,36 @@ WHERE project = ${d.str(project)} AND ts_ms >= ${d.num(from)}`;
     };
   }
 
+  /** Lifetime revenue (two years) of a person or device, when the project records revenue. */
+  private async lifetimeRevenue(
+    ctx: { project: string; settings: ProjectSettings },
+    id: string,
+    now: number,
+  ) {
+    if (!(await this.revenueConfigured(ctx.project, ctx.settings))) return null;
+    const d = this.store.dialect;
+    const rev = d.jsonNumber('props', ['$revenue_base']);
+    const revSql = `WITH ${eventsCte(d, {
+      project: ctx.project,
+      from: now - 730 * DAY_MS,
+      to: now + 60_000,
+      filters: [{ property: 'props.$revenue_base', op: 'is_set' }],
+    })}
+SELECT SUM(r) AS net, SUM(CASE WHEN r > 0 THEN r ELSE 0 END) AS gross, SUM(CASE WHEN r > 0 THEN 1 ELSE 0 END) AS orders,
+  MIN(ts_ms) AS first_ts, MAX(ts_ms) AS last_ts
+FROM (SELECT ts_ms, ${rev} AS r FROM ev WHERE pid = ${d.str(id)} OR distinct_id = ${d.str(id)}) x`;
+    const [r] = await this.store.query(revSql);
+    const at = (v: unknown) => (v ? new Date(num(v)).toISOString() : null);
+    return {
+      net: Math.round(num(r?.net) * 100) / 100,
+      gross: Math.round(num(r?.gross) * 100) / 100,
+      orders: num(r?.orders),
+      firstAt: at(r?.first_ts),
+      lastAt: at(r?.last_ts),
+      currency: ctx.settings.baseCurrency ?? 'USD',
+    };
+  }
+
   async getPerson(input: unknown) {
     const spec = inputs.getPerson.parse(input);
     const ctx = await this.context(spec.project);
@@ -2118,36 +2349,7 @@ ORDER BY ts_ms DESC LIMIT 100`;
       : [];
     if (!person && events.length === 0)
       throw new HttpError(404, `No person or device "${id}" in project "${ctx.project}"`);
-    // Lifetime revenue (two years), when the project records revenue.
-    let revenue: {
-      net: number;
-      gross: number;
-      orders: number;
-      firstAt: string | null;
-      lastAt: string | null;
-      currency: string;
-    } | null = null;
-    if (await this.revenueConfigured(ctx.project, ctx.settings)) {
-      const rev = d.jsonNumber('props', ['$revenue_base']);
-      const revSql = `WITH ${eventsCte(d, {
-        project: ctx.project,
-        from: now - 730 * DAY_MS,
-        to: now + 60_000,
-        filters: [{ property: 'props.$revenue_base', op: 'is_set' }],
-      })}
-SELECT SUM(r) AS net, SUM(CASE WHEN r > 0 THEN r ELSE 0 END) AS gross, SUM(CASE WHEN r > 0 THEN 1 ELSE 0 END) AS orders,
-  MIN(ts_ms) AS first_ts, MAX(ts_ms) AS last_ts
-FROM (SELECT ts_ms, ${rev} AS r FROM ev WHERE pid = ${d.str(id)} OR distinct_id = ${d.str(id)}) x`;
-      const [r] = await this.store.query(revSql);
-      revenue = {
-        net: Math.round(num(r?.net) * 100) / 100,
-        gross: Math.round(num(r?.gross) * 100) / 100,
-        orders: num(r?.orders),
-        firstAt: r?.first_ts ? new Date(num(r.first_ts)).toISOString() : null,
-        lastAt: r?.last_ts ? new Date(num(r.last_ts)).toISOString() : null,
-        currency: ctx.settings.baseCurrency ?? 'USD',
-      };
-    }
+    const revenue = await this.lifetimeRevenue(ctx, id, now);
     // The groups (companies, teams…) their events in the last 90 days were part of.
     const groups = await this.personGroups(ctx.project, id, now);
     return {
@@ -2167,7 +2369,14 @@ FROM (SELECT ts_ms, ${rev} AS r FROM ev WHERE pid = ${d.str(id)} OR distinct_id 
         errors: r.errors,
         url: r.start_url,
       })),
-      summary: `${person ? 'Identified person' : 'Anonymous device'} "${id}": ${events.length} events in 90 days${replays.length ? `, ${replays.length} recorded sessions` : ''}${groups.list.length ? `, in ${groups.list.map((g) => `${g.type} ${g.key}`).join(', ')}` : ''}${revenue?.orders ? `, ${revenue.orders} payments worth ${revenue.net} ${revenue.currency} net` : ''}.`,
+      summary: personSummary(
+        id,
+        Boolean(person),
+        events.length,
+        replays.length,
+        groups.list,
+        revenue,
+      ),
       sql: [sql, ...groups.sql],
       dashboard: this.link(`users/${encodeURIComponent(id)}`, { project: ctx.project }),
     };
@@ -2339,17 +2548,7 @@ ${types
     ]);
     const out = [];
     for (const row of cohorts.values()) {
-      let count: number;
-      let sql: string;
-      if (row.kind === 'static') {
-        sql = `SELECT COUNT(*) AS n FROM cohort_members WHERE project = ? AND cohort = ? AND source = 'static'`;
-        const r = await this.env.DB.prepare(sql).bind(ctx.project, row.key).first<{ n: number }>();
-        count = Number(r?.n ?? 0);
-      } else {
-        sql = membershipSql(row, cctx);
-        count = await this.countMembers(sql);
-      }
-      const performed = row.definition.groups[0]?.conditions.find((c) => c.type === 'performed');
+      const { count, sql } = await this.cohortCount(ctx.project, row, cctx);
       out.push({
         key: row.key,
         name: row.name,
@@ -2367,67 +2566,45 @@ ${types
         sql: [sql],
         retention: this.link('insights/retention', {
           project: ctx.project,
-          spec: {
-            cohortEvent: {
-              event:
-                performed && performed.type === 'performed' && performed.event !== '*'
-                  ? performed.event
-                  : '$pageview',
-            },
-            returnEvent: { event: '$pageview' },
-            period: 'week',
-            periods: 8,
-            filters: [{ property: COHORT_PROPERTY, value: row.key }],
-          },
+          spec: cohortRetentionSpec(row),
         }),
       });
     }
     return {
       project: ctx.project,
       cohorts: out,
-      summary: out.length
-        ? `${out.length} cohort${out.length === 1 ? '' : 's'}: ${out.map((c) => `${c.name} (${c.count}${c.kind === 'static' ? ', static' : ''})`).join(', ')}.`
-        : 'No cohorts yet. Save a person filter from the People tab.',
+      summary: cohortsSummary(out),
       dashboard: this.link('users', { project: ctx.project }),
     };
+  }
+
+  /** How many people a cohort has now: its stored list, or its conditions run as SQL. */
+  private async cohortCount(
+    project: string,
+    row: CohortRow,
+    cctx: Awaited<ReturnType<typeof cohortContext>>,
+  ) {
+    if (row.kind !== 'static') {
+      const sql = membershipSql(row, cctx);
+      return { sql, count: await this.countMembers(sql) };
+    }
+    const sql = `SELECT COUNT(*) AS n FROM cohort_members WHERE project = ? AND cohort = ? AND source = 'static'`;
+    const r = await this.env.DB.prepare(sql).bind(project, row.key).first<{ n: number }>();
+    return { sql, count: Number(r?.n ?? 0) };
   }
 
   async saveCohort(input: unknown) {
     const spec = inputs.saveCohort.parse(input);
     const ctx = await this.context(spec.project);
-    const key = (spec.key?.trim() || slugKey(spec.name)).slice(0, 64);
-    if (!/^[a-z0-9][a-z0-9_-]*$/.test(key)) {
-      throw new HttpError(
-        400,
-        `Invalid cohort key "${key}"`,
-        'Use lowercase letters, numbers, hyphens or underscores.',
-      );
-    }
+    const key = cohortKey(spec.key, spec.name);
     const isStatic = spec.static ?? false;
     const definition = isStatic ? null : this.definitionFrom(spec);
     const cohorts = await loadCohorts(this.env.DB, ctx.project);
     const existing = cohorts.get(key);
     const now = Date.now();
-    let sql = '';
-    if (definition) {
-      // Compile against the saved cohorts with this one in place, so loops through it are caught.
-      cohorts.set(key, {
-        key,
-        name: spec.name,
-        description: spec.description ?? '',
-        kind: 'dynamic',
-        definition,
-        createdAt: now,
-        updatedAt: now,
-        refreshedAt: null,
-      });
-      const cctx = await cohortContext(this.env, this.store, ctx.project, cohorts, [key]);
-      try {
-        sql = compileCohort(definition, cctx, [key]);
-      } catch (err) {
-        throw new HttpError(400, err instanceof Error ? err.message : String(err));
-      }
-    }
+    const sql = definition
+      ? await this.compileNewCohort(ctx.project, cohorts, key, spec, definition, now)
+      : '';
     await this.env.DB.prepare(
       `INSERT INTO cohorts (project, key, name, definition, kind, description, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -2445,30 +2622,12 @@ ${types
         now,
       )
       .run();
-    if (isStatic && spec.ids) await this.replaceStaticMembers(ctx.project, key, spec.ids);
-    if (!isStatic && existing?.kind === 'static') {
-      await this.env.DB.prepare(
-        "DELETE FROM cohort_members WHERE project = ? AND cohort = ? AND source = 'static'",
-      )
-        .bind(ctx.project, key)
-        .run();
-    }
-    const flagged = cohortsUsedByFlags(await listFlags(this.env.DB, ctx.project, true)).has(key);
-    if (flagged && definition) {
-      const fresh = await loadCohorts(this.env.DB, ctx.project);
-      await materialise(this.env, this.store, ctx.project, fresh.get(key)!, fresh);
-    }
+    await this.syncMembers(ctx.project, key, isStatic, spec.ids, existing);
+    if (definition) await this.materialiseIfFlagged(ctx.project, key);
     const count = isStatic
-      ? Number(
-          (
-            await this.env.DB.prepare(
-              "SELECT COUNT(*) AS n FROM cohort_members WHERE project = ? AND cohort = ? AND source = 'static'",
-            )
-              .bind(ctx.project, key)
-              .first<{ n: number }>()
-          )?.n ?? 0,
-        )
+      ? await this.staticCount(ctx.project, key)
       : await this.countMembers(sql);
+    const described = definition ? `: ${describeCohort(definition, cohortNames(cohorts))}` : '';
     return {
       project: ctx.project,
       key,
@@ -2476,10 +2635,70 @@ ${types
       kind: isStatic ? 'static' : 'dynamic',
       created: !existing,
       count,
-      summary: `${existing ? 'Updated' : 'Created'} ${isStatic ? 'static ' : ''}cohort "${spec.name}" (${count} people)${definition ? `: ${describeCohort(definition, cohortNames(cohorts))}` : ''}.`,
+      summary: `${existing ? 'Updated' : 'Created'} ${isStatic ? 'static ' : ''}cohort "${spec.name}" (${count} people)${described}.`,
       sql: sql ? [sql] : [],
       dashboard: this.link('users', { project: ctx.project, cohort: key }),
     };
+  }
+
+  /** Compile against the saved cohorts with this one in place, so loops through it are caught. */
+  private async compileNewCohort(
+    project: string,
+    cohorts: Map<string, CohortRow>,
+    key: string,
+    spec: { name: string; description?: string },
+    definition: CohortDefinition,
+    now: number,
+  ): Promise<string> {
+    cohorts.set(key, {
+      key,
+      name: spec.name,
+      description: spec.description ?? '',
+      kind: 'dynamic',
+      definition,
+      createdAt: now,
+      updatedAt: now,
+      refreshedAt: null,
+    });
+    const cctx = await cohortContext(this.env, this.store, project, cohorts, [key]);
+    try {
+      return compileCohort(definition, cctx, [key]);
+    } catch (err) {
+      throw new HttpError(400, err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  /** A static cohort's list replaced; a cohort that stops being static loses its list. */
+  private async syncMembers(
+    project: string,
+    key: string,
+    isStatic: boolean,
+    ids: string[] | undefined,
+    existing: CohortRow | undefined,
+  ) {
+    if (isStatic && ids) await this.replaceStaticMembers(project, key, ids);
+    if (isStatic || existing?.kind !== 'static') return;
+    await this.env.DB.prepare(
+      "DELETE FROM cohort_members WHERE project = ? AND cohort = ? AND source = 'static'",
+    )
+      .bind(project, key)
+      .run();
+  }
+
+  /** A cohort a flag targets needs its membership worked out before /f can use it. */
+  private async materialiseIfFlagged(project: string, key: string): Promise<void> {
+    if (!cohortsUsedByFlags(await listFlags(this.env.DB, project, true)).has(key)) return;
+    const fresh = await loadCohorts(this.env.DB, project);
+    await materialise(this.env, this.store, project, fresh.get(key)!, fresh);
+  }
+
+  private async staticCount(project: string, key: string): Promise<number> {
+    const r = await this.env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM cohort_members WHERE project = ? AND cohort = ? AND source = 'static'",
+    )
+      .bind(project, key)
+      .first<{ n: number }>();
+    return Number(r?.n ?? 0);
   }
 
   private async replaceStaticMembers(project: string, key: string, ids: string[]): Promise<void> {
@@ -3138,21 +3357,18 @@ WHERE project = ${d.str(project)} AND session_id = ${d.str(row.session_id)} AND 
       actor ?? this.actor,
     );
     // A flag that now targets a dynamic cohort needs its membership before /f can use it.
-    for (const key of cohortsUsedByFlags([result.flag])) {
-      const cohorts = await loadCohorts(this.env.DB, ctx.project);
-      const row = cohorts.get(key);
-      if (!row)
-        throw new HttpError(400, `Flag "${spec.key}" targets cohort "${key}", which doesn't exist`);
-      if (row.kind === 'dynamic' && !row.refreshedAt) {
-        await materialise(this.env, this.store, ctx.project, row, cohorts);
-      }
-    }
-    const f = result.flag;
-    return {
-      project: ctx.project,
-      ...result,
-      summary: `${result.created ? 'Created' : 'Updated'} flag "${spec.key}"${result.changed.length && !result.created ? ` (${result.changed.join(', ')})` : ''}: ${f.enabled ? `${f.rollout}% rollout` : 'disabled'}${f.bucketBy && f.bucketBy !== 'device' ? `, bucketed by ${f.bucketBy}` : ''}${f.payloads ? ', with payloads' : ''}${f.earlyAccess ? `, early access (${f.earlyAccess.stage})` : ''}. Read it with glass.flag("${spec.key}")${f.payloads ? ` and glass.flagPayload("${spec.key}")` : ''}.`,
-    };
+    for (const key of cohortsUsedByFlags([result.flag]))
+      await this.readyCohortForFlag(ctx.project, spec.key, key);
+    return { project: ctx.project, ...result, summary: flagSummary(spec.key, result) };
+  }
+
+  private async readyCohortForFlag(project: string, flag: string, key: string): Promise<void> {
+    const cohorts = await loadCohorts(this.env.DB, project);
+    const row = cohorts.get(key);
+    if (!row)
+      throw new HttpError(400, `Flag "${flag}" targets cohort "${key}", which doesn't exist`);
+    if (row.kind === 'dynamic' && !row.refreshedAt)
+      await materialise(this.env, this.store, project, row, cohorts);
   }
 
   async deleteFlag(input: unknown) {
@@ -3359,9 +3575,6 @@ WHERE project = ${d.str(project)} AND session_id = ${d.str(row.session_id)} AND 
     const weights = Object.fromEntries((flag?.variants ?? []).map((v) => [v.key, v.weight]));
     // Ten minutes of slack absorbs client clock correction around the start time.
     const from = (experiment.startedAt ?? experiment.createdAt) - 10 * 60_000;
-    const bucketBy = flag?.bucketBy;
-    const groupType =
-      bucketBy && bucketBy !== 'device' && bucketBy !== 'person' ? bucketBy : undefined;
     const filters =
       experiment.filterTestAccounts && settings.internalFilters?.length
         ? excludeInternal(settings.internalFilters)
@@ -3369,22 +3582,22 @@ WHERE project = ${d.str(project)} AND session_id = ${d.str(row.session_id)} AND 
     const spec = experimentSpec.parse({
       project,
       flag: experiment.flag,
-      ...(experiment.goal ? { goal: experiment.goal } : {}),
-      ...(experiment.metrics.length ? { metrics: experiment.metrics } : {}),
-      ...(experiment.secondary.length ? { secondary: experiment.secondary } : {}),
+      ...definedOnly({
+        goal: experiment.goal ?? undefined,
+        metrics: experiment.metrics.length ? experiment.metrics : undefined,
+        secondary: experiment.secondary.length ? experiment.secondary : undefined,
+        filters,
+        engine: experiment.engine,
+        confidence: experiment.confidence,
+        exposure: experiment.exposure,
+        minimumDays: experiment.minimumDays,
+        minimumExposures: experiment.minimumExposures,
+        mde: experiment.mde,
+        aggregateBy: groupBucket(flag?.bucketBy),
+      }),
       variants: flag?.variants?.map((v) => v.key),
       from,
       to: experiment.endedAt ?? 'now',
-      ...(filters ? { filters } : {}),
-      ...(experiment.engine ? { engine: experiment.engine } : {}),
-      ...(experiment.confidence ? { confidence: experiment.confidence } : {}),
-      ...(experiment.exposure ? { exposure: experiment.exposure } : {}),
-      ...(experiment.minimumDays !== undefined ? { minimumDays: experiment.minimumDays } : {}),
-      ...(experiment.minimumExposures !== undefined
-        ? { minimumExposures: experiment.minimumExposures }
-        : {}),
-      ...(experiment.mde !== undefined ? { mde: experiment.mde } : {}),
-      ...(groupType ? { aggregateBy: groupType } : {}),
     });
     return { spec, weights };
   }
@@ -3842,29 +4055,11 @@ WHERE project = ${d.str(project)} AND session_id = ${d.str(row.session_id)} AND 
       search: spec.search,
     });
     const counts = await issueCounts(range, ctx);
-    // Exceptions of merged issues count towards the issue they were merged into.
-    const totals = new Map<string, { events: number; users: number; sessions: number }>();
-    for (const c of counts.rows) {
-      const id = merged.get(c.issue) ?? c.issue;
-      const t = totals.get(id) ?? { events: 0, users: 0, sessions: 0 };
-      t.events += c.events;
-      t.users += c.users;
-      t.sessions += c.sessions;
-      totals.set(id, t);
-    }
-    const order = spec.order ?? 'events';
+    const totals = issueTotals(counts.rows, merged);
     const rows = issues
       .filter((i) => totals.has(i.id))
       .map((i) => ({ ...i, ...totals.get(i.id)! }))
-      .sort((a, b) =>
-        order === 'last_seen'
-          ? b.lastSeen.localeCompare(a.lastSeen)
-          : order === 'first_seen'
-            ? b.firstSeen.localeCompare(a.firstSeen)
-            : order === 'users'
-              ? b.users - a.users || b.events - a.events
-              : b.events - a.events || b.lastSeen.localeCompare(a.lastSeen),
-      )
+      .sort(ISSUE_ORDER[spec.order ?? 'events'] ?? ISSUE_ORDER.events!)
       .slice(0, spec.limit ?? 25);
     const ids = rows.map((r) => r.id);
     const withMerged = [
@@ -3872,41 +4067,44 @@ WHERE project = ${d.str(project)} AND session_id = ${d.str(row.session_id)} AND 
       ...[...merged].filter(([, into]) => ids.includes(into)).map(([id]) => id),
     ];
     const series = await issueSeries(range, ctx, withMerged);
-    const seriesFor = (id: string) => {
-      const out = [...(series.series[id] ?? [])];
-      for (const [m, into] of merged) {
-        if (into !== id) continue;
-        series.series[m]?.forEach((n, i) => {
-          out[i] = (out[i] ?? 0) + n;
-        });
-      }
-      return out;
-    };
-    const total = [...totals.values()].reduce((n, t) => n + t.events, 0);
     return {
       project: ctx.project,
       interval: series.interval,
       buckets: series.buckets,
       issues: rows.map((r) => ({
         ...r,
-        series: seriesFor(r.id),
+        series: mergedSeries(series.series, merged, r.id),
         link: this.link(`errors/${r.id}`, { project: ctx.project }),
       })),
-      summary: rows.length
-        ? `${totals.size} issue${totals.size === 1 ? '' : 's'} with ${total} exceptions in range. Top: ${rows
-            .slice(0, 3)
-            .map(
-              (r) =>
-                `${r.type}: ${r.message.slice(0, 80)} (${r.events}×, ${r.users} people${r.status === 'active' && r.regressedAt ? ', regressed' : ''})`,
-            )
-            .join('; ')}.`
-        : 'No exceptions in this range.',
+      summary: issuesSummary(rows, totals),
       sql: [counts.sql, series.sql],
       dashboard: this.link('errors', { project: ctx.project }),
     };
   }
 
   /** One issue: its symbolicated stack, trend, where and for whom it happens, and replays at the moment. */
+  /** When each session's replay started, for sessions that were recorded. */
+  private async replayStarts(project: string, sessions: string[]): Promise<Map<string, number>> {
+    if (!replaysEnabled(this.env) || !sessions.length) return new Map();
+    const { results } = await this.env.DB.prepare(
+      'SELECT session_id, started_at FROM replays WHERE project = ?1 AND session_id IN (SELECT value FROM json_each(?2))',
+    )
+      .bind(project, JSON.stringify(sessions))
+      .all<{ session_id: string; started_at: number }>();
+    return new Map(results.map((r) => [r.session_id, r.started_at]));
+  }
+
+  /** The replay of an occurrence's session, opened a few seconds before the error. */
+  private replayAt(
+    project: string,
+    o: { session: string; ts: number },
+    started: number | undefined,
+  ): string | null {
+    return started === undefined
+      ? null
+      : this.replayLink(project, o.session, Math.max(0, o.ts - started - 5000));
+  }
+
   async getIssue(input: unknown) {
     const spec = inputs.getIssue.parse(input);
     const settings = (await this.context(spec.project)).settings;
@@ -3932,24 +4130,13 @@ WHERE project = ${d.str(project)} AND session_id = ${d.str(row.session_id)} AND 
     const summed = series.buckets.map((_, i) =>
       ids.reduce((n, id) => n + (series.series[id]?.[i] ?? 0), 0),
     );
-    // Replays of sessions with the error, opened a few seconds before it.
-    let replays = new Map<string, number>();
-    if (replaysEnabled(this.env) && detail.occurrences.length) {
-      const { results } = await this.env.DB.prepare(
-        'SELECT session_id, started_at FROM replays WHERE project = ?1 AND session_id IN (SELECT value FROM json_each(?2))',
-      )
-        .bind(ctx.project, JSON.stringify(detail.occurrences.map((o) => o.session)))
-        .all<{ session_id: string; started_at: number }>();
-      replays = new Map(results.map((r) => [r.session_id, r.started_at]));
-    }
+    const replays = await this.replayStarts(
+      ctx.project,
+      detail.occurrences.map((o) => o.session),
+    );
     const events = counts.rows.reduce((n, c) => n + c.events, 0);
     const users = counts.rows.reduce((n, c) => n + c.users, 0);
-    const top = stack.frames.find((f) => f.inApp) ?? stack.frames[0];
-    const where = top
-      ? top.original
-        ? `${top.original.source}:${top.original.line}${top.original.name ? ` in ${top.original.name}` : ''}`
-        : `${top.file}:${top.line ?? '?'}`
-      : 'no stack';
+    const where = topFrame(stack.frames);
     return {
       project: ctx.project,
       issue: row.issue,
@@ -3959,33 +4146,15 @@ WHERE project = ${d.str(project)} AND session_id = ${d.str(row.session_id)} AND 
       interval: series.interval,
       buckets: series.buckets,
       series: summed,
-      sample: row.sample
-        ? {
-            eventId: row.sample.event_id,
-            at: new Date(row.sample.ts).toISOString(),
-            url: row.sample.url,
-            release: row.sample.release,
-            handled: row.sample.handled,
-            level: row.sample.level,
-            browser: row.sample.browser,
-            os: row.sample.os,
-            person: row.sample.person_id,
-          }
-        : null,
+      sample: row.sample ? sampleView(row.sample) : null,
       stack: { frames: stack.frames, mapped: stack.mapped },
       breakdowns: detail.breakdowns,
       people: detail.people,
-      occurrences: detail.occurrences.map((o) => {
-        const started = replays.get(o.session);
-        return {
-          ...o,
-          at: new Date(o.ts).toISOString(),
-          replay:
-            started === undefined
-              ? null
-              : this.replayLink(ctx.project, o.session, Math.max(0, o.ts - started - 5000)),
-        };
-      }),
+      occurrences: detail.occurrences.map((o) => ({
+        ...o,
+        at: new Date(o.ts).toISOString(),
+        replay: this.replayAt(ctx.project, o, replays.get(o.session)),
+      })),
       summary: `${row.issue.type}: ${row.issue.message.slice(0, 160)} — ${row.issue.status}${row.issue.regressedAt ? ' (regressed)' : ''}, ${events} exceptions from ${users} people in range, ${row.issue.occurrences} in all since ${row.issue.firstSeen.slice(0, 10)}. Top frame: ${where}${stack.mapped ? ` (${stack.mapped} frames mapped with source maps)` : ''}.`,
       sql: [counts.sql, series.sql, ...detail.sql],
       dashboard: this.link(`errors/${row.issue.id}`, { project: ctx.project }),

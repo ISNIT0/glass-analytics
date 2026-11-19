@@ -242,24 +242,75 @@ interface RowContext {
 const str = (v: unknown, max = 500): string =>
   typeof v === 'string' ? v.slice(0, max) : v == null ? '' : String(v).slice(0, max);
 
+/**
+ * The event's time: corrected for the client's clock skew, never in the future. A browser that
+ * was offline can send a week's backlog; older timestamps are clock errors. Imports keep theirs:
+ * that is what an import is for.
+ */
+function eventTime(e: WireEvent, ctx: RowContext): number {
+  const corrected = Math.round(e.ts + ctx.skew);
+  const earliest = ctx.trusted ? corrected : Math.max(ctx.now - MAX_PAST_MS, corrected);
+  return Math.min(ctx.now + 60_000, earliest);
+}
+
+type Identified = {
+  e: WireEvent;
+  ts: number;
+  distinct: string;
+  user: string | null;
+  session: string;
+  groups: Record<string, string>;
+};
+
+function identify(
+  e: WireEvent,
+  ctx: RowContext,
+  anonymous: Awaited<ReturnType<typeof deriveCookielessIds>>,
+): Identified {
+  const ts = eventTime(e, ctx);
+  const user = str(e.user_id, 200) || null;
+  // A server event with only a user id belongs to that user (no device to derive one from).
+  const distinct = str(e.distinct_id, 200) || (ctx.trusted && user ? user : anonymous.distinctId);
+  const session = str(e.session_id, 100) || anonymous.sessionId(ts);
+  return { e, ts, distinct, user, session, groups: groupsOf(e) };
+}
+
+/** Where the event happened and on what: from a trusted sender's context, else the request. */
+function placeAndDevice(e: WireEvent, ctx: RowContext, ua: ReturnType<typeof parseUserAgent>) {
+  const c = ctx.trusted && e.context && typeof e.context === 'object' ? e.context : {};
+  return {
+    country: str(c.country, 2) || ctx.info.country,
+    region: str(c.region, 100) || ctx.info.region,
+    city: str(c.city, 100) || ctx.info.city,
+    device: str(c.device, 20) || (ua.device === 'unknown' ? '' : ua.device),
+    browser: str(c.browser, 50) || ua.browser,
+    os: str(c.os, 50) || ua.os,
+  };
+}
+
+/** Where on the site: the page, its UTM tags and where the visitor came from. */
+function pageColumns(e: WireEvent) {
+  const page = parsePage(e.url);
+  return {
+    url: page.url,
+    host: page.host,
+    path: page.path,
+    referrer: str(e.referrer, 1000).split('?')[0]!,
+    referrer_host: referrerHost(e.referrer, page.host),
+    title: str(e.title, 300),
+    utm_source: page.utm_source,
+    utm_medium: page.utm_medium,
+    utm_campaign: page.utm_campaign,
+    utm_term: page.utm_term,
+    utm_content: page.utm_content,
+  };
+}
+
 /** Steps 4–6 for a validated batch. */
 async function toRows(events: WireEvent[], ctx: RowContext): Promise<StoredEvent[]> {
   if (events.length === 0) return [];
   const anonymous = await deriveCookielessIds(ctx);
-  const withIds = events.map((e) => {
-    const corrected = Math.round(e.ts + ctx.skew);
-    // A browser that was offline can send a week's backlog; older timestamps are clock errors.
-    // Imports keep theirs: that is what an import is for.
-    const ts = ctx.trusted
-      ? Math.min(ctx.now + 60_000, corrected)
-      : Math.min(ctx.now + 60_000, Math.max(ctx.now - MAX_PAST_MS, corrected));
-    const user = str(e.user_id, 200) || null;
-    // A server event with only a user id belongs to that user (no device to derive one from).
-    const distinct = str(e.distinct_id, 200) || (ctx.trusted && user ? user : anonymous.distinctId);
-    const session = str(e.session_id, 100) || anonymous.sessionId(ts);
-    return { e, ts, distinct, user, session, groups: groupsOf(e) };
-  });
-
+  const withIds = events.map((e) => identify(e, ctx, anonymous));
   await applyIdentity(ctx, withIds);
   const types = await registerGroupTypes(ctx, withIds);
   await applyGroupIdentify(ctx, withIds, types);
@@ -267,12 +318,9 @@ async function toRows(events: WireEvent[], ctx: RowContext): Promise<StoredEvent
   const propsOf = await personProperties(ctx, [...new Set(personOf.values())]);
   const groupPropsOf = await groupProperties(ctx, withIds, types);
   const ua = parseUserAgent(ctx.info.userAgent);
-
   return withIds.map(({ e, ts, distinct, user, session, groups }) => {
-    const page = parsePage(e.url);
     const person = personOf.get(`${distinct}\u0000${user ?? ''}`)!;
     const known = Object.fromEntries(Object.entries(groups).filter(([type]) => types.has(type)));
-    const c = ctx.trusted && e.context && typeof e.context === 'object' ? e.context : {};
     return {
       id: str(e.id, 64),
       project: ctx.project,
@@ -282,23 +330,8 @@ async function toRows(events: WireEvent[], ctx: RowContext): Promise<StoredEvent
       user_id: user,
       person_id: person,
       session_id: session,
-      url: page.url,
-      host: page.host,
-      path: page.path,
-      referrer: str(e.referrer, 1000).split('?')[0]!,
-      referrer_host: referrerHost(e.referrer, page.host),
-      title: str(e.title, 300),
-      utm_source: page.utm_source,
-      utm_medium: page.utm_medium,
-      utm_campaign: page.utm_campaign,
-      utm_term: page.utm_term,
-      utm_content: page.utm_content,
-      country: str(c.country, 2) || ctx.info.country,
-      region: str(c.region, 100) || ctx.info.region,
-      city: str(c.city, 100) || ctx.info.city,
-      device: str(c.device, 20) || (ua.device === 'unknown' ? '' : ua.device),
-      browser: str(c.browser, 50) || ua.browser,
-      os: str(c.os, 50) || ua.os,
+      ...pageColumns(e),
+      ...placeAndDevice(e, ctx, ua),
       flags: JSON.stringify(e.flags && typeof e.flags === 'object' ? e.flags : {}),
       props: boundedProps(e.props, known, groupPropsOf),
       person_props: propsOf.get(person) ?? '{}',
@@ -306,6 +339,38 @@ async function toRows(events: WireEvent[], ctx: RowContext): Promise<StoredEvent
       received_ms: ctx.now,
     };
   });
+}
+
+/** Drop the largest properties until the rest fit, listing what went in `$truncated_keys`. */
+function truncate(props: Record<string, unknown>): void {
+  let text = JSON.stringify(props);
+  if (text.length <= MAX_PROPS_BYTES) return;
+  const sizes = Object.entries(props)
+    .map(([k, v]) => [k, JSON.stringify(v)?.length ?? 0] as const)
+    .sort((a, b) => b[1] - a[1]);
+  const dropped: string[] = [];
+  for (const [k] of sizes) {
+    if (text.length <= MAX_PROPS_BYTES - 200) break;
+    delete props[k];
+    dropped.push(k);
+    text = JSON.stringify(props);
+  }
+  props.$truncated_keys = dropped.slice(0, 20);
+}
+
+/** A snapshot of the event's groups' properties, when it fits. */
+function groupSnapshot(
+  groups: Record<string, string>,
+  groupProps: Map<string, Record<string, unknown>>,
+) {
+  const snapshot: Record<string, unknown> = {};
+  for (const [type, key] of Object.entries(groups)) {
+    const p = groupProps.get(`${type}\u0000${key}`);
+    if (p && Object.keys(p).length) snapshot[type] = p;
+  }
+  const fits =
+    Object.keys(snapshot).length && JSON.stringify(snapshot).length <= MAX_GROUP_PROPS_BYTES;
+  return fits ? snapshot : null;
 }
 
 /**
@@ -324,57 +389,40 @@ export function boundedProps(
   // Group fields are rebuilt below from what was validated.
   delete props.$groups;
   delete props.$group_props;
-  let text = JSON.stringify(props);
-  if (text.length > MAX_PROPS_BYTES) {
-    const sizes = Object.entries(props)
-      .map(([k, v]) => [k, JSON.stringify(v)?.length ?? 0] as const)
-      .sort((a, b) => b[1] - a[1]);
-    const dropped: string[] = [];
-    for (const [k] of sizes) {
-      if (text.length <= MAX_PROPS_BYTES - 200) break;
-      delete props[k];
-      dropped.push(k);
-      text = JSON.stringify(props);
-    }
-    props.$truncated_keys = dropped.slice(0, 20);
-  }
+  truncate(props);
   if (Object.keys(groups).length > 0) {
     props.$groups = groups;
-    const snapshot: Record<string, unknown> = {};
-    for (const [type, key] of Object.entries(groups)) {
-      const p = groupProps.get(`${type}\u0000${key}`);
-      if (p && Object.keys(p).length) snapshot[type] = p;
-    }
-    if (Object.keys(snapshot).length && JSON.stringify(snapshot).length <= MAX_GROUP_PROPS_BYTES) {
-      props.$group_props = snapshot;
-    }
+    const snapshot = groupSnapshot(groups, groupProps);
+    if (snapshot) props.$group_props = snapshot;
   }
   return JSON.stringify(props);
 }
 
+const groupKeyOf = (key: unknown) => (typeof key === 'number' ? String(key) : key);
+
+/** A valid group type and key, or null. */
+function validGroup(type: unknown, key: unknown): [string, string] | null {
+  const k = groupKeyOf(key);
+  return typeof type === 'string' &&
+    GROUP_TYPE.test(type) &&
+    typeof k === 'string' &&
+    validGroupKey(k)
+    ? [type, k]
+    : null;
+}
+
 /** The groups an event names (`props.$groups`), validated. A `$groupidentify` names its own group. */
 function groupsOf(e: WireEvent): Record<string, string> {
-  const out: Record<string, string> = {};
   const props = (e.props ?? {}) as Record<string, unknown>;
   const raw = props.$groups;
-  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
-    for (const [type, key] of Object.entries(raw as Record<string, unknown>)) {
-      const k = typeof key === 'number' ? String(key) : key;
-      if (GROUP_TYPE.test(type) && typeof k === 'string' && validGroupKey(k)) out[type] = k;
-    }
-  }
-  if (e.event === SYSTEM_EVENTS.groupIdentify) {
-    const type = props.$group_type;
-    const key = typeof props.$group_key === 'number' ? String(props.$group_key) : props.$group_key;
-    if (
-      typeof type === 'string' &&
-      GROUP_TYPE.test(type) &&
-      typeof key === 'string' &&
-      validGroupKey(key)
-    )
-      out[type] = key;
-  }
-  return out;
+  const named =
+    raw && typeof raw === 'object' && !Array.isArray(raw)
+      ? Object.entries(raw as Record<string, unknown>)
+      : [];
+  const pairs = named.map(([type, key]) => validGroup(type, key));
+  if (e.event === SYSTEM_EVENTS.groupIdentify)
+    pairs.push(validGroup(props.$group_type, props.$group_key));
+  return Object.fromEntries(pairs.filter((p): p is [string, string] => p !== null));
 }
 
 function validGroupKey(key: string): boolean {
@@ -532,6 +580,41 @@ async function registerGroupTypes(ctx: RowContext, events: WithIds[]): Promise<S
 }
 
 /** `$groupidentify` (glass.group(type, key, props)): set the group's properties. Every seen group gets a row. */
+/** The latest time each known group shows up in the batch. */
+function touchedGroups(
+  events: WithIds[],
+  types: Set<string>,
+): Map<string, { type: string; key: string; ts: number }> {
+  const touched = new Map<string, { type: string; key: string; ts: number }>();
+  for (const { ts, groups } of events)
+    for (const [type, key] of Object.entries(groups)) {
+      if (!types.has(type)) continue;
+      const id = `${type}\u0000${key}`;
+      const prev = touched.get(id);
+      if (!prev || prev.ts < ts) touched.set(id, { type, key, ts });
+    }
+  return touched;
+}
+
+/** A `$groupidentify`'s set and set-once properties, applied to its group (null for other events). */
+function groupIdentifyWrite(ctx: RowContext, x: WithIds, types: Set<string>) {
+  if (x.e.event !== SYSTEM_EVENTS.groupIdentify) return null;
+  const props = (x.e.props ?? {}) as Record<string, unknown>;
+  const type = String(props.$group_type ?? '');
+  const key = x.groups[type];
+  if (!key || !types.has(type)) return null;
+  const set = isObject(props.$group_set) ? props.$group_set : {};
+  const once = isObject(props.$group_set_once) ? props.$group_set_once : {};
+  return ctx.env.DB.prepare(
+    `INSERT INTO groups (project, type, key, props, first_seen, last_seen)
+     VALUES (?1, ?2, ?3, json_patch(json(?5), json(?4)), ?6, ?6)
+     ON CONFLICT (project, type, key) DO UPDATE SET
+       props = json_patch(json_patch(json(?5), groups.props), json(?4)),
+       last_seen = MAX(groups.last_seen, ?6),
+       first_seen = MIN(groups.first_seen, ?6)`,
+  ).bind(ctx.project, type, key, JSON.stringify(set), JSON.stringify(once), x.ts);
+}
+
 async function applyGroupIdentify(
   ctx: RowContext,
   events: WithIds[],
@@ -539,36 +622,11 @@ async function applyGroupIdentify(
 ): Promise<void> {
   if (types.size === 0) return;
   const db = ctx.env.DB;
-  const touched = new Map<string, { type: string; key: string; ts: number }>();
-  const statements = [];
-  for (const { e, ts, groups } of events) {
-    for (const [type, key] of Object.entries(groups)) {
-      if (!types.has(type)) continue;
-      const id = `${type}\u0000${key}`;
-      const prev = touched.get(id);
-      if (!prev || prev.ts < ts) touched.set(id, { type, key, ts });
-    }
-    if (e.event !== SYSTEM_EVENTS.groupIdentify) continue;
-    const props = (e.props ?? {}) as Record<string, unknown>;
-    const type = String(props.$group_type ?? '');
-    const key = groups[type];
-    if (!key || !types.has(type)) continue;
-    const set = isObject(props.$group_set) ? props.$group_set : {};
-    const once = isObject(props.$group_set_once) ? props.$group_set_once : {};
-    statements.push(
-      db
-        .prepare(
-          `INSERT INTO groups (project, type, key, props, first_seen, last_seen)
-           VALUES (?1, ?2, ?3, json_patch(json(?5), json(?4)), ?6, ?6)
-           ON CONFLICT (project, type, key) DO UPDATE SET
-             props = json_patch(json_patch(json(?5), groups.props), json(?4)),
-             last_seen = MAX(groups.last_seen, ?6),
-             first_seen = MIN(groups.first_seen, ?6)`,
-        )
-        .bind(ctx.project, type, key, JSON.stringify(set), JSON.stringify(once), ts),
-    );
-  }
-  if (touched.size > 0) {
+  const statements = events
+    .map((x) => groupIdentifyWrite(ctx, x, types))
+    .filter((st) => st !== null);
+  const touched = touchedGroups(events, types);
+  if (touched.size > 0)
     statements.push(
       db
         .prepare(
@@ -582,7 +640,6 @@ async function applyGroupIdentify(
         )
         .bind(ctx.project, JSON.stringify([...touched.values()])),
     );
-  }
   if (statements.length) await db.batch(statements);
 }
 

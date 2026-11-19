@@ -73,6 +73,67 @@ export interface MaintenanceResult {
   tasks: Record<string, number | string>;
 }
 
+/** Run each frequent task; one failing must not stop the others (or the hourly housekeeping). */
+async function frequentTasks(
+  env: Env,
+  store: EventStore,
+  now: number,
+): Promise<Record<string, number | string>> {
+  const tasks: Record<string, number | string> = {};
+  for (const task of FREQUENT_TASKS) {
+    try {
+      tasks[task.name] = await task.run(env, store, now);
+    } catch (err) {
+      tasks[task.name] = `error: ${err instanceof Error ? err.message : String(err)}`;
+    }
+  }
+  return tasks;
+}
+
+/** Events past the retention period (D1 only), deleted in slices so a backlog never overruns a run. */
+async function expireEvents(env: Env, store: EventStore, now: number): Promise<number> {
+  const days = Number(env.GLASS_RETENTION_DAYS);
+  if (store.kind !== 'd1' || !(days > 0)) return 0;
+  const cutoff = now - days * DAY_MS;
+  let events = 0;
+  for (let i = 0; i < 20; i++) {
+    const res = await env.DB.prepare(
+      'DELETE FROM events WHERE rowid IN (SELECT rowid FROM events WHERE ts_ms < ? LIMIT 5000)',
+    )
+      .bind(cutoff)
+      .run();
+    const changes = res.meta.changes ?? 0;
+    events += changes;
+    if (changes < 5000) break;
+  }
+  return events;
+}
+
+/** Replays past their retention period, a few slices per run across projects. */
+async function expireReplays(env: Env, now: number): Promise<number> {
+  const days = Number(env.GLASS_REPLAY_RETENTION_DAYS ?? 30);
+  if (!(days > 0)) return 0;
+  const cutoff = now - days * DAY_MS;
+  let replays = 0;
+  let slices = RETENTION_SLICES_PER_RUN;
+  for (const project of await listProjects(env.DB)) {
+    for (let n = REPLAY_DELETE_SLICE; slices > 0 && n >= REPLAY_DELETE_SLICE; slices--) {
+      n = await deleteReplays(env, project.id, 'started_at < ?', [cutoff]);
+      replays += n;
+    }
+    if (slices === 0) break;
+  }
+  return replays;
+}
+
+async function summarise(env: Env, store: EventStore, now: number): Promise<number> {
+  if (!env.REPLAYS) return 0;
+  const service = new GlassService(env, store, trimTrailingSlashes(env.GLASS_PUBLIC_URL ?? ''));
+  return service.summariseSettled(
+    await sessionsToSummarise(env.DB, now - SETTLED_MS, SUMMARIES_PER_RUN),
+  );
+}
+
 export async function runMaintenance(
   env: Env,
   store: EventStore,
@@ -80,59 +141,14 @@ export async function runMaintenance(
   options: { hourly?: boolean } = {},
 ): Promise<MaintenanceResult> {
   const hourly = options.hourly ?? true;
-  const tasks: Record<string, number | string> = {};
-  for (const task of FREQUENT_TASKS) {
-    // One failing task must not stop the others (or the hourly housekeeping).
-    try {
-      tasks[task.name] = await task.run(env, store, now);
-    } catch (err) {
-      tasks[task.name] = `error: ${err instanceof Error ? err.message : String(err)}`;
-    }
-  }
-  if (!hourly) {
+  const tasks = await frequentTasks(env, store, now);
+  if (!hourly)
     return { events: 0, replays: 0, summarised: 0, erased: 0, legacyMoved: 0, hourly, tasks };
-  }
-  let events = 0;
-  let replays = 0;
   // Erasures someone asked for come before routine retention.
   const erasures = await resumeErasures(env);
-  replays += erasures.replays;
-  const eventDays = Number(env.GLASS_RETENTION_DAYS);
-  if (store.kind === 'd1' && eventDays > 0) {
-    const cutoff = now - eventDays * DAY_MS;
-    // Delete in slices so a big backlog never exceeds a single invocation's limits.
-    for (let i = 0; i < 20; i++) {
-      const res = await env.DB.prepare(
-        'DELETE FROM events WHERE rowid IN (SELECT rowid FROM events WHERE ts_ms < ? LIMIT 5000)',
-      )
-        .bind(cutoff)
-        .run();
-      const changes = res.meta.changes ?? 0;
-      events += changes;
-      if (changes < 5000) break;
-    }
-  }
-  const replayDays = Number(env.GLASS_REPLAY_RETENTION_DAYS ?? 30);
-  if (replayDays > 0) {
-    const cutoff = now - replayDays * DAY_MS;
-    let slices = RETENTION_SLICES_PER_RUN;
-    for (const project of await listProjects(env.DB)) {
-      while (slices > 0) {
-        slices--;
-        const n = await deleteReplays(env, project.id, 'started_at < ?', [cutoff]);
-        replays += n;
-        if (n < REPLAY_DELETE_SLICE) break;
-      }
-      if (slices === 0) break;
-    }
-  }
-  let summarised = 0;
-  if (env.REPLAYS) {
-    const service = new GlassService(env, store, trimTrailingSlashes(env.GLASS_PUBLIC_URL ?? ''));
-    summarised = await service.summariseSettled(
-      await sessionsToSummarise(env.DB, now - SETTLED_MS, SUMMARIES_PER_RUN),
-    );
-  }
+  const events = await expireEvents(env, store, now);
+  const replays = erasures.replays + (await expireReplays(env, now));
+  const summarised = await summarise(env, store, now);
   const legacy = await moveLegacyReplays(env, LEGACY_MOVES_PER_RUN);
   return {
     events,

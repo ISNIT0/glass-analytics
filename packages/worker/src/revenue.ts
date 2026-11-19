@@ -104,6 +104,36 @@ export async function refreshRates(env: Env, now: number): Promise<number> {
   return storeRates(env, parseEcbXml(await res.text()));
 }
 
+type RevenueRules = NonNullable<EnrichContext['project']['settings']['revenueEvents']>;
+
+/** Cheap test first: most events are neither a rule's event nor carry $revenue_amount/$mrr_amount. */
+function mayCarryRevenue(row: StoredEvent, rules: RevenueRules): boolean {
+  if (rules.some((r) => r.event === row.event)) return true;
+  return row.props.includes('"$revenue_amount"') || row.props.includes('"$mrr_amount"');
+}
+
+/** The event's props with revenue fields added, or null when it carries none. */
+async function revenueProps(
+  row: StoredEvent,
+  rules: RevenueRules,
+  base: string,
+  env: Env,
+): Promise<string | null> {
+  let props: Record<string, unknown>;
+  try {
+    props = JSON.parse(row.props) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+  const currencies = revenueCurrencies(row.event, props, rules, base);
+  if (currencies.length === 0) return null;
+  const rates = currencies.every((c) => c === base)
+    ? new Map<string, number>()
+    : await ratesFor(env, dayOf(row.ts_ms));
+  const next = applyRevenue(row.event, props, rules, base, rates);
+  return next ? JSON.stringify(next) : null;
+}
+
 /**
  * The ingest step: add `$revenue_base` (and MRR fields) to revenue events, converting with the
  * rates for each event's day. Events with no rate for their currency keep `$revenue_unconverted`.
@@ -115,27 +145,12 @@ export async function convertRevenue(
   const rules = ctx.project.settings.revenueEvents ?? [];
   const base = (ctx.project.settings.baseCurrency ?? 'USD').toUpperCase();
   let out: StoredEvent[] | null = null;
-  for (let i = 0; i < rows.length; i++) {
-    const row = rows[i]!;
-    const named = rules.length > 0 && rules.some((r) => r.event === row.event);
-    // Cheap test first: most events are neither a rule's event nor carry $revenue_amount/$mrr_amount.
-    if (!named && !row.props.includes('"$revenue_amount"') && !row.props.includes('"$mrr_amount"'))
-      continue;
-    let props: Record<string, unknown>;
-    try {
-      props = JSON.parse(row.props) as Record<string, unknown>;
-    } catch {
-      continue;
-    }
-    const currencies = revenueCurrencies(row.event, props, rules, base);
-    if (currencies.length === 0) continue;
-    const rates = currencies.every((c) => c === base)
-      ? new Map<string, number>()
-      : await ratesFor(ctx.env, dayOf(row.ts_ms));
-    const next = applyRevenue(row.event, props, rules, base, rates);
-    if (!next) continue;
+  for (const [i, row] of rows.entries()) {
+    if (!mayCarryRevenue(row, rules)) continue;
+    const props = await revenueProps(row, rules, base, ctx.env);
+    if (props === null) continue;
     out ??= rows.slice();
-    out[i] = { ...row, props: JSON.stringify(next) };
+    out[i] = { ...row, props };
   }
   return out ?? rows;
 }

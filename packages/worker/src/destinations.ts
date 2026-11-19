@@ -182,39 +182,34 @@ export function clearDestinationCache(): void {
 }
 
 /** Create or update a destination. */
-export async function saveDestination(
+type Template = ReturnType<typeof templateOf>;
+
+async function existingDestination(
   env: Env,
   project: string,
-  input: DestinationInput,
-): Promise<Destination> {
-  const existing = input.id
-    ? await env.DB.prepare('SELECT * FROM destinations WHERE project = ? AND id = ?')
-        .bind(project, input.id)
-        .first<Row>()
-    : null;
-  const template = templateOf(input.template ?? existing?.template ?? '');
-  if (existing && input.template && input.template !== existing.template) {
-    throw new HttpError(
-      400,
-      "A destination's template can't change",
-      'Create a new destination instead.',
-    );
-  }
+  id: string | undefined,
+): Promise<Row | null> {
+  if (!id) return null;
+  return env.DB.prepare('SELECT * FROM destinations WHERE project = ? AND id = ?')
+    .bind(project, id)
+    .first<Row>();
+}
+
+/** The template's inputs into config or secrets (credentials); null removes one. */
+function applyInputs(
+  template: Template,
+  inputs: Record<string, unknown>,
+  config: Record<string, unknown>,
+  secrets: Record<string, unknown>,
+): void {
   const secretKeys = secretInputs(template);
-  const key = await encryptionKey(env);
-  const oldSecrets = existing?.secrets
-    ? await decryptJson<Record<string, unknown>>(key, existing.secrets).catch(() => ({}))
-    : {};
-  const config: Record<string, unknown> = existing ? parse(existing.config, {}) : {};
-  const secrets: Record<string, unknown> = { ...oldSecrets };
-  for (const [k, v] of Object.entries(input.inputs ?? {})) {
-    if (!template.inputs.some((i) => i.key === k)) {
+  for (const [k, v] of Object.entries(inputs)) {
+    if (!template.inputs.some((i) => i.key === k))
       throw new HttpError(
         400,
         `"${k}" is not an input of ${template.name}`,
         `Inputs: ${template.inputs.map((i) => i.key).join(', ')}.`,
       );
-    }
     const target = secretKeys.has(k) ? secrets : config;
     if (v === null) delete target[k];
     else target[k] = v;
@@ -224,20 +219,51 @@ export async function saveDestination(
   );
   if (missing.length)
     throw new HttpError(400, `${template.name} needs ${missing.map((m) => m.label).join(', ')}`);
+}
+
+/** Which events go: the saved match with the input's events and filters on top. */
+function matchOf(
+  existing: Row | null,
+  input: DestinationInput,
+  template: Template,
+): DestinationMatch {
   const match: DestinationMatch = {
     ...(existing ? parse<DestinationMatch>(existing.match, {}) : {}),
     ...(input.events !== undefined ? { events: input.events } : {}),
     ...(input.filters !== undefined ? { filters: input.filters } : {}),
   };
-  if (!match.events?.length && !template.defaultEvents) {
+  if (!match.events?.length && !template.defaultEvents)
     throw new HttpError(
       400,
       'Name the events to send',
       'e.g. "events": ["signup_completed"], or ["*"] for every event.',
     );
-  }
+  return match;
+}
+
+export async function saveDestination(
+  env: Env,
+  project: string,
+  input: DestinationInput,
+): Promise<Destination> {
+  const existing = await existingDestination(env, project, input.id);
+  const template = templateOf(input.template ?? existing?.template ?? '');
+  if (existing && input.template && input.template !== existing.template)
+    throw new HttpError(
+      400,
+      "A destination's template can't change",
+      'Create a new destination instead.',
+    );
+  const key = await encryptionKey(env);
+  const secrets: Record<string, unknown> = existing?.secrets
+    ? await decryptJson<Record<string, unknown>>(key, existing.secrets).catch(() => ({}))
+    : {};
+  const config: Record<string, unknown> = existing ? parse(existing.config, {}) : {};
+  applyInputs(template, input.inputs ?? {}, config, secrets);
+  const match = matchOf(existing, input, template);
   const now = Date.now();
   const id = existing?.id ?? input.id ?? crypto.randomUUID().slice(0, 12);
+  const enabled = input.enabled ?? (existing ? existing.enabled === 1 : true);
   await env.DB.prepare(
     `INSERT INTO destinations (project, id, name, template, enabled, match, config, secrets, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -249,7 +275,7 @@ export async function saveDestination(
       id,
       input.name ?? existing?.name ?? template.name,
       template.id,
-      (input.enabled ?? (existing ? existing.enabled === 1 : true)) ? 1 : 0,
+      enabled ? 1 : 0,
       JSON.stringify(match),
       JSON.stringify(config),
       Object.keys(secrets).length ? await encryptJson(key, secrets) : null,

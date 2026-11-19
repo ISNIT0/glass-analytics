@@ -51,38 +51,64 @@ function withStages(endpoints: Record<string, string>): Record<string, string> {
   );
 }
 
+/** The key's scope, or an error that says what's wrong with the request's key. */
+async function authorize(request: Request, env: Env): Promise<Scope> {
+  if (!env.GLASS_ADMIN_KEY)
+    throw new HttpError(
+      503,
+      'GLASS_ADMIN_KEY is not set on this Worker',
+      'Run `dataflare upgrade` or set it with `wrangler secret put GLASS_ADMIN_KEY`.',
+    );
+  const scope = await authenticate(request, env);
+  if (!scope)
+    throw new HttpError(
+      401,
+      'Missing or invalid API key',
+      'Send "Authorization: Bearer <key>". Keys are in .glass/credentials.json; run `dataflare key`.',
+    );
+  const path = new URL(request.url).pathname.replace(/^\/_glass/, '');
+  if (scope === 'server' && !SERVER_PATHS.some((re) => re.test(path)))
+    throw new HttpError(
+      403,
+      'The server key only imports events, reads flag definitions and uploads source maps',
+      'Use the read key (`dataflare key --read`) to query, or the admin key to change things.',
+    );
+  return scope;
+}
+
+/** Who changed something, for flag history: the agent's name when it sends one, and the key. */
+function actorLabel(request: Request, scope: Scope): string {
+  const name = request.headers.get('X-Glass-Actor')?.slice(0, 60);
+  return name ? `${name} (${scope} key)` : `${scope} key`;
+}
+
+/** A result as a CSV download when it has one (?format=csv), JSON otherwise. */
+function csvOrJson(result: object, filename: string): Response {
+  const csv = (result as { csv?: string }).csv;
+  if (csv === undefined) return json(result);
+  return new Response(csv, {
+    headers: {
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+    },
+  });
+}
+
+/** 304 when the client already has this version. */
+function withEtag(req: Request, defs: { etag: string }): Response {
+  if (req.headers.get('If-None-Match') === defs.etag)
+    return new Response(null, { status: 304, headers: { ETag: defs.etag } });
+  return json(defs, { headers: { ETag: defs.etag, 'Cache-Control': 'no-cache' } });
+}
+
 export async function apiRouter(
   service: GlassService,
   env: Env,
   request: Request,
   now = Date.now(),
 ): Promise<Router> {
-  if (!env.GLASS_ADMIN_KEY) {
-    throw new HttpError(
-      503,
-      'GLASS_ADMIN_KEY is not set on this Worker',
-      'Run `dataflare upgrade` or set it with `wrangler secret put GLASS_ADMIN_KEY`.',
-    );
-  }
-  const found = await authenticate(request, env);
-  if (!found) {
-    throw new HttpError(
-      401,
-      'Missing or invalid API key',
-      'Send "Authorization: Bearer <key>". Keys are in .glass/credentials.json; run `dataflare key`.',
-    );
-  }
-  const scope: Scope = found;
-  const path = new URL(request.url).pathname.replace(/^\/_glass/, '');
-  if (scope === 'server' && !SERVER_PATHS.some((re) => re.test(path))) {
-    throw new HttpError(
-      403,
-      'The server key only imports events, reads flag definitions and uploads source maps',
-      'Use the read key (`dataflare key --read`) to query, or the admin key to change things.',
-    );
-  }
-  const actorName = request.headers.get('X-Glass-Actor')?.slice(0, 60);
-  service.actor = actorName ? `${actorName} (${scope} key)` : `${scope} key`;
+  const scope = await authorize(request, env);
+  service.actor = actorLabel(request, scope);
   const admin = () => {
     if (scope !== 'admin') throw new HttpError(403, 'This action needs the admin key');
   };
@@ -277,15 +303,7 @@ export async function apiRouter(
     const input = { ...params(url), ...(await body()) };
     if (input.saveAsCohort) admin();
     const result = await service.actors(input);
-    if ('csv' in result && result.csv !== undefined) {
-      return new Response(result.csv, {
-        headers: {
-          'Content-Type': 'text/csv; charset=utf-8',
-          'Content-Disposition': `attachment; filename="${result.kind}-actors.csv"`,
-        },
-      });
-    }
-    return json(result);
+    return csvOrJson(result, `${result.kind}-actors.csv`);
   });
 
   r.get('/api/annotations', async ({ url }) => json(await service.listAnnotations(params(url))));
@@ -386,14 +404,13 @@ export async function apiRouter(
   // in the query. The server key can upload, so a CI job doesn't need the admin key.
   r.put('/api/sourcemaps', async ({ url }) => {
     server();
-    const release = url.searchParams.get('release') ?? '';
-    const path = url.searchParams.get('path') ?? '';
+    const q = params(url);
     const text = await request.text();
     return json(
       await service.uploadSourcemap(
-        url.searchParams.get('project') ?? undefined,
-        release,
-        path,
+        q.project as string | undefined,
+        String(q.release ?? ''),
+        String(q.path ?? ''),
         text,
       ),
       {
@@ -514,15 +531,7 @@ export async function apiRouter(
   });
   r.get('/api/cohorts/:key/members', async ({ url, params: p }) => {
     const result = await service.cohortMembers({ ...params(url), key: p.key });
-    if ('csv' in result && result.csv !== undefined) {
-      return new Response(result.csv, {
-        headers: {
-          'Content-Type': 'text/csv; charset=utf-8',
-          'Content-Disposition': `attachment; filename="cohort-${p.key}.csv"`,
-        },
-      });
-    }
-    return json(result);
+    return csvOrJson(result, `cohort-${p.key}.csv`);
   });
   r.patch('/api/cohorts/:key/members', async ({ url, params: p }) => {
     admin();
@@ -589,11 +598,7 @@ export async function apiRouter(
   r.get('/api/flags', async ({ url }) => json(await service.listFlags(params(url))));
   r.get('/api/flags/definitions', async ({ url, request: req }) => {
     server();
-    const defs = await service.flagDefinitions(params(url));
-    if (req.headers.get('If-None-Match') === defs.etag) {
-      return new Response(null, { status: 304, headers: { ETag: defs.etag } });
-    }
-    return json(defs, { headers: { ETag: defs.etag, 'Cache-Control': 'no-cache' } });
+    return withEtag(req, await service.flagDefinitions(params(url)));
   });
   r.get('/api/flags/schedules', async ({ url }) => json(await service.flagSchedules(params(url))));
   r.delete('/api/flags/schedules/:id', async ({ url, params: p }) => {

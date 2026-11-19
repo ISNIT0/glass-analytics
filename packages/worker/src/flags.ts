@@ -103,28 +103,46 @@ async function recordChange(
 }
 
 /** Create or replace a flag. Returns the stored definition and what changed. */
-export async function saveFlag(db: D1Database, project: string, input: FlagInput, actor = '') {
-  const existing = await getFlag(db, project, input.key);
+/** The input over the existing definition: null clears a field, undefined keeps it. */
+function mergedFlag(input: FlagInput, existing: FlagDefinition | null): FlagDefinition {
   const flag: FlagDefinition = {
     key: input.key,
     enabled: input.enabled ?? existing?.enabled ?? true,
     rollout: input.rollout ?? existing?.rollout ?? 100,
   };
+  const from = input as Record<string, unknown>;
+  const old = (existing ?? {}) as Record<string, unknown>;
   for (const f of FIELDS) {
     if (f === 'enabled' || f === 'rollout') continue;
-    // null clears a field; undefined keeps it.
-    const v = (input as Record<string, unknown>)[f];
-    const value = v === undefined ? (existing as Record<string, unknown> | null)?.[f] : v;
+    const value = from[f] === undefined ? old[f] : from[f];
     if (value !== undefined && value !== null)
       (flag as unknown as Record<string, unknown>)[f] = value;
   }
-  const problems = validateFlag(flag);
+  return flag;
+}
+
+/** Problems with the flag, and with the project's flags once it's saved (loops, missing flags). */
+async function flagProblems(
+  db: D1Database,
+  project: string,
+  flag: FlagDefinition,
+): Promise<string[]> {
   const others = (await listFlags(db, project, true)).filter((f) => f.key !== flag.key);
-  problems.push(
-    ...validateFlagSet([...others, flag]).filter(
-      (p) => p.includes(`"${flag.key}"`) || p.includes(flag.key),
-    ),
-  );
+  const setProblems = validateFlagSet([...others, flag]).filter((p) => p.includes(flag.key));
+  return [...validateFlag(flag), ...setProblems];
+}
+
+/** Fields whose value differs between two definitions. */
+function changedFields(flag: FlagDefinition, existing: FlagDefinition | null): string[] {
+  const a = flag as unknown as Record<string, unknown>;
+  const b = (existing ?? {}) as Record<string, unknown>;
+  return Object.keys({ ...a, ...b }).filter((k) => JSON.stringify(a[k]) !== JSON.stringify(b[k]));
+}
+
+export async function saveFlag(db: D1Database, project: string, input: FlagInput, actor = '') {
+  const existing = await getFlag(db, project, input.key);
+  const flag = mergedFlag(input, existing);
+  const problems = await flagProblems(db, project, flag);
   if (problems.length) throw new HttpError(400, `Invalid flag: ${problems.join('; ')}`);
   const now = Date.now();
   await db
@@ -135,12 +153,8 @@ export async function saveFlag(db: D1Database, project: string, input: FlagInput
     .bind(project, flag.key, JSON.stringify(flag), now, now)
     .run();
   cache.delete(project);
-  const changed = Object.keys({ ...flag, ...(existing ?? {}) }).filter(
-    (k) =>
-      JSON.stringify((flag as unknown as Record<string, unknown>)[k]) !==
-      JSON.stringify((existing as unknown as Record<string, unknown> | null)?.[k]),
-  );
-  if (!existing || changed.length) {
+  const changed = changedFields(flag, existing);
+  if (!existing || changed.length)
     await recordChange(
       db,
       project,
@@ -150,7 +164,6 @@ export async function saveFlag(db: D1Database, project: string, input: FlagInput
       existing,
       flag,
     );
-  }
   return { flag, created: !existing, changed };
 }
 
@@ -327,6 +340,60 @@ export async function applyDueSchedules(db: D1Database, now: number): Promise<nu
 
 // ── Evaluation ─────────────────────────────────────────────────────────────
 
+/** The person a visitor is: the user id, else whoever their device was linked to. */
+async function personIdOf(
+  db: D1Database,
+  project: string,
+  distinctId: string,
+  userId: string | null,
+): Promise<string | null> {
+  if (userId) return userId;
+  const link = await db
+    .prepare('SELECT person_id FROM identities WHERE project = ? AND distinct_id = ?')
+    .bind(project, distinctId)
+    .first<{ person_id: string }>();
+  return link?.person_id ?? null;
+}
+
+async function personProps(
+  db: D1Database,
+  project: string,
+  id: string,
+): Promise<Record<string, unknown>> {
+  const row = await db
+    .prepare('SELECT props FROM persons WHERE project = ? AND person_id = ?')
+    .bind(project, id)
+    .first<{ props: string }>();
+  return row ? (JSON.parse(row.props) as Record<string, unknown>) : {};
+}
+
+/** The current properties of the visitor's groups, keyed by group type. */
+async function groupPropsOf(db: D1Database, project: string, groups: Record<string, string>) {
+  const { results } = await db
+    .prepare(
+      `SELECT type, props FROM groups WHERE project = ?1 AND (type || char(0) || key) IN (SELECT value FROM json_each(?2))`,
+    )
+    .bind(project, JSON.stringify(Object.entries(groups).map(([t, k]) => `${t}\u0000${k}`)))
+    .all<{ type: string; props: string }>();
+  return Object.fromEntries(
+    results.map((r) => [r.type, JSON.parse(r.props) as Record<string, unknown>]),
+  );
+}
+
+/** Location and device from the request's headers, or blanks without a request. */
+function requestFacts(request: Request | undefined) {
+  const info = request ? requestInfo(request) : null;
+  const ua = info ? parseUserAgent(info.userAgent) : null;
+  return {
+    country: info?.country ?? '',
+    region: info?.region ?? '',
+    city: info?.city ?? '',
+    device: ua?.device ?? '',
+    browser: ua?.browser ?? '',
+    os: ua?.os ?? '',
+  };
+}
+
 /** Build the evaluation context for a user from D1 and the request. */
 export async function flagContext(
   db: D1Database,
@@ -338,54 +405,20 @@ export async function flagContext(
   groups: Record<string, string> = {},
   withGroupProps = false,
 ): Promise<EvaluationContext> {
-  let personId = userId;
-  if (!personId) {
-    const link = await db
-      .prepare('SELECT person_id FROM identities WHERE project = ? AND distinct_id = ?')
-      .bind(project, distinctId)
-      .first<{ person_id: string }>();
-    personId = link?.person_id ?? null;
-  }
-  const row = personId
-    ? await db
-        .prepare('SELECT props FROM persons WHERE project = ? AND person_id = ?')
-        .bind(project, personId)
-        .first<{ props: string }>()
-    : await db
-        .prepare('SELECT props FROM persons WHERE project = ? AND person_id = ?')
-        .bind(project, distinctId)
-        .first<{ props: string }>();
-  const info = request ? requestInfo(request) : null;
-  const ua = info ? parseUserAgent(info.userAgent) : null;
-  let groupProps: Record<string, Record<string, unknown>> | undefined;
-  if (withGroupProps && Object.keys(groups).length) {
-    const { results } = await db
-      .prepare(
-        `SELECT type, props FROM groups WHERE project = ?1 AND (type || char(0) || key) IN (SELECT value FROM json_each(?2))`,
-      )
-      .bind(project, JSON.stringify(Object.entries(groups).map(([t, k]) => `${t}\u0000${k}`)))
-      .all<{ type: string; props: string }>();
-    groupProps = Object.fromEntries(
-      results.map((r) => [r.type, JSON.parse(r.props) as Record<string, unknown>]),
-    );
-  }
+  const personId = await personIdOf(db, project, distinctId, userId);
+  const ids = [...new Set([personId ?? distinctId, distinctId])];
+  const groupProps =
+    withGroupProps && Object.keys(groups).length
+      ? await groupPropsOf(db, project, groups)
+      : undefined;
   return {
     distinct_id: distinctId,
     user_id: personId ?? userId,
-    person: row ? (JSON.parse(row.props) as Record<string, unknown>) : {},
-    ...(withCohorts
-      ? {
-          cohorts: await cohortsOf(db, project, [...new Set([personId ?? distinctId, distinctId])]),
-        }
-      : {}),
+    person: await personProps(db, project, personId ?? distinctId),
+    ...(withCohorts ? { cohorts: await cohortsOf(db, project, ids) } : {}),
     groups,
     ...(groupProps ? { groupProps } : {}),
-    country: info?.country ?? '',
-    region: info?.region ?? '',
-    city: info?.city ?? '',
-    device: ua?.device ?? '',
-    browser: ua?.browser ?? '',
-    os: ua?.os ?? '',
+    ...requestFacts(request),
   };
 }
 
@@ -413,15 +446,46 @@ function referencesGroupProps(flags: FlagDefinition[]): boolean {
   );
 }
 
+type FlagRequest = {
+  project?: string;
+  distinct_id?: string | null;
+  user_id?: string | null;
+  groups?: Record<string, unknown>;
+  early_access?: boolean;
+  debug?: boolean;
+};
+
+/** Group keys from the request, as strings (other values are ignored). */
+function groupKeys(groups: Record<string, unknown> | undefined): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [t, k] of Object.entries(groups ?? {}))
+    if (typeof k === 'string' || typeof k === 'number') out[t] = String(k);
+  return out;
+}
+
+/** Early-access features this person can opt into, with their choice so far. */
+function earlyAccessList(
+  flags: FlagDefinition[],
+  person: Record<string, unknown> | undefined,
+): NonNullable<FlagResponse['earlyAccess']> {
+  const choices = (person?.[EARLY_ACCESS_PROPERTY] ?? {}) as Record<string, unknown>;
+  return flags
+    .filter((f) => f.earlyAccess && f.enabled)
+    .map((f) => {
+      const ea = f.earlyAccess!;
+      return {
+        key: f.key,
+        name: ea.name,
+        ...(ea.description ? { description: ea.description } : {}),
+        ...(ea.docsUrl ? { docsUrl: ea.docsUrl } : {}),
+        stage: ea.stage,
+        enrolled: typeof choices[f.key] === 'boolean' ? (choices[f.key] as boolean) : null,
+      };
+    });
+}
+
 export async function handleFlagEvaluation(request: Request, env: Env): Promise<FlagResponse> {
-  const body = await readJson<{
-    project?: string;
-    distinct_id?: string | null;
-    user_id?: string | null;
-    groups?: Record<string, unknown>;
-    early_access?: boolean;
-    debug?: boolean;
-  }>(request, 10_000);
+  const body = await readJson<FlagRequest>(request, 10_000);
   const project = body.project ? await getProject(env.DB, body.project) : null;
   if (!project) throw new HttpError(404, 'Unknown project');
   const allowOverrides = project.settings.allowFlagOverrides ? { allowOverrides: true } : {};
@@ -430,10 +494,6 @@ export async function handleFlagEvaluation(request: Request, env: Env): Promise<
   const flags = await listFlags(env.DB, project.id);
   if (flags.length === 0)
     return { flags: {}, ...allowOverrides, ...(body.early_access ? { earlyAccess: [] } : {}) };
-  const groups: Record<string, string> = {};
-  for (const [t, k] of Object.entries(body.groups ?? {})) {
-    if (typeof k === 'string' || typeof k === 'number') groups[t] = String(k);
-  }
   const ctx = await flagContext(
     env.DB,
     project.id,
@@ -441,31 +501,23 @@ export async function handleFlagEvaluation(request: Request, env: Env): Promise<
     body.user_id ? String(body.user_id) : null,
     request,
     cohortsUsedByFlags(flags).size > 0,
-    groups,
+    groupKeys(body.groups),
     referencesGroupProps(flags),
   );
   const results = evaluateFlagsDetailed(flags, ctx);
-  const values: Record<string, string> = {};
-  for (const [k, r] of Object.entries(results)) if (r.value !== null) values[k] = r.value;
+  const values = Object.fromEntries(
+    Object.entries(results).flatMap(([k, r]) => (r.value === null ? [] : [[k, r.value]])),
+  ) as Record<string, string>;
   const payloads = payloadsFor(flags, values);
-  const response: FlagResponse = { flags: values, ...allowOverrides };
-  if (Object.keys(payloads).length) response.payloads = payloads;
-  if (body.early_access) {
-    const choices = (ctx.person?.[EARLY_ACCESS_PROPERTY] ?? {}) as Record<string, unknown>;
-    response.earlyAccess = flags
-      .filter((f) => f.earlyAccess && f.enabled)
-      .map((f) => ({
-        key: f.key,
-        name: f.earlyAccess!.name,
-        ...(f.earlyAccess!.description ? { description: f.earlyAccess!.description } : {}),
-        ...(f.earlyAccess!.docsUrl ? { docsUrl: f.earlyAccess!.docsUrl } : {}),
-        stage: f.earlyAccess!.stage,
-        enrolled: typeof choices[f.key] === 'boolean' ? (choices[f.key] as boolean) : null,
-      }));
-  }
-  if (body.debug)
-    response.reasons = Object.fromEntries(Object.entries(results).map(([k, r]) => [k, r.reason]));
-  return response;
+  return {
+    flags: values,
+    ...allowOverrides,
+    ...(Object.keys(payloads).length ? { payloads } : {}),
+    ...(body.early_access ? { earlyAccess: earlyAccessList(flags, ctx.person) } : {}),
+    ...(body.debug
+      ? { reasons: Object.fromEntries(Object.entries(results).map(([k, r]) => [k, r.reason])) }
+      : {}),
+  };
 }
 
 /**

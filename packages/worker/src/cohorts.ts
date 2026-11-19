@@ -163,18 +163,16 @@ export function membershipSql(row: CohortRow, ctx: CohortContext): string {
 }
 
 /** Cohort keys any flag's targeting refers to. */
+/** The cohort keys a condition names (`cohort` is one key or a list). */
+function cohortKeysOf(c: { property: string; value?: unknown }): string[] {
+  if (c.property !== COHORT_PROPERTY) return [];
+  const values = Array.isArray(c.value) ? c.value : [c.value];
+  return values.filter((v) => v !== undefined && v !== null).map(String);
+}
+
 export function cohortsUsedByFlags(flags: FlagDefinition[]): Set<string> {
-  const keys = new Set<string>();
-  for (const f of flags) {
-    for (const rule of f.rules ?? []) {
-      for (const c of rule.conditions ?? []) {
-        if (c.property !== COHORT_PROPERTY) continue;
-        const values = Array.isArray(c.value) ? c.value : [c.value];
-        for (const v of values) if (v !== undefined && v !== null) keys.add(String(v));
-      }
-    }
-  }
-  return keys;
+  const conditions = flags.flatMap((f) => (f.rules ?? []).flatMap((rule) => rule.conditions ?? []));
+  return new Set(conditions.flatMap(cohortKeysOf));
 }
 
 /** Recompute one dynamic cohort's members into cohort_members. Returns the member count. */
