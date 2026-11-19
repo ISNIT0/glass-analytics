@@ -43,6 +43,12 @@ const built = transformSync(SOURCE, {
   sourcesContent: true,
 });
 const throwColumn = built.code.indexOf('throw') + 1;
+/** A full-page screenshot from the top, so sticky headers and the sidebar sit where they belong. */
+const shot = async (p: Page, path: string) => {
+  await p.evaluate(() => window.scrollTo(0, 0));
+  await p.waitForTimeout(150);
+  await p.screenshot({ path, fullPage: true });
+};
 const call = async (
   method: string,
   path: string,
@@ -586,7 +592,7 @@ const actions: Record<string, (p: Page) => Promise<void>> = {
       buffer: Buffer.from(rows.map((r) => JSON.stringify(r)).join('\n')),
     });
     await p.waitForTimeout(700);
-    await p.screenshot({ path: `${out}/imports-preview.png`, fullPage: true });
+    await shot(p, `${out}/imports-preview.png`);
     await p.getByRole('button', { name: /^Import \d/ }).click();
     await p.waitForTimeout(1200);
   },
@@ -655,12 +661,12 @@ for (const [theme, width, height, suffix] of [
       problems.push(
         `${name}${suffix}: page text mentions an error: ${text.slice(0, 300).replace(/\n/g, ' | ')}`,
       );
-    await page.screenshot({ path: `${out}/${name}${suffix}.png`, fullPage: true });
+    await shot(page, `${out}/${name}${suffix}.png`);
     for (const gap of await touchingBlocks(page)) problems.push(`${name}${suffix}: ${gap}`);
     const act = actions[name];
     if (act && suffix !== '-mobile') {
       await act(page).catch((e) => problems.push(`${name}${suffix}: action failed: ${e.message}`));
-      await page.screenshot({ path: `${out}/${name}${suffix}-after.png`, fullPage: true });
+      await shot(page, `${out}/${name}${suffix}-after.png`);
       await page.keyboard.press('Escape');
     }
   }

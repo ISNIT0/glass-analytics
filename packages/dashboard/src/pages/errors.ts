@@ -278,11 +278,11 @@ function stackPanel(d: IssueDetail): HTMLElement {
                     all = !all;
                     (e.target as HTMLElement).textContent = all
                       ? 'Only your code'
-                      : `Show ${vendor} more frames`;
+                      : `Show ${vendor} more ${vendor === 1 ? 'frame' : 'frames'}`;
                     paint();
                   },
                 },
-                `Show ${vendor} more frames`,
+                `Show ${vendor} more ${vendor === 1 ? 'frame' : 'frames'}`,
               )
             : null,
         ]
