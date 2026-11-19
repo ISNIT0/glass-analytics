@@ -14,6 +14,7 @@ import { decryptJson, encryptJson } from '@dataflare/core/crypto';
 import { EVENT_COLUMNS } from '@dataflare/core/events';
 import { type ExportFormat, exportRow, formatRows, gzip } from '@dataflare/core/exports';
 import { googleAccessToken, type ServiceAccount } from '@dataflare/core/google-auth';
+import { trimTrailingSlashes } from '@dataflare/core/url';
 import { encryptionKey } from './destinations.ts';
 import type { Env } from './env.ts';
 import { HttpError } from './http.ts';
@@ -246,7 +247,7 @@ async function upload(
     const date = new Date(u.from).toISOString();
     const prefix = String(config.prefix ?? 'dataflare/').replace(/^\/+/, '');
     const key = `${prefix}${project}/${date.slice(0, 4)}/${date.slice(5, 7)}/${date.slice(8, 10)}/${date.slice(11, 13)}/${u.from}-${u.to}-${String(u.page).padStart(4, '0')}.${r.format}.gz`;
-    const endpoint = String(config.endpoint).replace(/\/+$/, '');
+    const endpoint = trimTrailingSlashes(String(config.endpoint));
     const url = `${endpoint}/${encodeURIComponent(String(config.bucket))}/${key.split('/').map(encodeURIComponent).join('/')}`;
     const headers = await signSigV4({
       method: 'PUT',

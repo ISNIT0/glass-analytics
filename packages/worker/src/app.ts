@@ -13,6 +13,7 @@
  * your own domain (first-party requests are not blocked by ad blockers).
  */
 
+import { trimTrailingSlashes } from '@dataflare/core/url';
 import { apiRouter } from './api.ts';
 import { requireScope } from './auth.ts';
 import { isHourlyTick, runMaintenance } from './cron.ts';
@@ -88,8 +89,8 @@ export function createApp(options: AppOptions) {
         : '';
     const path = url.pathname.slice(prefix.length) || '/';
     const base =
-      (env.GLASS_PUBLIC_URL?.replace(/\/+$/, '') ?? url.origin) +
-      (env.GLASS_PUBLIC_URL ? '' : prefix);
+      ((env.GLASS_PUBLIC_URL ? trimTrailingSlashes(env.GLASS_PUBLIC_URL) : undefined) ??
+        url.origin) + (env.GLASS_PUBLIC_URL ? '' : prefix);
     const store = makeStore(env);
     const service = new GlassService(env, store, base);
     const now = options.now?.() ?? Date.now();

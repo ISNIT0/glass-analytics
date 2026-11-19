@@ -213,7 +213,8 @@ describe('destinations', () => {
       retry: (o) => outcomes.push(`retry ${o?.delaySeconds}`),
     });
     // The second delivery fails, so its message is retried with backoff.
-    answer = (url) => (url.includes('hooks.slack.com') && sent.length === 2 ? 500 : 200);
+    answer = (url) =>
+      new URL(url).hostname === 'hooks.slack.com' && sent.length === 2 ? 500 : 200;
     await t.app.queue(
       {
         queue: 'glass-deliveries',

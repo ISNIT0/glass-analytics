@@ -29,6 +29,7 @@ import {
   type FlagEvaluation,
   payloadsFor,
 } from '@dataflare/core/flags';
+import { trimTrailingSlashes } from '@dataflare/core/url';
 import { GLASS_VERSION } from '@dataflare/core/version';
 
 export type Properties = Record<string, unknown>;
@@ -165,7 +166,7 @@ export class Dataflare {
   constructor(options: DataflareOptions) {
     if (!options?.host || !options?.project)
       throw new TypeError('Dataflare needs { host, project }');
-    this.host = options.host.replace(/\/+$/, '');
+    this.host = trimTrailingSlashes(options.host);
     this.project = options.project;
     this.serverKey = options.serverKey;
     this.flushAt = Math.max(1, options.flushAt ?? 20);

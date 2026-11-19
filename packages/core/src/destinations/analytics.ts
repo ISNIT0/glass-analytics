@@ -3,6 +3,7 @@
  * (to migrate, to compare, or to keep a second copy).
  */
 
+import { trimTrailingSlashes } from '../url.ts';
 import { type DeliveryEvent, type DestinationTemplate, JSON_HEADERS, json, str } from './types.ts';
 
 const setOf = (event: DeliveryEvent) =>
@@ -126,7 +127,7 @@ export const POSTHOG: DestinationTemplate = {
     },
   ],
   async render(event, config) {
-    const host = (str(config.host) || 'https://us.i.posthog.com').replace(/\/+$/, '');
+    const host = trimTrailingSlashes(str(config.host) || 'https://us.i.posthog.com');
     const groups = event.props.$groups as Record<string, string> | undefined;
     return [
       {

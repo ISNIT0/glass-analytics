@@ -13,6 +13,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
+import { trimTrailingSlashes } from '@dataflare/core/url';
 
 export interface GlassConfig {
   /** Worker name. */
@@ -136,7 +137,7 @@ export function connection(): { host: string; key: string; project: string | und
     );
   }
   return {
-    host: host.replace(/\/+$/, ''),
+    host: trimTrailingSlashes(host),
     key,
     project: process.env.GLASS_PROJECT ?? config?.project,
   };

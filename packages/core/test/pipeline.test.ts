@@ -256,7 +256,7 @@ describe('destination templates', () => {
       apiKey: 'k',
       eu: true,
     }))!;
-    assert.match(cioPerson!.url, /track-eu\.customer\.io/);
+    assert.equal(new URL(cioPerson!.url).hostname, 'track-eu.customer.io');
     const person = JSON.parse(cioPerson!.body!);
     assert.deepEqual(
       [person.type, person.action, person.attributes.plan],
@@ -401,7 +401,8 @@ describe('destination templates', () => {
       apiSecret: 's',
       eu: true,
     }))!;
-    assert.match(mp!.url, /api-eu\.mixpanel\.com\/import/);
+    assert.equal(new URL(mp!.url).hostname, 'api-eu.mixpanel.com');
+    assert.equal(new URL(mp!.url).pathname, '/import');
     const [amp] = (await TEMPLATES.amplitude!.render(delivery(), { apiKey: 'k' }))!;
     assert.equal(JSON.parse(amp!.body!).events[0].insert_id, 'evt-1');
     const [ph] = (await TEMPLATES.posthog!.render(delivery(), {

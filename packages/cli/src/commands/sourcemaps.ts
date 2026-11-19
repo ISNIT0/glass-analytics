@@ -11,6 +11,7 @@
 
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
+import { trimSlashes } from '@dataflare/core/url';
 import { call, withProject } from '../client.ts';
 import { connection, UsageError } from '../config.ts';
 import { color, line, ok, printJson, table } from '../output.ts';
@@ -36,7 +37,7 @@ export function servedPath(dir: string, file: string, prefix = '/'): string {
     .split(sep)
     .join('/')
     .replace(/\.map$/, '');
-  return `/${prefix.replace(/^\/+|\/+$/g, '')}/${rel}`.replace(/\/{2,}/g, '/');
+  return `/${trimSlashes(prefix)}/${rel}`.replace(/\/{2,}/g, '/');
 }
 
 export async function sourcemaps(

@@ -130,7 +130,7 @@ function fetcherFor(
     if (url.startsWith('https://api.cloudflare.com/client/v4/accounts')) {
       return Response.json({ success: true, result: [{ id: 'acct-1', name: 'Test Account' }] });
     }
-    if (url.startsWith(HOST)) {
+    if (new URL(url).origin === HOST) {
       return worker.app.fetch(
         new Request(url.replace(HOST, 'https://glass.test'), init),
         worker.env,

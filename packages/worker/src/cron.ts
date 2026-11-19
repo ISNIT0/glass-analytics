@@ -11,6 +11,7 @@
  */
 
 import { DAY_MS } from '@dataflare/core/time';
+import { trimTrailingSlashes } from '@dataflare/core/url';
 import { refreshFlagCohorts } from './cohorts.ts';
 import type { Env } from './env.ts';
 import { resumeErasures } from './erasure.ts';
@@ -127,7 +128,7 @@ export async function runMaintenance(
   }
   let summarised = 0;
   if (env.REPLAYS) {
-    const service = new GlassService(env, store, env.GLASS_PUBLIC_URL?.replace(/\/+$/, '') ?? '');
+    const service = new GlassService(env, store, trimTrailingSlashes(env.GLASS_PUBLIC_URL ?? ''));
     summarised = await service.summariseSettled(
       await sessionsToSummarise(env.DB, now - SETTLED_MS, SUMMARIES_PER_RUN),
     );

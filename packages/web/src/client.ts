@@ -3,6 +3,7 @@
  */
 
 import { uuidv7 } from '@dataflare/core/ids';
+import { trimTrailingSlashes } from '@dataflare/core/url';
 import { GLASS_VERSION } from '@dataflare/core/version';
 import { trackClicks, trackErrors, trackPageviews } from './autocapture.ts';
 import { Store } from './storage.ts';
@@ -33,6 +34,19 @@ declare global {
   }
 }
 
+/** Keys that would reach `Object.prototype` if written into a plain object. */
+const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
+/**
+ * Flag overrides as a prototype-less map. They come from the URL (`?__glass_flags=`) and
+ * `localStorage`, so a key such as `__proto__` must never be written into an ordinary object.
+ */
+function overrideMap(entries: Iterable<[string, string | null]>): Record<string, string | null> {
+  const out = Object.create(null) as Record<string, string | null>;
+  for (const [k, v] of entries) if (!UNSAFE_KEYS.has(k)) out[k] = v;
+  return out;
+}
+
 export class Dataflare {
   readonly version = GLASS_VERSION;
   private options: GlassOptions | null = null;
@@ -42,7 +56,7 @@ export class Dataflare {
   private flagValues: Record<string, string> = {};
   private flagPayloads: Record<string, unknown> = {};
   /** Local overrides (overrideFlags, or ?__glass_flags= when the project allows it). */
-  private overrides: Record<string, string | null> = {};
+  private overrides: Record<string, string | null> = overrideMap([]);
   private allowUrlOverrides = false;
   private flagsLoaded = false;
   /** Web experiments applied on this page (their exposure is recorded once). */
@@ -67,7 +81,7 @@ export class Dataflare {
     }
     if (typeof window === 'undefined') return this; // SSR: no-op.
     this.options = options;
-    this.host = new URL(options.host.replace(/\/+$/, ''), location.href).href.replace(/\/+$/, '');
+    this.host = trimTrailingSlashes(new URL(trimTrailingSlashes(options.host), location.href).href);
     this.store = new Store(options.project, options.persistence ?? 'localStorage');
     this.transport = new Transport(
       `${this.host}/e`,
@@ -85,10 +99,11 @@ export class Dataflare {
         string,
         unknown
       >;
-      this.overrides = JSON.parse(this.store.get('flag_overrides') ?? '{}') as Record<
-        string,
-        string | null
-      >;
+      this.overrides = overrideMap(
+        Object.entries(
+          JSON.parse(this.store.get('flag_overrides') ?? '{}') as Record<string, string | null>,
+        ),
+      );
     } catch {
       this.flagValues = {};
     }
@@ -307,7 +322,7 @@ export class Dataflare {
 
   /** All flag values (with any overrides), without recording exposures. */
   flags(): Readonly<Record<string, string>> {
-    const out: Record<string, string> = { ...this.flagValues };
+    const out = Object.assign(Object.create(null) as Record<string, string>, this.flagValues);
     for (const [k, v] of Object.entries(this.overrides)) {
       if (v === null) delete out[k];
       else out[k] = v;
@@ -327,11 +342,13 @@ export class Dataflare {
    * `null` to force a flag off, or `false` to clear every override. Persisted on the device.
    */
   overrideFlags(overrides: Record<string, string | boolean | null> | false): void {
-    if (overrides === false) this.overrides = {};
+    if (overrides === false) this.overrides = overrideMap([]);
     else {
-      for (const [k, v] of Object.entries(overrides)) {
-        this.overrides[k] = v === true ? 'on' : v === false ? null : v;
-      }
+      const next = Object.entries(overrides).map(([k, v]): [string, string | null] => [
+        k,
+        v === true ? 'on' : v === false ? null : v,
+      ]);
+      this.overrides = overrideMap([...Object.entries(this.overrides), ...next]);
     }
     this.store?.set(
       'flag_overrides',
@@ -409,14 +426,16 @@ export class Dataflare {
     if (!this.allowUrlOverrides || typeof location === 'undefined') return;
     const raw = new URLSearchParams(location.search).get('__glass_flags');
     if (!raw) return;
-    const overrides: Record<string, string | null> = {};
+    const pairs: [string, string | null][] = [];
     for (const pair of raw.split(',')) {
       const [k, v] = pair.split(':');
       if (!k) continue;
-      overrides[k] =
-        !v || v === 'on' || v === 'true' ? 'on' : v === 'off' || v === 'false' ? null : v;
+      pairs.push([
+        k,
+        !v || v === 'on' || v === 'true' ? 'on' : v === 'off' || v === 'false' ? null : v,
+      ]);
     }
-    this.overrideFlags(overrides);
+    this.overrideFlags(overrideMap(pairs));
   }
 
   /** Called with flag values once they load and whenever they change. Returns an unsubscribe function. */

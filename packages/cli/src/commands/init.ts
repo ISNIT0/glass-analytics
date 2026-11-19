@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import { randomToken } from '@dataflare/core/ids';
 import { detectFramework, FRAMEWORKS } from '@dataflare/core/instrument';
 import { LAKE_VERSION } from '@dataflare/core/lake';
+import { trimTrailingSlashes } from '@dataflare/core/url';
 import { GLASS_VERSION } from '@dataflare/core/version';
 import { writeAgentFiles } from '../agent-files.ts';
 import { CI_WORKFLOW_PATH, ciNextSteps, writeCiWorkflow } from '../ci.ts';
@@ -85,10 +86,7 @@ export interface InitDeps {
  */
 export function normaliseRoute(input: string | undefined): string | undefined {
   if (!input) return undefined;
-  const bare = input
-    .trim()
-    .replace(/^https?:\/\//, '')
-    .replace(/\/+$/, '');
+  const bare = trimTrailingSlashes(input.trim().replace(/^https?:\/\//, ''));
   if (!bare.includes('/')) return `${bare}/_glass/*`;
   return bare.endsWith('/*') ? bare : `${bare}/*`;
 }

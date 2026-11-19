@@ -31,7 +31,7 @@ import {
 import { sha256Hex } from '@dataflare/core/hash';
 import type { ProjectSettings } from '@dataflare/core/settings';
 import { isBot, parseUserAgent } from '@dataflare/core/ua';
-import { parsePage, referrerHost } from '@dataflare/core/url';
+import { parsePage, referrerHost, trimTrailingSlashes } from '@dataflare/core/url';
 import type { D1Database, Env } from './env.ts';
 import { HttpError, readJson } from './http.ts';
 import { getProject, type Project } from './projects.ts';
@@ -197,7 +197,7 @@ export async function ingestBatch(
     store,
     now,
     trusted: options.trusted,
-    base: options.base ?? env.GLASS_PUBLIC_URL?.replace(/\/+$/, '') ?? '',
+    base: options.base ?? trimTrailingSlashes(env.GLASS_PUBLIC_URL ?? ''),
   };
   for (const enricher of ENRICHERS) rows = await enricher(rows, enrich);
   await store.write(rows);

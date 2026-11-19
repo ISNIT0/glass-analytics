@@ -12,7 +12,7 @@ import {
 } from '../src/stats/tests.ts';
 import { bucketStart, bucketsBetween, parseDuration, parseTime } from '../src/time.ts';
 import { parseUserAgent } from '../src/ua.ts';
-import { parsePage, referrerHost } from '../src/url.ts';
+import { parsePage, referrerHost, trimSlashes, trimTrailingSlashes } from '../src/url.ts';
 import { NOW } from './helpers.ts';
 
 const close = (a: number, b: number, tol: number) =>
@@ -170,6 +170,19 @@ describe('ingest helpers', () => {
       { browser: 'Edge', os: 'Windows', device: 'desktop' },
     );
     assert.equal(parseUserAgent('Googlebot/2.1').device, 'bot');
+    const android = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/131.0';
+    assert.equal(parseUserAgent(`${android} Mobile Safari/537.36`).device, 'mobile');
+    assert.equal(parseUserAgent(`${android} Safari/537.36`).device, 'tablet');
+  });
+
+  it('parses hostile user agents in linear time', () => {
+    const start = performance.now();
+    assert.equal(parseUserAgent('Android'.repeat(20_000)).device, 'tablet');
+    assert.equal(trimTrailingSlashes(`a${'/'.repeat(50_000)}b`), `a${'/'.repeat(50_000)}b`);
+    assert.ok(performance.now() - start < 500);
+    assert.equal(trimTrailingSlashes('https://x.dev///'), 'https://x.dev');
+    assert.equal(trimSlashes('//assets/js//'), 'assets/js');
+    assert.equal(trimSlashes('///'), '');
   });
 
   it('extracts UTM tags and normalises referrers', () => {
