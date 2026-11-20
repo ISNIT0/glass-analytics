@@ -29,10 +29,7 @@ export function settingsPage(): Node[] {
   const project = scope().project ?? 'your-project';
   const host = workerUrl();
   return [
-    pageHeader(
-      'Settings',
-      'Install Dataflare on a site, connect an agent, project settings, revenue and projects.',
-    ),
+    pageHeader('Settings', undefined),
     h(
       'div',
       { class: 'grid-2' },

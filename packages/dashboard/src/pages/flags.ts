@@ -425,13 +425,7 @@ export function flagsPage(route: Route): Node[] {
   const project = scope().project;
   const target = route.rest[0];
   if (target === 'new')
-    return [
-      pageHeader(
-        'New flag',
-        'Ship code dark, then roll it out by percentage or to people who match a rule.',
-      ),
-      panel('Definition', editor(null), { icon: 'flag' }),
-    ];
+    return [pageHeader('New flag', undefined), panel('Definition', editor(null), { icon: 'flag' })];
   if (target) {
     return [
       pageHeader(
@@ -462,7 +456,7 @@ export function flagsPage(route: Route): Node[] {
   return [
     pageHeader(
       'Flags',
-      'Feature flags, evaluated in your Worker. Assignment is stable per device.',
+      'Evaluated in your Worker. Assignment is stable per device.',
       h('a', { class: 'button primary', href: href('flags/new') }, icon('plus', 15), 'New flag'),
     ),
     later(

@@ -620,12 +620,5 @@ function sourcemapsPanel(): HTMLElement {
 export function errorsPage(route: Route): Node[] {
   const id = route.rest[0];
   if (id) return issueDetail(id) as Node[];
-  return [
-    pageHeader(
-      'Errors',
-      'Exceptions grouped into issues, with stack traces, the people affected and replays at the moment.',
-    ),
-    issueList(route),
-    sourcemapsPanel(),
-  ];
+  return [pageHeader('Errors', undefined), issueList(route), sourcemapsPanel()];
 }
