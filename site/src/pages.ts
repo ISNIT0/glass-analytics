@@ -42,6 +42,18 @@ export const DOCS: { slug: string; file: string; title: string; summary: string 
     summary: 'Properties, filters, time ranges, every query type and SQL.',
   },
   {
+    slug: 'dashboards',
+    file: 'dashboards.md',
+    title: 'Dashboards and reports',
+    summary: 'Dashboards, scheduled reports to Slack and email, chart images.',
+  },
+  {
+    slug: 'alerts',
+    file: 'alerts.md',
+    title: 'Alerts',
+    summary: 'Alerts on any trends series or funnel step.',
+  },
+  {
     slug: 'experiments',
     file: 'experiments.md',
     title: 'Flags and experiments',

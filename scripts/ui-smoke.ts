@@ -339,6 +339,36 @@ await call('POST', '/api/flags/new-checkout/schedule', {
   change: { rollout: 100 },
 });
 
+// A dashboard from a template, a note, a channel and a weekly report of it.
+const board = (await call('POST', '/api/dashboards/from-template', {
+  project: 'demo',
+  template: 'website',
+})) as { id: string };
+await call('POST', `/api/dashboards/${board.id}/tiles`, {
+  project: 'demo',
+  text: '## This week\nTraffic from the **launch post** is in. Check the [docs](https://dataflare.dev/docs).',
+  width: 12,
+});
+const boardTiles = (await call('GET', `/api/dashboards/${board.id}?project=demo`)) as {
+  tiles: { insight?: { key: string } | null }[];
+};
+const savedKey = boardTiles.tiles[0]!.insight!.key;
+const channel = (await call('POST', '/api/destinations', {
+  project: 'demo',
+  name: '#growth',
+  template: 'slack',
+  enabled: false,
+  events: ['$report'],
+  filters: [],
+  inputs: { url: 'https://hooks.slack.com/services/T000/B000/XXXX' },
+})) as { destination: { id: string } };
+await call('POST', '/api/subscriptions', {
+  project: 'demo',
+  target: 'dashboard',
+  targetId: board.id,
+  channels: { destinations: [channel.destination.id] },
+  schedule: { frequency: 'weekly', weekday: 'mon', time: '09:00' },
+});
 const insight = (kind: string, spec: Record<string, unknown>, from = '-7d') =>
   `insights/new/${kind}?project=demo&from=${from}&spec=${encodeURIComponent(JSON.stringify(spec))}`;
 const routes: [string, string][] = [
@@ -355,6 +385,9 @@ const routes: [string, string][] = [
   ['imports', 'pipelines/imports?project=demo'],
   ['exports', 'pipelines/exports?project=demo'],
   ['settings', 'settings?project=demo'],
+  ['dashboards', 'dashboards?project=demo&from=-7d'],
+  ['insight-saved', `insights/${savedKey}?project=demo&from=-7d`],
+  ['dashboard', `dashboards/${board.id}?project=demo&from=-7d`],
   [
     'insights-trends',
     'insights/new/trends?project=demo&from=-7d&spec=%7B%22series%22%3A%5B%7B%22event%22%3A%22%24pageview%22%2C%22math%22%3A%22total%22%7D%2C%7B%22event%22%3A%22%24exception%22%2C%22math%22%3A%22total%22%7D%5D%2C%22interval%22%3A%22day%22%2C%22aggregateBy%22%3A%22company%22%2C%22formulas%22%3A%5B%7B%22expr%22%3A%22B%20/%20A%20%2A%20100%22%7D%5D%2C%22cumulative%22%3Atrue%7D',
@@ -583,6 +616,14 @@ async function touchingBlocks(page: Page): Promise<string[]> {
 }
 
 const actions: Record<string, (p: Page) => Promise<void>> = {
+  'insight-saved': async (p) => {
+    await p.getByRole('button', { name: 'Alerts' }).click();
+    await p.waitForTimeout(800);
+  },
+  dashboard: async (p) => {
+    await p.getByRole('button', { name: 'Subscribe' }).click();
+    await p.waitForTimeout(700);
+  },
   'insights-paths': async (p) => {
     await p.locator('.sankey .sankey-node:not(.other)').nth(1).click();
     await p.waitForTimeout(300);
@@ -686,6 +727,18 @@ const checks: Record<string, (p: Page) => Promise<string | null>> = {
       ? `countries with values are not shaded (both ${fills.shaded})`
       : null;
   },
+};
+// A dashboard draws every tile, and none of them errors.
+checks.dashboard = async (p) => {
+  await p.waitForTimeout(800);
+  const tiles = await p.locator('.dashboard-grid .tile').count();
+  const errors = await p.locator('.dashboard-grid .tile .state.error').count();
+  const charts = await p
+    .locator('.dashboard-grid .tile svg.chart, .dashboard-grid .tile .tile-paths')
+    .count();
+  if (tiles < 5) return `only ${tiles} tiles`;
+  if (errors) return `${errors} tiles show an error`;
+  return charts >= 3 ? null : `only ${charts} tiles drew a chart`;
 };
 // The paths chart draws steps and the bands between them, and hovering a step traces its flow.
 checks['insights-paths'] = async (p) => {

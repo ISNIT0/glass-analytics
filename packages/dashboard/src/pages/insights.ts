@@ -36,6 +36,7 @@ import { modal, popover, selectMenu, toggle } from '../components/menu.ts';
 import { pathsRail } from '../components/paths-rail.ts';
 import { pathsView } from '../components/paths-view.ts';
 import { INSIGHT_PROMPT } from '../components/prompts.ts';
+import { alertDialog } from '../components/report-dialogs.ts';
 import { retentionRail } from '../components/retention-rail.ts';
 import { type RailContext, type RailState, trendsRail } from '../components/trends-rail.ts';
 import {
@@ -731,6 +732,69 @@ function pathsToolbar(display: string, set: (v: string) => void): HTMLElement {
   );
 }
 
+/** Put a saved analysis on a dashboard: an existing one, or a new one. */
+function addToDashboardButton(key: string): HTMLElement {
+  const trigger = h('button', { type: 'button' }, icon('dashboard', 15), 'Add to dashboard');
+  const add = async (dashboard: string) => {
+    await api.post(`/api/dashboards/${dashboard}/tiles`, {
+      project: scope().project,
+      insightKey: key,
+    });
+    toast('Added', 'ok', { label: 'Open dashboard', run: () => go(`dashboards/${dashboard}`) });
+  };
+  const create = async () => {
+    const name = prompt('Name the new dashboard', 'My dashboard');
+    if (!name?.trim()) return;
+    const r = await api.post<{ id: string }>('/api/dashboards', {
+      project: scope().project,
+      name: name.trim(),
+    });
+    await add(r.id);
+  };
+  popover(trigger, (close) =>
+    later(async () => {
+      const r = await api.get<{ dashboards: { id: string; name: string }[] }>('/api/dashboards', {
+        project: scope().project,
+      });
+      const item = (label: string, run: () => void) =>
+        h(
+          'button',
+          { type: 'button', class: 'menu-item', role: 'menuitem', onclick: () => (close(), run()) },
+          label,
+        );
+      return h(
+        'div',
+        { class: 'menu', role: 'menu' },
+        r.dashboards.map((d) => item(d.name, () => void add(d.id))),
+        r.dashboards.length ? h('div', { class: 'menu-divider', role: 'separator' }) : null,
+        item('New dashboard…', () => void create()),
+      );
+    }),
+  );
+  return trigger;
+}
+
+/** The series (trends) or steps (funnels) an alert can watch. */
+function alertParts(kind: string, spec: Spec): string[] {
+  if (kind === 'funnel')
+    return ((spec.steps as StepSpec[]) ?? []).map((s, i) => `Step ${i + 1}: ${s.label || s.event}`);
+  return ((spec.series as SeriesSpec[]) ?? []).map(
+    (s, i) => `${String.fromCharCode(65 + i)}: ${s.label || s.event}`,
+  );
+}
+
+/** Buttons a saved analysis has: add it to a dashboard, and alerts (trends and funnels). */
+function savedActions(o: { key: string; name: string; kind: Kind; spec: Spec }): HTMLElement[] {
+  const out = [addToDashboardButton(o.key)];
+  if (o.kind === 'trends' || o.kind === 'funnel')
+    out.push(
+      iconButton('bell', 'Alerts', () =>
+        alertDialog({ key: o.key, name: o.name, kind: o.kind, parts: alertParts(o.kind, o.spec) }),
+      ),
+    );
+  return out;
+}
+
 /** Delete a saved analysis, after asking. */
 function deleteButton(key: string, project: string | undefined): HTMLElement {
   const remove = async () => {
@@ -1078,6 +1142,9 @@ function editorView(options: {
   const headerActions = [
     copyButton(agentPrompt, 'Agent prompt', 'bot'),
     copyButton(pageLink, 'Link', 'link'),
+    ...(saved
+      ? savedActions({ key: options.key!, name: options.name ?? 'Analysis', kind, spec })
+      : []),
     saved ? deleteButton(options.key!, sc.project) : null,
     h(
       'button',

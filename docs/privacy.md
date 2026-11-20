@@ -53,6 +53,7 @@ Nothing is sent to a third party unless you set it up:
 - **Destinations** forward events as they arrive to the tools you configure (Slack, Meta Conversions API, GA4, HubSpot, a webhook…). Each sends only the events and fields its mapping names. Ad platforms get email and phone hashed with SHA-256 first, as they require. Credentials are encrypted in D1 with a key only the Worker holds (`GLASS_ENCRYPTION_KEY`). See [destinations](destinations.md).
 - **Batch exports** write events to your own S3, R2, BigQuery or HTTPS endpoint.
 - **Error alerts** go to the chat destination you pick.
+- **Scheduled reports and alerts** go to the channels and email addresses you pick. The chart images in chat messages are public links, signed and expiring after 90 days, that show the chart only (labels and numbers, no people). See [dashboards](dashboards.md).
 
 ## Payments, imports and source maps
 
