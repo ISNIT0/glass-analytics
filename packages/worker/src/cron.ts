@@ -12,6 +12,7 @@
 
 import { DAY_MS } from '@dataflare/core/time';
 import { trimTrailingSlashes } from '@dataflare/core/url';
+import { runAlerts } from './alerts.ts';
 import { refreshFlagCohorts } from './cohorts.ts';
 import type { Env } from './env.ts';
 import { resumeErasures } from './erasure.ts';
@@ -23,6 +24,7 @@ import {
   REPLAY_DELETE_SLICE,
   sessionsToSummarise,
 } from './replays.ts';
+import { runReports } from './reports.ts';
 import { GlassService } from './service.ts';
 import type { EventStore } from './stores/types.ts';
 
@@ -61,7 +63,21 @@ export const FREQUENT_TASKS: { name: string; run: FrequentTask }[] = [
         (await listProjects(env.DB)).map((p) => p.id),
       ),
   },
+  // Scheduled reports: start the due ones, then compute a few tiles and send what's finished.
+  {
+    name: 'reports',
+    run: async (env, store, now) => runReports(serviceFor(env, store).reportRunner(), now),
+  },
+  // Alerts: up to ten due checks.
+  {
+    name: 'alerts',
+    run: async (env, store, now) => runAlerts(serviceFor(env, store).reportRunner(), now),
+  },
 ];
+
+function serviceFor(env: Env, store: EventStore): GlassService {
+  return new GlassService(env, store, trimTrailingSlashes(env.GLASS_PUBLIC_URL ?? ''));
+}
 
 export interface MaintenanceResult {
   events: number;

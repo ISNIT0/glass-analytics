@@ -223,6 +223,40 @@ export async function apiRouter(
         'PATCH /api/settings': 'Change project settings (admin)',
         'POST /api/actors':
           'The people/sessions/groups behind a number: { kind, spec, selection: { series, bucket } | { step, status } | { cohort, period } }; ?format=csv for CSV; saveAsCohort: { name } saves them (admin)',
+        'GET /api/paths/suggest-rules': 'Path cleaning rules for page paths with ids in them',
+        'GET /api/capabilities':
+          'What this deployment can do: email for reports and alerts, replay, store',
+        'GET /api/dashboards': 'Dashboards',
+        'GET /api/dashboards/templates':
+          'Starter dashboards, with the signup and purchase events they would use',
+        'POST /api/dashboards/from-template':
+          'Create a dashboard from a template: { template, events? } (admin)',
+        'GET /api/dashboards/:id?results=true':
+          "A dashboard with its tiles (and each tile's headline numbers)",
+        'POST /api/dashboards': 'Create a dashboard: { name, description?, filters? } (admin)',
+        'PUT /api/dashboards/:id': 'Rename it or change its date range and filters (admin)',
+        'DELETE /api/dashboards/:id':
+          'Delete a dashboard and its reports; the analyses stay (admin)',
+        'POST /api/dashboards/:id/duplicate': 'Copy a dashboard: { name } (admin)',
+        'POST /api/dashboards/:id/tiles':
+          'Add a tile: { insightKey } or { insight: { name, kind, spec } } or { text }, width 3|4|6|12, height 1|2 (admin)',
+        'PUT /api/dashboards/:id/tiles/:tile':
+          'Resize, change text, ignore the dashboard filters (admin)',
+        'DELETE /api/dashboards/:id/tiles/:tile': 'Remove a tile (admin)',
+        'PUT /api/dashboards/:id/order': 'Reorder tiles: { tiles: [ids] } (admin)',
+        'GET /api/subscriptions?dashboard=|insight=': 'Scheduled reports',
+        'POST /api/subscriptions':
+          'Schedule a report of a dashboard or analysis to channels and email: { target, targetId, channels, schedule } (admin)',
+        'PUT /api/subscriptions/:id': 'Change a report (admin)',
+        'DELETE /api/subscriptions/:id': 'Delete a report (admin)',
+        'POST /api/subscriptions/:id/send': 'Send a report now (admin)',
+        'GET /api/alerts?insight=': 'Alerts',
+        'GET /api/alerts/:id?days=': 'An alert with its recent checks',
+        'POST /api/alerts':
+          'Alert on a saved trends or funnel analysis: { name, insightKey, condition, schedule, channels } (admin)',
+        'PUT /api/alerts/:id': 'Change an alert (admin)',
+        'DELETE /api/alerts/:id': 'Delete an alert (admin)',
+        'POST /api/alerts/:id/check': 'Check an alert now, notifying on a change of state (admin)',
         'GET /api/annotations?from=&to=': 'Notes pinned to moments on time charts',
         'POST /api/annotations':
           'Pin a note: { "at": "2026-11-03", "text": "Launched v2" } (admin)',
@@ -559,6 +593,50 @@ export async function apiRouter(
     admin();
     return json(await service.deleteInsight({ ...params(url), key: p.key }));
   });
+
+  // Dashboards, scheduled reports and alerts.
+  const read = (path: string, run: (input: Record<string, unknown>) => Promise<unknown>) =>
+    r.get(path, async ({ url, params: p }) => json(await run({ ...params(url), ...p })));
+  const write = (
+    method: 'post' | 'put' | 'delete',
+    path: string,
+    run: (input: Record<string, unknown>) => Promise<unknown>,
+    status = 200,
+  ) =>
+    r[method](path, async ({ url, params: p }) => {
+      admin();
+      const input = method === 'delete' ? {} : ((await body()) as Record<string, unknown>);
+      return json(await run({ ...params(url), ...input, ...p }), { status });
+    });
+  read('/api/capabilities', (i) => service.capabilities(i));
+  read('/api/dashboards', (i) => service.listDashboards(i));
+  read('/api/dashboards/templates', (i) => service.dashboardTemplates(i));
+  read('/api/dashboards/:id', (i) => service.getDashboard(i));
+  write('post', '/api/dashboards', (i) => service.saveDashboard(i), 201);
+  write(
+    'post',
+    '/api/dashboards/from-template',
+    (i) => service.createDashboardFromTemplate(i),
+    201,
+  );
+  write('put', '/api/dashboards/:id', (i) => service.saveDashboard(i));
+  write('delete', '/api/dashboards/:id', (i) => service.deleteDashboard(i));
+  write('post', '/api/dashboards/:id/duplicate', (i) => service.duplicateDashboard(i), 201);
+  write('post', '/api/dashboards/:dashboard/tiles', (i) => service.addDashboardTile(i), 201);
+  write('put', '/api/dashboards/:dashboard/order', (i) => service.reorderDashboardTiles(i));
+  write('put', '/api/dashboards/:dashboard/tiles/:tile', (i) => service.updateDashboardTile(i));
+  write('delete', '/api/dashboards/:dashboard/tiles/:tile', (i) => service.removeDashboardTile(i));
+  read('/api/subscriptions', (i) => service.listSubscriptions(i));
+  write('post', '/api/subscriptions', (i) => service.saveSubscription(i), 201);
+  write('put', '/api/subscriptions/:id', (i) => service.saveSubscription(i));
+  write('delete', '/api/subscriptions/:id', (i) => service.deleteSubscription(i));
+  write('post', '/api/subscriptions/:id/send', (i) => service.sendSubscriptionNow(i));
+  read('/api/alerts', (i) => service.listAlerts(i));
+  read('/api/alerts/:id', (i) => service.getAlert(i));
+  write('post', '/api/alerts', (i) => service.saveAlert(i), 201);
+  write('put', '/api/alerts/:id', (i) => service.saveAlert(i));
+  write('delete', '/api/alerts/:id', (i) => service.deleteAlert(i));
+  write('post', '/api/alerts/:id/check', (i) => service.checkAlertNow(i));
 
   r.put('/api/events/:name/role', async ({ url, params: p }) => {
     admin();

@@ -517,14 +517,73 @@ const READS: [string, string, unknown?][] = [
     },
   ],
   ['POST', '/api/query', { kind: 'paths', from: '-7d' }],
-  ['POST', '/api/query', { kind: 'paths', from: '-7d', steps: 3, collapseRepeats: false, aggregateBy: 'session' }],
-  ['POST', '/api/query', { kind: 'paths', from: '-7d', start: { value: '/pri*' }, include: { events: true } }],
+  [
+    'POST',
+    '/api/query',
+    { kind: 'paths', from: '-7d', steps: 3, collapseRepeats: false, aggregateBy: 'session' },
+  ],
+  [
+    'POST',
+    '/api/query',
+    { kind: 'paths', from: '-7d', start: { value: '/pri*' }, include: { events: true } },
+  ],
   ['POST', '/api/query', { kind: 'paths', from: '-7d', end: { value: '/signup' }, steps: 4 }],
-  ['POST', '/api/query', { kind: 'paths', from: '-7d', start: { value: '/' }, end: { value: '/docs' } }],
-  ['POST', '/api/query', { kind: 'paths', from: '-7d', groups: ['/blog/*'], exclude: ['/docs'], perStep: 2, minPeople: 2 }],
-  ['POST', '/api/query', { kind: 'paths', from: '-7d', cleaning: [{ match: '/b*_launch', alias: '/blog' }, { match: '/sign*', alias: '/join' }], boundary: { minutes: 600 } }],
-  ['POST', '/api/query', { kind: 'paths', from: '-7d', funnel: { spec: { steps: [{ event: '$pageview' }, { event: 'signup_completed' }] }, step: 2, mode: 'before' } }],
-  ['POST', '/api/query', { kind: 'paths', from: '-7d', funnel: { spec: { steps: [{ event: '$pageview' }, { event: 'signup_completed' }] }, step: 2, mode: 'dropoff' } }],
+  [
+    'POST',
+    '/api/query',
+    { kind: 'paths', from: '-7d', start: { value: '/' }, end: { value: '/docs' } },
+  ],
+  [
+    'POST',
+    '/api/query',
+    {
+      kind: 'paths',
+      from: '-7d',
+      groups: ['/blog/*'],
+      exclude: ['/docs'],
+      perStep: 2,
+      minPeople: 2,
+    },
+  ],
+  [
+    'POST',
+    '/api/query',
+    {
+      kind: 'paths',
+      from: '-7d',
+      cleaning: [
+        { match: '/b*_launch', alias: '/blog' },
+        { match: '/sign*', alias: '/join' },
+      ],
+      boundary: { minutes: 600 },
+    },
+  ],
+  [
+    'POST',
+    '/api/query',
+    {
+      kind: 'paths',
+      from: '-7d',
+      funnel: {
+        spec: { steps: [{ event: '$pageview' }, { event: 'signup_completed' }] },
+        step: 2,
+        mode: 'before',
+      },
+    },
+  ],
+  [
+    'POST',
+    '/api/query',
+    {
+      kind: 'paths',
+      from: '-7d',
+      funnel: {
+        spec: { steps: [{ event: '$pageview' }, { event: 'signup_completed' }] },
+        step: 2,
+        mode: 'dropoff',
+      },
+    },
+  ],
   [
     'POST',
     '/api/actors',

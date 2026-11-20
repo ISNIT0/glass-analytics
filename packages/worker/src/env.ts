@@ -49,6 +49,24 @@ export interface R2Bucket {
   delete(keys: string | string[]): Promise<void>;
 }
 
+/** The slice of Cloudflare Email Sending's binding Dataflare uses: structured messages. */
+export interface EmailSender {
+  send(message: {
+    from: string;
+    to: string | string[];
+    subject: string;
+    html?: string;
+    text?: string;
+    attachments?: {
+      content: string;
+      filename: string;
+      type: string;
+      disposition: 'inline' | 'attachment';
+      contentId?: string;
+    }[];
+  }): Promise<{ messageId: string }>;
+}
+
 /** A Cloudflare Queues producer binding. */
 interface QueueProducer {
   send(body: unknown, options?: { delaySeconds?: number }): Promise<void>;
@@ -84,6 +102,13 @@ export interface Env {
    * bound here until the hourly job has moved its objects into REPLAYS (see `moveLegacyReplays`).
    */
   REPLAYS_LEGACY?: R2Bucket;
+  /**
+   * Cloudflare Email Sending (`send_email` binding), for emailed reports and alerts. Optional:
+   * Workers Paid only, and the sender's domain must be onboarded. Without it, email isn't offered.
+   */
+  EMAIL?: EmailSender;
+  /** The address reports are sent from (one of the binding's allowed sender addresses). */
+  GLASS_EMAIL_FROM?: string;
   /** Queue for destination deliveries. Optional: without it, the five-minute task delivers. */
   DELIVERIES?: QueueProducer;
   /** Lake mode: Pipelines streams feeding Iceberg tables. */

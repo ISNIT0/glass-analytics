@@ -103,7 +103,9 @@ export const sqlite: Dialect = {
   containsIgnoreCase: (expr, needle) => `(instr(lower(${expr}), lower(${sqlString(needle)})) > 0)`,
   // SQLite's LIKE ignores ASCII case by default; GLOB is case-sensitive but uses other wildcards.
   globMatch: (expr, glob) =>
-    glob.includes('*') ? `(${expr} GLOB ${sqlString(globToGlob(glob))})` : `(${expr} = ${sqlString(glob)})`,
+    glob.includes('*')
+      ? `(${expr} GLOB ${sqlString(globToGlob(glob))})`
+      : `(${expr} = ${sqlString(glob)})`,
   monthIndex: (ts) =>
     `(CAST(strftime('%Y', (${ts}) / 1000, 'unixepoch') AS INTEGER) * 12 + CAST(strftime('%m', (${ts}) / 1000, 'unixepoch') AS INTEGER) - 1)`,
   monthStartMs: (ts) =>
