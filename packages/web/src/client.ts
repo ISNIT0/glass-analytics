@@ -325,13 +325,13 @@ export class Dataflare {
 
   /** All flag values (with any overrides), without recording exposures. */
   flags(): Readonly<Record<string, string>> {
-    const out = Object.assign(Object.create(null) as Record<string, string>, this.flagValues);
+    // Merged in a Map: override keys come from the URL, so they are never assigned into an object.
+    const merged = new Map(Object.entries(this.flagValues));
     for (const [k, v] of this.overrides) {
-      if (UNSAFE_KEYS.has(k)) continue;
-      if (v === null) delete out[k];
-      else out[k] = v;
+      if (v === null) merged.delete(k);
+      else merged.set(k, v);
     }
-    return out;
+    return Object.fromEntries(merged);
   }
 
   /** The JSON payload of a flag's current value (remote config), or null. Records no exposure. */
