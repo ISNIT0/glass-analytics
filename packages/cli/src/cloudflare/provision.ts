@@ -335,6 +335,17 @@ export function replayBucketConfig(
   return { bucket, jurisdiction: 'eu', ...(legacyBucket ? { legacyBucket } : {}) };
 }
 
+/** Email Sending: the EMAIL binding (only the configured sender allowed) and the sender var. */
+function addEmail(
+  config: GlassConfig,
+  wrangler: Record<string, unknown>,
+  vars: Record<string, string>,
+): void {
+  if (!config.email?.from) return;
+  vars.GLASS_EMAIL_FROM = config.email.from;
+  wrangler.send_email = [{ name: 'EMAIL', allowed_sender_addresses: [config.email.from] }];
+}
+
 /** The Worker's wrangler.jsonc, generated from config. */
 export function renderWranglerConfig(config: GlassConfig): string {
   const vars: Record<string, string> = { GLASS_STORE: config.store };
@@ -391,6 +402,7 @@ export function renderWranglerConfig(config: GlassConfig): string {
       ],
     };
   }
+  addEmail(config, wrangler, vars);
   if (config.lake) {
     wrangler.pipelines = [
       { binding: 'EVENTS_STREAM', stream: config.lake.streams.events },

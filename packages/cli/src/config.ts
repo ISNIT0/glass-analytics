@@ -60,6 +60,11 @@ export interface GlassConfig {
    * `dataflare upgrade` tries again.
    */
   queues?: { deliveries: string; dlq: string } | null;
+  /**
+   * Cloudflare Email Sending for emailed reports and alerts (`dataflare email enable`): the
+   * sender address, bound as EMAIL with only that sender allowed. Workers Paid only.
+   */
+  email?: { from: string } | null;
   /** Delete events older than this many days (D1 store). Unset keeps them. */
   retentionDays?: number | null;
   eu: boolean;

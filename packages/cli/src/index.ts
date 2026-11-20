@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { GLASS_VERSION } from '@dataflare/core/version';
 import { events, group, groups, person, projects, query, replays, sql } from './commands/data.ts';
+import { email } from './commands/email.ts';
 import { experiments, flags as flagCommands } from './commands/flags.ts';
 import { importEvents } from './commands/import.ts';
 import { init } from './commands/init.ts';
@@ -54,6 +55,8 @@ ${color.bold('Set up')}
     --secret <name>                Repo secret with the Cloudflare token (default CLOUDFLARE_API_TOKEN)
   dataflare status               Check the deployment end to end
   dataflare lake maintain        Lake mode: erase queued people, apply retention (CI runs it daily)
+  dataflare email enable --from reports@acme.com   Email reports and alerts (Cloudflare Email Sending, Workers Paid)
+  dataflare email disable
   dataflare key [--read|--server] Print the dashboard URL and an API key (admin, read-only, or for servers)
 
 ${color.bold('Ask questions')}
@@ -291,6 +294,7 @@ const COMMANDS: Record<string, (c: Invocation) => Promise<void> | void> = {
   flags: ({ flags, sub, arg }) => flagCommands(sub, arg, flags),
   experiments: ({ flags, sub, arg, rest }) => experiments(sub, arg, rest, flags),
   lake: runLake,
+  email: ({ flags, sub }) => email(sub, flags),
   mcp: () => mcpBridge(),
 };
 
@@ -298,6 +302,7 @@ const COMMANDS: Record<string, (c: Invocation) => Promise<void> | void> = {
 const SKIP_UPGRADE_WARNING = new Set([
   'init',
   'upgrade',
+  'email',
   'deploy',
   'ci',
   'status',
