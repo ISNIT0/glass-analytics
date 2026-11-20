@@ -38,13 +38,20 @@ declare global {
 const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
 /**
- * Flag overrides as a prototype-less map. They come from the URL (`?__glass_flags=`) and
- * `localStorage`, so a key such as `__proto__` must never be written into an ordinary object.
+ * Flag overrides, as a Map. They come from the URL (`?__glass_flags=`) and `localStorage`, so
+ * their keys are never written into an ordinary object (a key such as `__proto__` would reach
+ * `Object.prototype`).
  */
-function overrideMap(entries: Iterable<[string, string | null]>): Record<string, string | null> {
-  const out = Object.create(null) as Record<string, string | null>;
-  for (const [k, v] of entries) if (!UNSAFE_KEYS.has(k)) out[k] = v;
-  return out;
+function overrideMap(entries: Iterable<[string, string | null]>): Map<string, string | null> {
+  return new Map([...entries].filter(([k]) => !UNSAFE_KEYS.has(k)));
+}
+
+/** Saved overrides: `[key, value]` pairs, or an object (as saved before 0.9). */
+function storedOverrides(raw: string | null): [string, string | null][] {
+  const saved = JSON.parse(raw ?? '[]') as
+    | [string, string | null][]
+    | Record<string, string | null>;
+  return Array.isArray(saved) ? saved : Object.entries(saved ?? {});
 }
 
 /** Which autocapture is on: everything by default, nothing with `false`, or the options given. */
@@ -62,7 +69,7 @@ export class Dataflare {
   private flagValues: Record<string, string> = {};
   private flagPayloads: Record<string, unknown> = {};
   /** Local overrides (overrideFlags, or ?__glass_flags= when the project allows it). */
-  private overrides: Record<string, string | null> = overrideMap([]);
+  private overrides: Map<string, string | null> = overrideMap([]);
   private allowUrlOverrides = false;
   private flagsLoaded = false;
   /** Web experiments applied on this page (their exposure is recorded once). */
@@ -111,11 +118,7 @@ export class Dataflare {
     try {
       this.flagValues = JSON.parse(store.get('flags') ?? '{}') as Record<string, string>;
       this.flagPayloads = JSON.parse(store.get('flag_payloads') ?? '{}') as Record<string, unknown>;
-      this.overrides = overrideMap(
-        Object.entries(
-          JSON.parse(store.get('flag_overrides') ?? '{}') as Record<string, string | null>,
-        ),
-      );
+      this.overrides = overrideMap(storedOverrides(store.get('flag_overrides')));
     } catch {
       this.flagValues = {};
     }
@@ -323,7 +326,8 @@ export class Dataflare {
   /** All flag values (with any overrides), without recording exposures. */
   flags(): Readonly<Record<string, string>> {
     const out = Object.assign(Object.create(null) as Record<string, string>, this.flagValues);
-    for (const [k, v] of Object.entries(this.overrides)) {
+    for (const [k, v] of this.overrides) {
+      if (UNSAFE_KEYS.has(k)) continue;
       if (v === null) delete out[k];
       else out[k] = v;
     }
@@ -332,8 +336,8 @@ export class Dataflare {
 
   /** The JSON payload of a flag's current value (remote config), or null. Records no exposure. */
   flagPayload<T = unknown>(key: string): T | null {
-    if (this.overrides[key] !== undefined && this.overrides[key] !== this.flagValues[key])
-      return null;
+    const forced = this.overrides.get(key);
+    if (forced !== undefined && forced !== this.flagValues[key]) return null;
     return (this.flagPayloads[key] as T | undefined) ?? null;
   }
 
@@ -342,17 +346,23 @@ export class Dataflare {
    * `null` to force a flag off, or `false` to clear every override. Persisted on the device.
    */
   overrideFlags(overrides: Record<string, string | boolean | null> | false): void {
-    if (overrides === false) this.overrides = overrideMap([]);
-    else {
-      const next = Object.entries(overrides).map(([k, v]): [string, string | null] => [
-        k,
-        v === true ? 'on' : v === false ? null : v,
-      ]);
-      this.overrides = overrideMap([...Object.entries(this.overrides), ...next]);
+    if (overrides === false) {
+      this.setOverrides([], true);
+      return;
     }
+    const next = Object.entries(overrides).map(([k, v]): [string, string | null] => [
+      k,
+      v === true ? 'on' : v === false ? null : v,
+    ]);
+    this.setOverrides(next);
+  }
+
+  /** Merge (or with `replace`, replace) overrides, save them on the device and tell listeners. */
+  private setOverrides(next: [string, string | null][], replace = false): void {
+    this.overrides = overrideMap([...(replace ? [] : this.overrides), ...next]);
     this.store?.set(
       'flag_overrides',
-      Object.keys(this.overrides).length ? JSON.stringify(this.overrides) : null,
+      this.overrides.size ? JSON.stringify([...this.overrides]) : null,
     );
     for (const listener of this.flagListeners) listener(this.flags());
   }
@@ -435,7 +445,7 @@ export class Dataflare {
         !v || v === 'on' || v === 'true' ? 'on' : v === 'off' || v === 'false' ? null : v,
       ]);
     }
-    this.overrideFlags(overrideMap(pairs));
+    this.setOverrides(pairs);
   }
 
   /** Called with flag values once they load and whenever they change. Returns an unsubscribe function. */

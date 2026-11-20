@@ -16,7 +16,8 @@ const root = join(import.meta.dirname, '..');
 const BUDGETS: Record<string, number> = {
   // The SDKs grew with groups, flag payloads, bootstrap, overrides, early access,
   // captureException and web experiments (deepen-coverage: 4.5 → 5.9 KB script tag).
-  'packages/web/dist/index.js': 9.25, // npm SDK
+  // npm SDK. 9.4: flag overrides moved to a Map (CodeQL: remote property injection), +0.11 KB.
+  'packages/web/dist/index.js': 9.4,
   'packages/web/dist/glass.js': 6.25, // script-tag SDK
   'packages/web/dist/replay.js': 65, // replay recorder, loaded on demand
   // Admin-only: the Errors, Revenue, Groups and Pipelines pages, the cohort editor
