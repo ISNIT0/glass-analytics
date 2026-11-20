@@ -21,6 +21,7 @@ interface Settings {
   inAppIncludes?: string[];
   allowFlagOverrides?: boolean;
   errorRateLimitPerMinute?: number;
+  pathCleaning?: { match: string; alias: string }[];
   errorAlerts?: {
     destination: string;
     onNew?: boolean;
@@ -237,6 +238,119 @@ function errorsSection(settings: Settings, destinations: { id: string; name: str
   };
 }
 
+type Rule = { match: string; alias: string };
+
+function ruleRow(rules: Rule[], i: number, repaint: () => void): HTMLElement {
+  const r = rules[i]!;
+  const match = input({
+    value: r.match,
+    placeholder: '/users/*/settings',
+    'aria-label': 'Paths matching',
+  });
+  const alias = input({
+    value: r.alias,
+    placeholder: '/users/:id/settings',
+    'aria-label': 'Shown as',
+  });
+  match.addEventListener('change', () => (r.match = match.value.trim()));
+  alias.addEventListener('change', () => (r.alias = alias.value.trim()));
+  const remove = h(
+    'button',
+    {
+      type: 'button',
+      class: 'icon-button',
+      'aria-label': 'Remove rule',
+      onclick: () => {
+        rules.splice(i, 1);
+        repaint();
+      },
+    },
+    '×',
+  );
+  return h(
+    'div',
+    { class: 'row path-rule' },
+    match,
+    h('span', { class: 'muted' }, '→'),
+    alias,
+    remove,
+  );
+}
+
+/** Suggested rules for paths with ids, added below the current ones. */
+async function suggestRules(
+  project: string | undefined,
+  rules: Rule[],
+  repaint: () => void,
+): Promise<void> {
+  try {
+    const r = await api.get<{ suggestions: Rule[]; summary: string }>('/api/paths/suggest-rules', {
+      project,
+    });
+    const known = new Set(rules.map((x) => x.match));
+    const fresh = r.suggestions.filter((x) => !known.has(x.match));
+    rules.push(...fresh.map(({ match, alias }) => ({ match, alias })));
+    repaint();
+    toast(
+      fresh.length
+        ? `${fresh.length} rule${fresh.length === 1 ? '' : 's'} added: save to keep them`
+        : r.summary,
+    );
+  } catch (err) {
+    toast(err instanceof Error ? err.message : String(err), 'error');
+  }
+}
+
+function pathsSection(settings: Settings, project: string | undefined): Section {
+  const rules: Rule[] = structuredClone(settings.pathCleaning ?? []);
+  const list = h('div', { class: 'stack tight' });
+  const repaint = () =>
+    mount(
+      list,
+      rules.map((_, i) => ruleRow(rules, i, repaint)),
+      h(
+        'div',
+        { class: 'row' },
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'link-button add-button',
+            onclick: () => {
+              rules.push({ match: '', alias: '' });
+              repaint();
+            },
+          },
+          'Add a rule',
+        ),
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'link-button',
+            onclick: () => void suggestRules(project, rules, repaint),
+          },
+          'Suggest rules',
+        ),
+      ),
+    );
+  repaint();
+  return {
+    fields: [
+      h('h3', {}, 'Paths'),
+      field(
+        'Path cleaning',
+        list,
+        'Pages whose paths carry ids show as one step in paths: "/users/*/settings" → "/users/:id/settings".',
+      ),
+    ],
+    read: () => {
+      const done = rules.filter((r) => r.match && r.alias);
+      return { pathCleaning: done.length ? done : null };
+    },
+  };
+}
+
 function flagsSection(settings: Settings): Section {
   let overrides = Boolean(settings.allowFlagOverrides);
   return {
@@ -261,6 +375,7 @@ function settingsForm(
     reportsSection(settings, project),
     revenueSection(settings, project),
     errorsSection(settings, destinations),
+    pathsSection(settings, project),
     flagsSection(settings),
   ];
   const error = h('div', {});

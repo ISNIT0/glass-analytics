@@ -367,6 +367,12 @@ function baseCommands(): Command[] {
       icon: 'retention',
       run: () => go('insights/new/retention', { spec: null }),
     },
+    {
+      label: 'New paths analysis',
+      group: 'Create',
+      icon: 'paths',
+      run: () => go('insights/new/paths', { spec: null }),
+    },
     { label: 'New feature flag', group: 'Create', icon: 'flag', run: () => go('flags/new') },
     { label: 'New experiment', group: 'Create', icon: 'flask', run: () => go('experiments/new') },
     {
@@ -516,6 +522,7 @@ function openPalette(): void {
         trends: 'lineChart',
         funnel: 'funnel',
         retention: 'retention',
+        paths: 'paths',
       };
       commands = [
         ...commands,

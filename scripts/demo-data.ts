@@ -116,6 +116,57 @@ const NEXT: [string, number][] = [
   ['/about', 4],
   ['/', 12],
 ];
+/** Where people go next from each page, so paths have the shape real journeys do. */
+const FLOW: Record<string, [string, number][]> = {
+  '/': [
+    ['/pricing', 30],
+    ['/templates', 16],
+    ['/features/focus-mode', 14],
+    ['/blog/writing-every-day', 6],
+    ['/docs', 6],
+    ['/about', 4],
+  ],
+  '/pricing': [
+    ['/docs', 14],
+    ['/features/focus-mode', 10],
+    ['/', 8],
+    ['/templates', 8],
+    ['/changelog', 4],
+    ['/about', 3],
+  ],
+  '/templates': [
+    ['/pricing', 18],
+    ['/features/focus-mode', 8],
+    ['/', 6],
+    ['/docs', 4],
+  ],
+  '/features/focus-mode': [
+    ['/pricing', 22],
+    ['/templates', 6],
+    ['/', 4],
+  ],
+  '/blog/writing-every-day': [
+    ['/blog/markdown-for-writers', 10],
+    ['/', 8],
+    ['/templates', 8],
+    ['/pricing', 6],
+  ],
+  '/blog/markdown-for-writers': [
+    ['/templates', 10],
+    ['/', 6],
+    ['/pricing', 4],
+  ],
+  '/docs': [
+    ['/changelog', 8],
+    ['/pricing', 8],
+    ['/', 4],
+  ],
+  '/changelog': [
+    ['/docs', 6],
+    ['/pricing', 6],
+    ['/', 4],
+  ],
+};
 const TITLES: Record<string, string> = {
   '/': 'Inkwell: a calm place to write',
   '/pricing': 'Pricing, Inkwell',
@@ -355,7 +406,7 @@ export async function seedDemo(server: DevServer, now = Date.now()): Promise<See
       const depth = Math.floor(rnd() ** 1.6 * 5);
       let sawPricing = path === '/pricing';
       for (let p = 0; p < depth; p++) {
-        path = pick(NEXT);
+        path = pick(FLOW[path] ?? NEXT);
         sawPricing ||= path === '/pricing';
         view(path, false);
       }

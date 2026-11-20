@@ -25,6 +25,7 @@ import { pieChart, seriesTable, worldMap } from './display.ts';
 import { icon } from './icons.ts';
 import { correlationView, funnelVizView, showActors } from './insight-options.ts';
 import { letter, readBreakdowns, type Spec } from './insight-rail.ts';
+import { funnelPathsMenu } from './paths-view.ts';
 import { empty, table, tabs } from './ui.ts';
 
 export const TIME_DISPLAYS = new Set(['line', 'area', 'bar']);
@@ -324,6 +325,7 @@ export function funnelView(funnel: FunnelResult, spec: Spec, shared: Spec): HTML
       noun: countedNoun(spec.aggregateBy),
     }),
     peopleChips(funnel, shared),
+    spec.order === 'unordered' ? null : funnelPathsMenu(funnel.steps.length, shared),
     funnel.breakdowns?.length ? null : correlationView(shared),
   );
 }

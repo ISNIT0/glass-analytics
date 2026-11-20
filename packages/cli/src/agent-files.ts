@@ -89,7 +89,7 @@ Dataflare is deployed at ${o.host} (project \`${o.project}\`). Prefer the \`glas
 
 1. \`overview\` for the period (visitors, top pages, errors, events that moved). If it (or MCP init) says an upgrade is available, tell the user; with their go-ahead, follow "Upgrade Dataflare" below.
 2. \`list_events\` to get exact event names — never guess them.
-3. The right query: \`query_trends\` (counts over time), \`query_funnel\` (conversion through steps), \`query_retention\` (who comes back), \`sql\` when nothing else fits.
+3. The right query: \`query_trends\` (counts over time), \`query_funnel\` (conversion through steps), \`query_retention\` (who comes back), \`query_paths\` (where people go, step by step), \`sql\` when nothing else fits.
 4. Report numbers with the dashboard link and SQL from the result.
 
 ## Add tracking

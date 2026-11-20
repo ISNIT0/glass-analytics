@@ -278,7 +278,7 @@ export function funnelVizView(r: {
 
 /** The people (sessions, groups) behind a number, with CSV export and "save as cohort". */
 export function showActors(
-  kind: 'trends' | 'funnel' | 'retention',
+  kind: 'trends' | 'funnel' | 'retention' | 'paths',
   spec: Spec,
   selection: Record<string, unknown>,
   title: string,

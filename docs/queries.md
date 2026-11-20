@@ -135,13 +135,37 @@ A person's cohort is the period of their first `cohortEvent` in the range. Perio
 - `meanMethod`: the average row weights cohorts by size (`weighted`, default) or not (`simple`). Either way it only includes cohorts old enough to have that period.
 - `breakdown` (a property of the cohort event, or `"cohort"` with `breakdownCohorts`): one table per value.
 
+## Paths
+
+```json
+{
+  "kind": "paths",
+  "start": { "type": "page", "value": "/pricing" },
+  "steps": 5,
+  "include": { "pages": true, "events": ["signup_completed"] },
+  "from": "-30d"
+}
+```
+
+The journeys people take, as steps and the links between them. Each person's first path in the range counts once (`aggregateBy: "session"` counts every visit). The result has `nodes` (a step at a column: `id` like `"2:/pricing"`, `count`, `dropOff`), `links` (`source`, `target`, `count`, `avgSeconds`) and `topPaths`, the 50 most common whole paths.
+
+- `include`: page views (by path, the default), custom events (`true` or a list of names), or both. Dataflare's own events (`$pageleave`, `$web_vitals`, clicks…) are never steps.
+- `start` / `end`: a page or an event where paths begin or finish. With only `end`, the chart runs backwards to it; with both, only paths that got from one to the other count, and they stop at the end. `"*"` matches anything: `"/blog/*"`.
+- `steps`: 2 to 10 (default 5). `collapseRepeats` (default true) counts a page reloaded twice in a row once.
+- `exclude`: pages or events to leave out. `groups`: patterns shown as one step (`"/blog/*"`).
+- `cleaning`: rules for this query, `[{ "match": "/users/*/settings", "alias": "/users/:id/settings" }]`; the project's `pathCleaning` setting applies too unless `projectCleaning: false`. `suggest_path_rules` (`GET /api/paths/suggest-rules`) proposes rules for paths with ids in them.
+- `boundary`: `"session"` (default) keeps a path inside one visit; `{ "minutes": 1440 }` lets it run across visits for that long.
+- `perStep` (default 8): the most common steps per column; the rest are `Other`. `minPeople` / `maxPeople` hide links outside that range.
+- `funnel: { spec, step, mode }`: paths around a funnel step. `after` (what people did after reaching it), `before` (what led up to it), `between` (between it and the next step), `dropoff` (what people who reached the step before did instead). Ordered or strict funnels only.
+
 ## Who is behind a number
 
-`POST /api/actors` (MCP `list_actors`) takes any trends, funnel or retention spec and a `selection`:
+`POST /api/actors` (MCP `list_actors`) takes any trends, funnel, retention or paths spec and a `selection`:
 
 - a trends series and bucket;
 - a funnel step's converters or drop-offs;
-- a retention cell (cohort start and period).
+- a retention cell (cohort start and period);
+- a paths step (`node`), a link (`node` and `target`), or the people who stopped at a step (`node` and `dropOff: true`).
 
 It returns those people with their properties and replay counts, as JSON or CSV. `save_actors_as_cohort` keeps them as a static cohort.
 

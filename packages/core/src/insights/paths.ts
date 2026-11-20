@@ -92,8 +92,10 @@ function validateFunnel(f: NonNullable<Spec['funnel']>): void {
   if ((f.spec.order ?? 'ordered') === 'unordered')
     throw new TypeError('Paths from a funnel need an ordered or strict funnel.');
   const steps = f.spec.steps.length;
-  if (f.step > steps) throw new RangeError(`The funnel has ${steps} steps; step ${f.step} is past the last.`);
-  if (f.mode === 'between' && f.step >= steps) throw new RangeError('"between" needs a step before the last one.');
+  if (f.step > steps)
+    throw new RangeError(`The funnel has ${steps} steps; step ${f.step} is past the last.`);
+  if (f.mode === 'between' && f.step >= steps)
+    throw new RangeError('"between" needs a step before the last one.');
   if (f.mode === 'dropoff' && f.step < 2)
     throw new RangeError('No one drops off before the first step; use step 2 or later.');
 }
@@ -134,7 +136,9 @@ function planOf(spec: Spec, ctx: QueryContext): Plan {
 /** The page path, with the cleaning rules applied (the first match wins). */
 function cleanedPath(p: Plan): string {
   if (!p.cleaning.length) return 'path';
-  const whens = p.cleaning.map((r) => `WHEN ${p.d.globMatch('path', r.match)} THEN ${p.d.str(r.alias)}`);
+  const whens = p.cleaning.map(
+    (r) => `WHEN ${p.d.globMatch('path', r.match)} THEN ${p.d.str(r.alias)}`,
+  );
   return `(CASE ${whens.join(' ')} ELSE path END)`;
 }
 
@@ -163,7 +167,9 @@ function includeSql(p: Plan): string {
   if (pages) parts.push(`event = '$pageview'`);
   if (Array.isArray(events)) parts.push(`event IN (${events.map((e) => d.str(e)).join(', ')})`);
   else if (events)
-    parts.push(`(event <> '$pageview' AND event NOT IN (${BOOKKEEPING.map((e) => d.str(e)).join(', ')}))`);
+    parts.push(
+      `(event <> '$pageview' AND event NOT IN (${BOOKKEEPING.map((e) => d.str(e)).join(', ')}))`,
+    );
   return `(${parts.join(' OR ')})`;
 }
 
@@ -201,9 +207,7 @@ function stepEventsCtes(p: Plan, ctx: QueryContext): string[] {
 
 function pointSql(p: Plan, point: NonNullable<Spec['start']>, alias = 'e'): string {
   const typed =
-    (point.type ?? 'page') === 'page'
-      ? `${alias}.item LIKE '/%'`
-      : `${alias}.item NOT LIKE '/%'`;
+    (point.type ?? 'page') === 'page' ? `${alias}.item LIKE '/%'` : `${alias}.item NOT LIKE '/%'`;
   return `(${p.d.globMatch(`${alias}.item`, point.value)} AND ${typed})`;
 }
 
@@ -214,7 +218,9 @@ function anchorCtes(p: Plan, ctx: QueryContext): string[] {
   if (spec.funnel) return funnelAnchorCtes(p, ctx);
   const point = p.direction === 'backward' ? spec.end : spec.start;
   const cond = point ? `AND ${pointSql(p, point)}` : '';
-  return [`a0 AS (SELECT e.actor, MIN(e.ts_ms) AS t0, CAST(NULL AS BIGINT) AS lim FROM pe e WHERE ${inRange} ${cond} GROUP BY e.actor)`];
+  return [
+    `a0 AS (SELECT e.actor, MIN(e.ts_ms) AS t0, CAST(NULL AS BIGINT) AS lim FROM pe e WHERE ${inRange} ${cond} GROUP BY e.actor)`,
+  ];
 }
 
 /** Around a funnel step: the step's time (and, for "between", the next one's). */
@@ -264,7 +270,10 @@ function stepConditions(p: Plan): string[] {
   const out = [forward ? 'e.ts_ms > p.ts' : 'e.ts_ms < p.ts'];
   if (p.collapse) out.push('e.item <> p.item');
   if (p.windowMs === null) out.push('e.session_id = p.sid');
-  else out.push(forward ? `e.ts_ms <= p.t0 + ${d.num(p.windowMs)}` : `e.ts_ms >= p.t0 - ${d.num(p.windowMs)}`);
+  else
+    out.push(
+      forward ? `e.ts_ms <= p.t0 + ${d.num(p.windowMs)}` : `e.ts_ms >= p.t0 - ${d.num(p.windowMs)}`,
+    );
   if (forward) out.push('(p.lim IS NULL OR e.ts_ms < p.lim)');
   // From start to end: a path stops at the end.
   if (spec.start && spec.end) out.push(`NOT ${pointSql(p, spec.end, 'p')}`);
@@ -284,16 +293,21 @@ function stepCtes(p: Plan, k: number): string[] {
   ];
 }
 
-const cols = <T = string>(n: number, f: (i: number) => T): T[] => Array.from({ length: n }, (_, i) => f(i + 1));
+const cols = <T = string>(n: number, f: (i: number) => T): T[] =>
+  Array.from({ length: n }, (_, i) => f(i + 1));
 
 /** `pc`: one row per path, `i1…in` (steps, NULL past its end) and `t1…tn` (times). */
 function chainCte(p: Plan): string {
   const { n, spec } = p;
   const select = cols(n, (i) => `ps${i}.item AS i${i}, ps${i}.ts AS t${i}`).join(', ');
-  const joins = cols(n - 1, (i) => `LEFT JOIN ps${i + 1} ON ps${i + 1}.actor = ps1.actor`).join(' ');
+  const joins = cols(n - 1, (i) => `LEFT JOIN ps${i + 1} ON ps${i + 1}.actor = ps1.actor`).join(
+    ' ',
+  );
   // From start to end: only paths that got there.
   const reached =
-    spec.start && spec.end ? `WHERE ${cols(n, (i) => pointSql(p, spec.end!, `ps${i}`)).join(' OR ')}` : '';
+    spec.start && spec.end
+      ? `WHERE ${cols(n, (i) => pointSql(p, spec.end!, `ps${i}`)).join(' OR ')}`
+      : '';
   return `pc AS (SELECT ps1.actor, ${select} FROM ps1 ${joins} ${reached})`;
 }
 
@@ -312,7 +326,8 @@ function pathsChain(p: Plan, ctx: QueryContext): string {
 /** Links between step k and k+1 (k = 1…n-1); a NULL target is a drop-off. */
 function linksSql(p: Plan, ctx: QueryContext): string {
   const { d, n } = p;
-  const whens = (f: (k: number) => string) => cols(n - 1, (k) => `WHEN ${k} THEN ${f(k)}`).join(' ');
+  const whens = (f: (k: number) => string) =>
+    cols(n - 1, (k) => `WHEN ${k} THEN ${f(k)}`).join(' ');
   const ks = cols(n - 1, (k) => `(${k})`).join(', ');
   return `${pathsChain(p, ctx)}SELECT * FROM (
 SELECT v.column1 AS k,
@@ -368,7 +383,8 @@ function rawLinks(rows: Row[]): RawLink[] {
 /** How many paths reach each step at each position: what leaves it, or (last) what arrives. */
 function positionCounts(links: RawLink[], n: number): Map<string, number>[] {
   const counts = Array.from({ length: n + 1 }, () => new Map<string, number>());
-  const add = (k: number, label: string, v: number) => counts[k]!.set(label, (counts[k]!.get(label) ?? 0) + v);
+  const add = (k: number, label: string, v: number) =>
+    counts[k]!.set(label, (counts[k]!.get(label) ?? 0) + v);
   for (const l of links) {
     add(l.k, l.src, l.n);
     if (l.k === n - 1 && l.dst !== null) add(n, l.dst, l.n);
@@ -378,7 +394,15 @@ function positionCounts(links: RawLink[], n: number): Map<string, number>[] {
 
 /** Each position's top `perStep` labels; the rest become "Other". */
 function keptLabels(counts: Map<string, number>[], perStep: number): Set<string>[] {
-  return counts.map((m) => new Set([...m.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, perStep).map(([l]) => l)));
+  return counts.map(
+    (m) =>
+      new Set(
+        [...m.entries()]
+          .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+          .slice(0, perStep)
+          .map(([l]) => l),
+      ),
+  );
 }
 
 interface Grouped {
@@ -398,7 +422,13 @@ function nodeAt(g: Grouped, column: number, label: string, other: boolean): Path
 
 function addLink(g: Grouped, source: PathNode, target: PathNode, l: RawLink): void {
   const key = `${source.id}>${target.id}`;
-  const link = g.links.get(key) ?? { source: source.id, target: target.id, count: 0, avgSeconds: null, seconds: 0 };
+  const link = g.links.get(key) ?? {
+    source: source.id,
+    target: target.id,
+    count: 0,
+    avgSeconds: null,
+    seconds: 0,
+  };
   link.count += l.n;
   link.seconds += ((l.dt ?? 0) / 1000) * l.n;
   g.links.set(key, link);
@@ -433,8 +463,14 @@ function limitLinks(spec: Spec, g: Grouped): { nodes: PathNode[]; links: PathLin
   const max = spec.maxPeople ?? Number.POSITIVE_INFINITY;
   const links = [...g.links.values()]
     .filter((l) => l.count >= min && l.count <= max)
-    .map(({ seconds, ...l }) => ({ ...l, avgSeconds: l.count ? Math.round(seconds / l.count) : null }))
-    .sort((a, b) => b.count - a.count || a.source.localeCompare(b.source) || a.target.localeCompare(b.target));
+    .map(({ seconds, ...l }) => ({
+      ...l,
+      avgSeconds: l.count ? Math.round(seconds / l.count) : null,
+    }))
+    .sort(
+      (a, b) =>
+        b.count - a.count || a.source.localeCompare(b.source) || a.target.localeCompare(b.target),
+    );
   const linked = new Set(links.flatMap((l) => [l.source, l.target]));
   const filtering = spec.minPeople !== undefined || spec.maxPeople !== undefined;
   const nodes = [...g.nodes.values()]
@@ -461,10 +497,16 @@ function topPathsOf(rows: Row[], p: Plan): PathsResult['topPaths'] {
 function pathsSummary(r: PathsResult, p: Plan): string {
   const noun = p.aggregation === 'session' ? 'sessions' : 'people';
   if (!r.total) return `No paths in this range.`;
-  const top = r.topPaths[0];
-  const first = r.nodes.filter((x) => x.column === (p.direction === 'forward' ? 1 : p.n) && !x.other)[0];
+  // The most common path that goes somewhere (a single page isn't much of a path).
+  const top = r.topPaths.find((x) => x.items.length > 1) ?? r.topPaths[0];
+  const first = r.nodes.filter(
+    (x) => x.column === (p.direction === 'forward' ? 1 : p.n) && !x.other,
+  )[0];
   const parts = [`${fmt(r.total)} ${noun}`];
-  if (first) parts.push(`${p.direction === 'forward' ? 'most start at' : 'most end at'} ${first.label} (${fmt(first.count)})`);
+  if (first)
+    parts.push(
+      `${p.direction === 'forward' ? 'most start at' : 'most end at'} ${first.label} (${fmt(first.count)})`,
+    );
   if (top) parts.push(`the most common path is ${top.items.join(' → ')} (${fmt(top.count)})`);
   return `${parts.join('; ')}.`;
 }
@@ -507,7 +549,8 @@ function parseNode(id: string, p: Plan): { k: number; label: string } {
   if (!m) throw new TypeError(`"${id}" is not a path node id (column:label).`);
   const column = Number(m[1]);
   if (column < 1 || column > p.n) throw new RangeError(`Column ${column} is outside 1…${p.n}.`);
-  if (m[2] === OTHER) throw new TypeError('"Other" groups several steps; list one of them, or raise perStep.');
+  if (m[2] === OTHER)
+    throw new TypeError('"Other" groups several steps; list one of them, or raise perStep.');
   return { k: columnOf(p, column), label: m[2]! };
 }
 
@@ -527,13 +570,13 @@ export function compilePathsActors(
     if (Math.abs(to.k - at.k) !== 1) throw new RangeError('A link joins neighbouring columns.');
     where.push(`pc.i${to.k} = ${d.str(to.label)}`);
   } else if (selection.dropOff) {
-    if (p.direction === 'backward' || at.k >= p.n) throw new RangeError('Drop-offs are counted before the last column of a forward path.');
+    if (p.direction === 'backward' || at.k >= p.n)
+      throw new RangeError('Drop-offs are counted before the last column of a forward path.');
     where.push(`pc.i${at.k + 1} IS NULL`);
   }
   return `${pathsChain(p, ctx)}SELECT pc.actor AS actor, 1 AS n FROM pc WHERE ${where.join(' AND ')}
 ORDER BY pc.actor LIMIT ${d.num(page.limit)} OFFSET ${d.num(page.offset)}`;
 }
-
 
 // ── Cleaning suggestions ──────────────────────────────────────────────────
 
@@ -581,5 +624,8 @@ export function suggestPathRules(paths: { path: string; views: number }[]): Path
     if (g.examples.length < 3) g.examples.push(path);
     groups.set(match, g);
   }
-  return [...groups.values()].filter((g) => g.paths >= 2).sort((a, b) => b.views - a.views).slice(0, 20);
+  return [...groups.values()]
+    .filter((g) => g.paths >= 2)
+    .sort((a, b) => b.views - a.views)
+    .slice(0, 20);
 }

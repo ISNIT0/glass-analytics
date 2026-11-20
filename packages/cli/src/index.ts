@@ -61,6 +61,7 @@ ${color.bold('Ask questions')}
   dataflare query trends --event signup_completed [--math unique_persons] [--interval week] [--breakdown browser]
   dataflare query funnel --steps '$pageview,signup_started,signup_completed' [--window 1d] [--breakdown utm_source]
   dataflare query retention --cohort signup_completed [--return '$pageview'] [--period week]
+  dataflare query paths [--start /pricing] [--end signup_completed] [--steps 5] [--events] [--by session]
   dataflare query <kind> --spec '<json>'   Any spec; see GET /api/schema
     common: --from, --to, --where prop=value[,…], --project, --sql (print SQL)
   dataflare sql "SELECT …"       Read-only SQL against your events
@@ -126,6 +127,9 @@ const STRING_OPTIONS = [
   'periods',
   'spec',
   'where',
+  'start',
+  'end',
+  'by',
   'limit',
   'days',
   'describe',
@@ -153,6 +157,7 @@ const STRING_OPTIONS = [
 ];
 const BOOLEAN_OPTIONS = [
   'json',
+  'events',
   'lake',
   'eu',
   'no-replay',
