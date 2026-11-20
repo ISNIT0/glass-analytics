@@ -421,7 +421,7 @@ function listView(route: Route): Node[] {
         const r = await api.get<{ insights: SavedInsight[] }>('/api/insights', { project });
         if (r.insights.length === 0) {
           return empty(
-            'Build a trends, funnel or retention chart, then save it here so you and your agents can reopen it.',
+            'Build a trends, funnel, retention or paths chart, then save it here so you and your agents can reopen it.',
             newMenu('Create your first analysis'),
             { icon: 'insights', title: 'No saved analyses yet' },
           );
@@ -742,7 +742,7 @@ function deleteButton(key: string, project: string | undefined): HTMLElement {
   return iconButton('trash', 'Delete analysis', () => void remove());
 }
 
-/** Trends, funnel or retention: tabs while the analysis is new, a label once it's saved. */
+/** The kind (trends, funnel, retention, paths): tabs while the analysis is new, a label once it's saved. */
 function kindSwitch(mode: 'new' | 'saved' | 'ephemeral', kind: Kind): HTMLElement {
   if (mode === 'saved')
     return h(

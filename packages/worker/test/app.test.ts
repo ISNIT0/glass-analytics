@@ -571,7 +571,12 @@ describe('query API', () => {
     const at = Date.now() - 60_000;
     await t.ingest([
       wire('$pageview', { distinct_id: 'x', session_id: 'sx', url: 'https://acme.com/', ts: at }),
-      wire('$pageview', { distinct_id: 'x', session_id: 'sx', url: 'https://acme.com/pricing', ts: at + 1000 }),
+      wire('$pageview', {
+        distinct_id: 'x',
+        session_id: 'sx',
+        url: 'https://acme.com/pricing',
+        ts: at + 1000,
+      }),
       wire('$pageview', { distinct_id: 'c', session_id: 'sc', url: 'https://acme.com/users/42' }),
       wire('$pageview', { distinct_id: 'd', session_id: 'sd', url: 'https://acme.com/users/7' }),
     ]);
@@ -584,28 +589,53 @@ describe('query API', () => {
     assert.equal(paths.kind, 'paths');
     assert.equal(paths.total, 5);
     // a's two pages share a millisecond, so only x has a second step.
-    assert.deepEqual(paths.links.map((l) => [l.source, l.target, l.count]), [['1:/', '2:/pricing', 1]]);
+    assert.deepEqual(
+      paths.links.map((l) => [l.source, l.target, l.count]),
+      [['1:/', '2:/pricing', 1]],
+    );
     assert.match(paths.dashboard, /app#\/insights\/paths\?/);
 
     const took = await t.json<{ actors: { id: string }[] }>('POST', '/api/actors', {
-      body: { kind: 'paths', spec: { from: '-1d', steps: 3 }, selection: { node: '1:/', target: '2:/pricing' } },
+      body: {
+        kind: 'paths',
+        spec: { from: '-1d', steps: 3 },
+        selection: { node: '1:/', target: '2:/pricing' },
+      },
     });
-    assert.deepEqual(took.actors.map((a) => a.id), ['x']);
-
-    const suggested = await t.json<{ suggestions: { match: string; alias: string; paths: number }[] }>(
-      'GET',
-      '/api/paths/suggest-rules',
+    assert.deepEqual(
+      took.actors.map((a) => a.id),
+      ['x'],
     );
-    assert.deepEqual(suggested.suggestions.map((s) => [s.match, s.alias, s.paths]), [['/users/*', '/users/:id', 2]]);
+
+    const suggested = await t.json<{
+      suggestions: { match: string; alias: string; paths: number }[];
+    }>('GET', '/api/paths/suggest-rules');
+    assert.deepEqual(
+      suggested.suggestions.map((s) => [s.match, s.alias, s.paths]),
+      [['/users/*', '/users/:id', 2]],
+    );
     await t.json('PATCH', '/api/settings', {
       body: { settings: { pathCleaning: [{ match: '/users/*', alias: '/users/:id' }] } },
     });
-    const cleaned = await t.json<{ nodes: { label: string; count: number }[] }>('POST', '/api/query', {
-      body: { kind: 'paths', from: '-1d', steps: 3 },
-    });
+    const cleaned = await t.json<{ nodes: { label: string; count: number }[] }>(
+      'POST',
+      '/api/query',
+      {
+        body: { kind: 'paths', from: '-1d', steps: 3 },
+      },
+    );
     assert.equal(cleaned.nodes.find((n) => n.label === '/users/:id')?.count, 2);
     const again = await t.json<{ suggestions: unknown[] }>('GET', '/api/paths/suggest-rules');
     assert.equal(again.suggestions.length, 0);
+    // A paths analysis can be saved and reopened like any other.
+    await t.json('POST', '/api/insights', {
+      body: { name: 'Journeys', kind: 'paths', spec: { steps: 3, start: { value: '/' } } },
+    });
+    const saved = await t.json<{ kind: string; spec: { steps: number } }>(
+      'GET',
+      '/api/insights/journeys',
+    );
+    assert.deepEqual([saved.kind, saved.spec.steps], ['paths', 3]);
   });
 
   it('runs read-only SQL and refuses writes', async () => {

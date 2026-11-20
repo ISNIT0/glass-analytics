@@ -188,7 +188,7 @@ const SESSION_MATCH_LIMIT = 1000;
 const SETTLED_MS = 30 * 60_000;
 /** analyse_replays computes at most this many missing summaries per call (each reads every chunk of a session). */
 const FRESH_SUMMARIES_PER_CALL = 3;
-const insightKind = z.enum(['trends', 'funnel', 'retention']);
+const insightKind = z.enum(['trends', 'funnel', 'retention', 'paths']);
 
 const csv = (v: unknown) =>
   typeof v === 'string'
@@ -1413,7 +1413,7 @@ export class GlassService {
 
   // ── Actors ───────────────────────────────────────────────────────────────
 
-  /** The people, sessions or groups behind one number of a trends, funnel or retention result. */
+  /** The people, sessions or groups behind one number of a trends, funnel, retention or paths result. */
   async actors(input: unknown) {
     const args = inputs.actors.parse(input);
     const compile = ACTOR_COMPILERS[args.kind];
@@ -4619,7 +4619,7 @@ GROUP BY path ORDER BY views DESC, path LIMIT 2000`);
       key: r.key,
       name: r.name,
       description: r.description,
-      kind: r.kind as 'trends' | 'funnel' | 'retention',
+      kind: r.kind as 'trends' | 'funnel' | 'retention' | 'paths',
       spec: safeParse(r.spec),
       updatedAt: new Date(r.updated_at).toISOString(),
       dashboard: this.link(`insights/${r.key}`, { project: ctx.project }),
@@ -4657,7 +4657,7 @@ GROUP BY path ORDER BY views DESC, path LIMIT 2000`);
       key: row.key,
       name: row.name,
       description: row.description,
-      kind: row.kind as 'trends' | 'funnel' | 'retention',
+      kind: row.kind as 'trends' | 'funnel' | 'retention' | 'paths',
       spec: safeParse(row.spec),
       updatedAt: new Date(row.updated_at).toISOString(),
       dashboard: this.link(`insights/${row.key}`, { project: ctx.project }),
@@ -4679,7 +4679,7 @@ GROUP BY path ORDER BY views DESC, path LIMIT 2000`);
       throw new HttpError(
         400,
         `Key "${key}" is reserved`,
-        'Pick another name; trends, funnel, retention and new are used by the UI.',
+        'Pick another name; trends, funnel, retention, paths and new are used by the UI.',
       );
     }
     const now = Date.now();
