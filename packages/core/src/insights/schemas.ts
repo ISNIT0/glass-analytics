@@ -327,6 +327,140 @@ export const funnelCorrelationSpec = funnelSpec
   })
   .describe('What goes with converting through a funnel, and with dropping off.');
 
+const pathPoint = z
+  .object({
+    type: z
+      .enum(['page', 'event'])
+      .optional()
+      .describe('"page" (default): a page path. "event": an event name (or itemProperty value).'),
+    value: z
+      .string()
+      .min(1)
+      .max(500)
+      .describe('The path or event name. "*" matches any characters, e.g. "/blog/*".'),
+  })
+  .describe('A point on a path: a page or an event.');
+
+export const pathCleaningRule = z
+  .object({
+    match: z
+      .string()
+      .min(1)
+      .max(500)
+      .describe('A page path pattern; "*" matches any characters, e.g. "/users/*/settings".'),
+    alias: z
+      .string()
+      .min(1)
+      .max(500)
+      .describe('What matching paths are shown as, e.g. "/users/:id/settings".'),
+  })
+  .describe('Show every page path matching a pattern as one step.');
+
+export const PATH_MODES = ['after', 'before', 'between', 'dropoff'] as const;
+
+export const pathsSpec = z
+  .object({
+    ...common,
+    aggregateBy: z
+      .enum(['person', 'session'])
+      .optional()
+      .describe(
+        '"person" (default): each person\'s first path in the range. "session": every session\'s path.',
+      ),
+    include: z
+      .object({
+        pages: z.boolean().optional().describe('Page views, by path. Default true.'),
+        events: z
+          .union([z.boolean(), z.array(z.string()).min(1).max(50)])
+          .optional()
+          .describe(
+            'Custom events: true for all (not Dataflare\'s own bookkeeping), or a list of names. Default false.',
+          ),
+      })
+      .optional()
+      .describe('What counts as a step.'),
+    itemProperty: z
+      .string()
+      .optional()
+      .describe(
+        'Name each step by this event property when it is set (e.g. "screen" or "title"), instead of the path or event name.',
+      ),
+    start: pathPoint.optional().describe('Paths start at the first time each person does this.'),
+    end: pathPoint
+      .optional()
+      .describe(
+        'Paths end at the first time each person does this. With start too: only paths from start to end.',
+      ),
+    steps: z
+      .number()
+      .int()
+      .min(2)
+      .max(10)
+      .optional()
+      .describe('How many steps to follow. Default 5.'),
+    collapseRepeats: z
+      .boolean()
+      .optional()
+      .describe('Count a page or event done several times in a row once. Default true.'),
+    exclude: z
+      .array(z.string().min(1).max(500))
+      .max(20)
+      .optional()
+      .describe('Pages or events to leave out of every path ("*" wildcards allowed).'),
+    cleaning: z
+      .array(pathCleaningRule)
+      .max(50)
+      .optional()
+      .describe('Rules for this query, applied before the project\'s pathCleaning rules.'),
+    projectCleaning: z
+      .boolean()
+      .optional()
+      .describe('Apply the project\'s pathCleaning rules (see get_settings). Default true.'),
+    groups: z
+      .array(z.string().min(1).max(500))
+      .max(20)
+      .optional()
+      .describe('Wildcard groups: steps matching a pattern like "/blog/*" show as that pattern.'),
+    boundary: z
+      .union([z.literal('session'), z.object({ minutes: z.number().int().min(1).max(43_200) })])
+      .optional()
+      .describe(
+        '"session" (default): a path stays in one session. { minutes }: it may span sessions for that long after it starts.',
+      ),
+    perStep: z
+      .number()
+      .int()
+      .min(1)
+      .max(20)
+      .optional()
+      .describe('Show the top N steps at each position; the rest are "Other". Default 8.'),
+    minPeople: z
+      .number()
+      .int()
+      .min(1)
+      .optional()
+      .describe('Hide links followed by fewer than this many.'),
+    maxPeople: z
+      .number()
+      .int()
+      .min(1)
+      .optional()
+      .describe('Hide links followed by more than this many.'),
+    funnel: z
+      .object({
+        spec: funnelSpec.describe('The funnel (ordered or strict); its range is the paths range.'),
+        step: z.number().int().min(1).describe('The funnel step (1 is the first).'),
+        mode: z
+          .enum(PATH_MODES)
+          .describe(
+            '"after": what people did after reaching the step. "before": what led up to it. "between": what they did between this step and the next. "dropoff": what people who reached the step before it did instead.',
+          ),
+      })
+      .optional()
+      .describe('Paths around a funnel step, instead of start or end.'),
+  })
+  .describe('The journeys people take: the most common sequences of pages and events.');
+
 export const revenueSpec = z
   .object({
     ...common,
@@ -637,6 +771,8 @@ export type TrendsSpec = z.infer<typeof trendsSpec>;
 export type FunnelSpec = z.infer<typeof funnelSpec>;
 export type FunnelCorrelationSpec = z.infer<typeof funnelCorrelationSpec>;
 export type RetentionSpec = z.infer<typeof retentionSpec>;
+export type PathsSpec = z.infer<typeof pathsSpec>;
+export type PathCleaningRule = z.infer<typeof pathCleaningRule>;
 export type WebSpec = z.infer<typeof webSpec>;
 export type ExperimentSpec = z.infer<typeof experimentSpec>;
 export type SqlSpec = z.infer<typeof sqlSpec>;

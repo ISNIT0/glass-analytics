@@ -14,6 +14,8 @@ export interface QueryContext {
   now?: number;
   /** The project's IANA time zone, used when a spec names neither `timezone` nor `utcOffsetMinutes`. */
   timezone?: string;
+  /** The project's path cleaning rules (paths insights apply them unless told not to). */
+  pathCleaning?: { match: string; alias: string }[];
 }
 
 /**

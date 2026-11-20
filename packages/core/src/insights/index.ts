@@ -10,11 +10,13 @@
 import type { z } from 'zod/v4';
 import { runFunnelCorrelation } from './correlation.ts';
 import { runFunnel } from './funnel.ts';
+import { runPaths } from './paths.ts';
 import { runRetention } from './retention.ts';
 import { runRevenue } from './revenue.ts';
 import {
   funnelCorrelationSpec,
   funnelSpec,
+  pathsSpec,
   retentionSpec,
   revenueSpec,
   trendsSpec,
@@ -71,6 +73,12 @@ export const INSIGHTS = {
     schema: retentionSpec,
     run: runRetention,
   }),
+  paths: define({
+    description:
+      'User paths: the most common sequences of pages and events, as steps and the links between them, with drop-offs and the top whole paths. Start or end at a page or event (globs like "/blog/*"), follow up to 10 steps, collapse repeats, exclude or group steps, clean paths, or look around a funnel step (after, before, between, drop-off).',
+    schema: pathsSpec,
+    run: runPaths,
+  }),
   revenue: define({
     description:
       'Revenue and recurring revenue per period: gross, refunds, net, paying customers, ARPU, MRR/ARR and its movements (new, expansion, contraction, churned, reactivated), churn and LTV, by product or first-touch channel, and the top customers or accounts. Reads revenue events and Stripe.',
@@ -88,6 +96,7 @@ export function isInsightKind(kind: string): kind is InsightKind {
 export * from './correlation.ts';
 export * from './experiment.ts';
 export * from './funnel.ts';
+export * from './paths.ts';
 export * from './retention.ts';
 export * from './revenue.ts';
 export * from './schemas.ts';

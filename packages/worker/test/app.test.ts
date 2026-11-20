@@ -560,11 +560,52 @@ describe('query API', () => {
       body: { kind: 'funnel', steps: [{ event: 'only-one' }] },
     });
     assert.equal(res.status, 400);
-    const unknown = await t.call('POST', '/api/query', { body: { kind: 'paths' } });
+    const unknown = await t.call('POST', '/api/query', { body: { kind: 'journeys' } });
     assert.match(
       ((await unknown.json()) as { hint: string }).hint,
-      /web, trends, funnel, funnel_correlation, retention/,
+      /web, trends, funnel, funnel_correlation, retention, paths/,
     );
+  });
+
+  it('answers paths queries, lists who took a link, and cleans paths with the project rules', async () => {
+    const at = Date.now() - 60_000;
+    await t.ingest([
+      wire('$pageview', { distinct_id: 'x', session_id: 'sx', url: 'https://acme.com/', ts: at }),
+      wire('$pageview', { distinct_id: 'x', session_id: 'sx', url: 'https://acme.com/pricing', ts: at + 1000 }),
+      wire('$pageview', { distinct_id: 'c', session_id: 'sc', url: 'https://acme.com/users/42' }),
+      wire('$pageview', { distinct_id: 'd', session_id: 'sd', url: 'https://acme.com/users/7' }),
+    ]);
+    const paths = await t.json<{
+      kind: string;
+      total: number;
+      links: { source: string; target: string; count: number }[];
+      dashboard: string;
+    }>('POST', '/api/query', { body: { kind: 'paths', from: '-1d', steps: 3 } });
+    assert.equal(paths.kind, 'paths');
+    assert.equal(paths.total, 5);
+    // a's two pages share a millisecond, so only x has a second step.
+    assert.deepEqual(paths.links.map((l) => [l.source, l.target, l.count]), [['1:/', '2:/pricing', 1]]);
+    assert.match(paths.dashboard, /app#\/insights\/paths\?/);
+
+    const took = await t.json<{ actors: { id: string }[] }>('POST', '/api/actors', {
+      body: { kind: 'paths', spec: { from: '-1d', steps: 3 }, selection: { node: '1:/', target: '2:/pricing' } },
+    });
+    assert.deepEqual(took.actors.map((a) => a.id), ['x']);
+
+    const suggested = await t.json<{ suggestions: { match: string; alias: string; paths: number }[] }>(
+      'GET',
+      '/api/paths/suggest-rules',
+    );
+    assert.deepEqual(suggested.suggestions.map((s) => [s.match, s.alias, s.paths]), [['/users/*', '/users/:id', 2]]);
+    await t.json('PATCH', '/api/settings', {
+      body: { settings: { pathCleaning: [{ match: '/users/*', alias: '/users/:id' }] } },
+    });
+    const cleaned = await t.json<{ nodes: { label: string; count: number }[] }>('POST', '/api/query', {
+      body: { kind: 'paths', from: '-1d', steps: 3 },
+    });
+    assert.equal(cleaned.nodes.find((n) => n.label === '/users/:id')?.count, 2);
+    const again = await t.json<{ suggestions: unknown[] }>('GET', '/api/paths/suggest-rules');
+    assert.equal(again.suggestions.length, 0);
   });
 
   it('runs read-only SQL and refuses writes', async () => {

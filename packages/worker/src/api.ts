@@ -464,6 +464,9 @@ export async function apiRouter(
   });
 
   r.get('/api/settings', async ({ url }) => json(await service.getSettings(params(url))));
+  r.get('/api/paths/suggest-rules', async ({ url }) =>
+    json(await service.suggestPathRules(params(url))),
+  );
   r.patch('/api/settings', async ({ url }) => {
     admin();
     return json(await service.updateSettings({ ...params(url), ...(await body()) }));

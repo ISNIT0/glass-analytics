@@ -759,6 +759,15 @@ const ALL_TOOLS: ToolDefinition[] = [
     run: (s, a) => s.backfillExport(a),
   },
   {
+    name: 'suggest_path_rules',
+    title: 'Suggest path cleaning rules',
+    description:
+      'Path cleaning rules for page paths with ids in them ("/users/42" and "/users/7" → "/users/:id"), from the last 30 days, with how many paths each merges. Save the ones you want with update_settings (pathCleaning); paths queries then show each as one step.',
+    input: inputs.suggestPathRules,
+    scope: 'read',
+    run: (s, a) => s.suggestPathRules(a),
+  },
+  {
     name: 'get_settings',
     title: 'Project settings',
     description:
