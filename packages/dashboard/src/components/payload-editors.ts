@@ -80,6 +80,7 @@ export function payloadEditors(
         open: payload !== undefined,
       }) as HTMLDetailsElement,
       editor: jsonEditor({
+        emptyText: 'Empty: no payload',
         value: payload,
         label: `Payload for ${value}`,
         placeholder: 'Any JSON, e.g. {"headline": "Write faster"}',

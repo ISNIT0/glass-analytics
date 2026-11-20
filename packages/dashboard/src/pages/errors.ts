@@ -109,20 +109,16 @@ const statusBadge = (i: Pick<Issue, 'status' | 'regressedAt'>) =>
     i.status === 'active' && i.regressedAt ? 'regressed' : i.status,
   );
 
-function issueList(route: Route): HTMLElement {
-  const p = route.params;
-  const status = (p.get('status') ?? 'active') as Status;
-  const order = p.get('order') ?? 'events';
+function issueListControls(p: URLSearchParams, status: Status, order: string): HTMLElement {
+  const set = (k: string, v: string | null) => go('errors', { ...Object.fromEntries(p), [k]: v });
   const search = h('input', {
     type: 'search',
     placeholder: 'Search type or message',
     value: p.get('q') ?? '',
     class: 'search-input',
   });
-  search.addEventListener('change', () =>
-    go('errors', { ...Object.fromEntries(p), q: search.value || null }),
-  );
-  const controls = h(
+  search.addEventListener('change', () => set('q', search.value || null));
+  return h(
     'div',
     { class: 'toolbar' },
     tabs(
@@ -133,7 +129,7 @@ function issueList(route: Route): HTMLElement {
         { value: 'all', label: 'All' },
       ],
       status,
-      (v) => go('errors', { ...Object.fromEntries(p), status: v === 'active' ? null : v }),
+      (v) => set('status', v === 'active' ? null : v),
     ),
     search,
     selectMenu({
@@ -145,71 +141,74 @@ function issueList(route: Route): HTMLElement {
         { value: 'last_seen', label: 'Last seen' },
         { value: 'first_seen', label: 'Newest' },
       ],
-      onChange: (v) => go('errors', { ...Object.fromEntries(p), order: v === 'events' ? null : v }),
+      onChange: (v) => set('order', v === 'events' ? null : v),
     }),
   );
+}
+
+function issueRow(i: Issue): Child[] {
+  const meta = [`First seen ${ago(i.firstSeen)}`, i.lastRelease, i.assignee]
+    .filter(Boolean)
+    .join(' · ');
+  return [
+    h(
+      'a',
+      { class: 'issue-cell', href: href(`errors/${i.id}`) },
+      h('span', { class: 'issue-type' }, i.type),
+      h('span', { class: 'issue-message' }, i.message || '(no message)'),
+      h('span', { class: 'muted small' }, meta),
+    ),
+    i.series ? sparkline(i.series, { color: 'var(--bad, #e5484d)' }) : null,
+    count(i.events ?? 0),
+    count(i.users ?? 0),
+    h('span', { class: 'nowrap' }, ago(i.lastSeen)),
+    statusBadge(i),
+  ];
+}
+
+function noIssues(status: Status): HTMLElement {
+  const active = status === 'active';
+  return empty(
+    active
+      ? 'Uncaught errors show up here on their own; caught ones with glass.captureException(err).'
+      : 'Nothing with this status in the range.',
+    null,
+    { icon: 'check', title: active ? 'No errors in this range' : 'No issues' },
+  );
+}
+
+async function issueTable(p: URLSearchParams, status: Status, order: string): Promise<HTMLElement> {
+  const { from, to, project } = scope();
+  const r = await api.get<{ issues: Issue[]; summary: string; sql: string[] }>('/api/issues', {
+    project,
+    from,
+    to,
+    status,
+    order,
+    search: p.get('q'),
+    limit: 100,
+  });
+  if (r.issues.length === 0) return noIssues(status);
+  const exceptions = r.issues.reduce((n, i) => n + (i.events ?? 0), 0);
+  return panel(
+    `${r.issues.length} ${r.issues.length === 1 ? 'issue' : 'issues'}`,
+    table(['Issue', 'Trend', 'Events', 'People', 'Last seen', 'Status'], r.issues.map(issueRow), {
+      numeric: [2, 3],
+      class: 'issues-table',
+    }),
+    { icon: 'alert', subtitle: `${count(exceptions)} exceptions in range`, sql: r.sql },
+  );
+}
+
+function issueList(route: Route): HTMLElement {
+  const p = route.params;
+  const status = (p.get('status') ?? 'active') as Status;
+  const order = p.get('order') ?? 'events';
   return h(
     'div',
     {},
-    controls,
-    later(
-      async () => {
-        const { from, to, project } = scope();
-        const r = await api.get<{ issues: Issue[]; summary: string; sql: string[] }>(
-          '/api/issues',
-          {
-            project,
-            from,
-            to,
-            status,
-            order,
-            search: p.get('q'),
-            limit: 100,
-          },
-        );
-        if (r.issues.length === 0) {
-          return empty(
-            status === 'active'
-              ? 'Uncaught errors show up here on their own; caught ones with glass.captureException(err).'
-              : 'Nothing with this status in the range.',
-            null,
-            { icon: 'check', title: status === 'active' ? 'No errors in this range' : 'No issues' },
-          );
-        }
-        return panel(
-          `${r.issues.length} ${r.issues.length === 1 ? 'issue' : 'issues'}`,
-          table(
-            ['Issue', 'Trend', 'Events', 'People', 'Last seen', 'Status'],
-            r.issues.map((i) => [
-              h(
-                'a',
-                { class: 'issue-cell', href: href(`errors/${i.id}`) },
-                h('span', { class: 'issue-type' }, i.type),
-                h('span', { class: 'issue-message' }, i.message || '(no message)'),
-                h(
-                  'span',
-                  { class: 'muted small' },
-                  `First seen ${ago(i.firstSeen)}${i.lastRelease ? ` · ${i.lastRelease}` : ''}${i.assignee ? ` · ${i.assignee}` : ''}`,
-                ),
-              ),
-              i.series ? sparkline(i.series, { color: 'var(--bad, #e5484d)' }) : null,
-              count(i.events ?? 0),
-              count(i.users ?? 0),
-              h('span', { class: 'nowrap' }, ago(i.lastSeen)),
-              statusBadge(i),
-            ]),
-            { numeric: [2, 3], class: 'issues-table' },
-          ),
-          {
-            icon: 'alert',
-            subtitle: `${count(r.issues.reduce((n, i) => n + (i.events ?? 0), 0))} exceptions in range`,
-            sql: r.sql,
-          },
-        );
-      },
-      'Loading issues',
-      'table',
-    ),
+    issueListControls(p, status, order),
+    later(() => issueTable(p, status, order), 'Loading issues', 'table'),
   );
 }
 
@@ -399,183 +398,179 @@ function mergePanel(d: IssueDetail): HTMLElement {
   );
 }
 
-function issueDetail(id: string): Child[] {
-  return [
-    later(async () => {
-      const { from, to, project } = scope();
-      const d = await api.get<IssueDetail>(`/api/issues/${encodeURIComponent(id)}`, {
-        project,
-        from,
-        to,
-      });
-      const breakdownNames: [string, string][] = [
-        ['path', 'Page'],
-        ['browser', 'Browser'],
-        ['os', 'OS'],
-        ['release', 'Release'],
-        ['device', 'Device'],
-        ['country', 'Country'],
-        ['handled', 'Handled'],
-      ];
-      return [
-        pageHeader(`${d.issue.type}`, d.issue.message || '(no message)', actions(d)),
-        h(
-          'div',
-          { class: 'stats stats-panel' },
-          kpiStat('Events in range', count(d.range.events)),
-          kpiStat('People', count(d.range.users)),
-          kpiStat('Sessions', count(d.range.sessions)),
-          kpiStat(
-            'All time',
-            count(d.issue.occurrences),
-            d.issue.dropped ? `${count(d.issue.dropped)} dropped` : null,
-          ),
-          kpiStat('First seen', ago(d.issue.firstSeen), dateTime(d.issue.firstSeen)),
-          kpiStat(
-            'Status',
-            d.issue.status === 'active' && d.issue.regressedAt
-              ? 'Regressed'
-              : capitalize(d.issue.status),
-            d.issue.regressedAt
-              ? `Regressed ${ago(d.issue.regressedAt)}`
-              : d.issue.assignee
-                ? `Assigned to ${d.issue.assignee}`
-                : null,
-          ),
-        ),
-        panel(
-          'Over time',
-          lineChart(d.buckets, [{ label: 'Exceptions', values: d.series }], d.interval, {
-            type: 'bar',
-            height: 180,
-          }),
-          {
-            icon: 'insights',
-            subtitle: d.summary,
-            sql: d.sql,
-          },
-        ),
-        stackPanel(d),
-        d.sample
-          ? panel(
-              'Latest occurrence',
-              table(
-                ['', ''],
-                (
-                  [
-                    ['When', dateTime(d.sample.at)],
-                    ['Page', d.sample.url],
-                    ['Release', d.sample.release ?? '—'],
-                    ['Browser / OS', `${d.sample.browser} · ${d.sample.os}`],
-                    ['Handled', d.sample.handled ? 'Yes (captureException)' : 'No (uncaught)'],
-                    [
-                      'Person',
-                      h(
-                        'a',
-                        { href: href(`users/${encodeURIComponent(d.sample.person)}`) },
-                        d.sample.person,
-                      ),
-                    ],
-                  ] as [string, Child][]
-                ).map(([k, v]) => [h('span', { class: 'kv-key' }, k), v]),
-                { class: 'kv-table' },
-              ),
-              { icon: 'clock' },
-            )
-          : null,
-        // Dimensions with one value are a sentence, not a panel each.
-        (() => {
-          const single = breakdownNames.filter(([k]) => d.breakdowns[k]?.length === 1);
-          return single.length
-            ? h(
-                'p',
-                { class: 'breakdown-summary' },
-                'Every exception in range: ',
-                single.map(([k, label], i) => [
-                  i ? ' · ' : '',
-                  k === 'handled'
-                    ? h(
-                        'span',
-                        { class: 'breakdown-value' },
-                        d.breakdowns[k]![0]!.value === 'true' ? 'all handled' : 'all uncaught',
-                      )
-                    : [
-                        `${label === 'OS' ? label : label.toLowerCase()} `,
-                        h('span', { class: 'breakdown-value' }, d.breakdowns[k]![0]!.value),
-                      ],
-                ]),
-              )
-            : null;
-        })(),
-        h(
-          'div',
-          {
-            class: (() => {
-              const n = breakdownNames.filter(([k]) => (d.breakdowns[k]?.length ?? 0) > 1).length;
-              return n >= 3 ? 'grid-3' : n === 2 ? 'grid-2' : '';
-            })(),
-          },
-          breakdownNames
-            .filter(([k]) => (d.breakdowns[k]?.length ?? 0) > 1)
-            .map(([k, label]) =>
-              panel(
-                label,
-                barList(
-                  d.breakdowns[k]!.map((b) => ({
-                    label: b.value,
-                    value: b.events,
-                    secondary: b.users,
-                  })),
-                  [label, 'Events', 'People'],
-                ),
-                {},
-              ),
-            ),
-        ),
-        h(
-          'div',
-          { class: 'grid-2' },
-          panel(
-            'People affected',
-            d.people.length
-              ? table(
-                  ['Person', 'Events', 'Last'],
-                  d.people.map((p) => [
-                    h('a', { href: href(`users/${encodeURIComponent(p.person)}`) }, p.person),
-                    count(p.events),
-                    h('span', { class: 'nowrap' }, ago(p.lastSeen)),
-                  ]),
-                  { numeric: [1] },
-                )
-              : empty('No one in this range.'),
-            { icon: 'users' },
-          ),
-          panel(
-            'Sessions',
-            d.occurrences.length
-              ? table(
-                  ['When', 'Page', 'Replay'],
-                  d.occurrences.map((o) => [
-                    h('span', { class: 'nowrap' }, dateTime(o.at)),
-                    h('span', { class: 'truncate', title: o.url }, pathOf(o.url)),
-                    o.replay
-                      ? h(
-                          'a',
-                          { class: 'nowrap', href: o.replay.slice(o.replay.indexOf('#')) },
-                          icon('play', 14),
-                          'Watch',
-                        )
-                      : h('span', { class: 'muted nowrap' }, 'No replay'),
-                  ]),
-                )
-              : empty('No sessions in this range.'),
-            { icon: 'replay', subtitle: 'Replays open five seconds before the error' },
-          ),
-        ),
-        mergePanel(d),
-      ];
-    }, 'Loading issue'),
+const BREAKDOWN_NAMES: [string, string][] = [
+  ['path', 'Page'],
+  ['browser', 'Browser'],
+  ['os', 'OS'],
+  ['release', 'Release'],
+  ['device', 'Device'],
+  ['country', 'Country'],
+  ['handled', 'Handled'],
+];
+
+function issueStatusStat(issue: IssueDetail['issue']): HTMLElement {
+  const regressed = issue.status === 'active' && issue.regressedAt;
+  const note = issue.regressedAt
+    ? `Regressed ${ago(issue.regressedAt)}`
+    : issue.assignee
+      ? `Assigned to ${issue.assignee}`
+      : null;
+  return kpiStat('Status', regressed ? 'Regressed' : capitalize(issue.status), note);
+}
+
+function issueStats(d: IssueDetail): HTMLElement {
+  return h(
+    'div',
+    { class: 'stats stats-panel' },
+    kpiStat('Events in range', count(d.range.events)),
+    kpiStat('People', count(d.range.users)),
+    kpiStat('Sessions', count(d.range.sessions)),
+    kpiStat(
+      'All time',
+      count(d.issue.occurrences),
+      d.issue.dropped ? `${count(d.issue.dropped)} dropped` : null,
+    ),
+    kpiStat('First seen', ago(d.issue.firstSeen), dateTime(d.issue.firstSeen)),
+    issueStatusStat(d.issue),
+  );
+}
+
+function samplePanel(sample: NonNullable<IssueDetail['sample']>): HTMLElement {
+  const rows: [string, Child][] = [
+    ['When', dateTime(sample.at)],
+    ['Page', sample.url],
+    ['Release', sample.release ?? '—'],
+    ['Browser / OS', `${sample.browser} · ${sample.os}`],
+    ['Handled', sample.handled ? 'Yes (captureException)' : 'No (uncaught)'],
+    ['Person', h('a', { href: href(`users/${encodeURIComponent(sample.person)}`) }, sample.person)],
   ];
+  return panel(
+    'Latest occurrence',
+    table(
+      ['', ''],
+      rows.map(([k, v]) => [h('span', { class: 'kv-key' }, k), v]),
+      { class: 'kv-table' },
+    ),
+    { icon: 'clock' },
+  );
+}
+
+/** Dimensions with one value are a sentence, not a panel each. */
+function singleValueSentence(d: IssueDetail): HTMLElement | null {
+  const single = BREAKDOWN_NAMES.filter(([k]) => d.breakdowns[k]?.length === 1);
+  if (!single.length) return null;
+  const phrase = ([k, label]: [string, string]): Child => {
+    const value = d.breakdowns[k]![0]!.value;
+    if (k === 'handled')
+      return h(
+        'span',
+        { class: 'breakdown-value' },
+        value === 'true' ? 'all handled' : 'all uncaught',
+      );
+    return [
+      `${label === 'OS' ? label : label.toLowerCase()} `,
+      h('span', { class: 'breakdown-value' }, value),
+    ];
+  };
+  return h(
+    'p',
+    { class: 'breakdown-summary' },
+    'Every exception in range: ',
+    single.map((x, i) => [i ? ' · ' : '', phrase(x)]),
+  );
+}
+
+function breakdownPanels(d: IssueDetail): HTMLElement {
+  const many = BREAKDOWN_NAMES.filter(([k]) => (d.breakdowns[k]?.length ?? 0) > 1);
+  const grid = many.length >= 3 ? 'grid-3' : many.length === 2 ? 'grid-2' : '';
+  return h(
+    'div',
+    { class: grid },
+    many.map(([k, label]) =>
+      panel(
+        label,
+        barList(
+          d.breakdowns[k]!.map((b) => ({ label: b.value, value: b.events, secondary: b.users })),
+          [label, 'Events', 'People'],
+        ),
+        {},
+      ),
+    ),
+  );
+}
+
+function replayCell(replay: string | null): HTMLElement {
+  if (!replay) return h('span', { class: 'muted nowrap' }, 'No replay');
+  return h(
+    'a',
+    { class: 'nowrap', href: replay.slice(replay.indexOf('#')) },
+    icon('play', 14),
+    'Watch',
+  );
+}
+
+function peopleAndSessions(d: IssueDetail): HTMLElement {
+  const people = d.people.length
+    ? table(
+        ['Person', 'Events', 'Last'],
+        d.people.map((p) => [
+          h('a', { href: href(`users/${encodeURIComponent(p.person)}`) }, p.person),
+          count(p.events),
+          h('span', { class: 'nowrap' }, ago(p.lastSeen)),
+        ]),
+        { numeric: [1] },
+      )
+    : empty('No one in this range.');
+  const sessions = d.occurrences.length
+    ? table(
+        ['When', 'Page', 'Replay'],
+        d.occurrences.map((o) => [
+          h('span', { class: 'nowrap' }, dateTime(o.at)),
+          h('span', { class: 'truncate', title: o.url }, pathOf(o.url)),
+          replayCell(o.replay),
+        ]),
+      )
+    : empty('No sessions in this range.');
+  return h(
+    'div',
+    { class: 'grid-2' },
+    panel('People affected', people, { icon: 'users' }),
+    panel('Sessions', sessions, {
+      icon: 'replay',
+      subtitle: 'Replays open five seconds before the error',
+    }),
+  );
+}
+
+async function issueView(id: string): Promise<Child[]> {
+  const { from, to, project } = scope();
+  const d = await api.get<IssueDetail>(`/api/issues/${encodeURIComponent(id)}`, {
+    project,
+    from,
+    to,
+  });
+  return [
+    pageHeader(`${d.issue.type}`, d.issue.message || '(no message)', actions(d)),
+    issueStats(d),
+    panel(
+      'Over time',
+      lineChart(d.buckets, [{ label: 'Exceptions', values: d.series }], d.interval, {
+        type: 'bar',
+        height: 180,
+      }),
+      { icon: 'insights', subtitle: d.summary, sql: d.sql },
+    ),
+    stackPanel(d),
+    d.sample ? samplePanel(d.sample) : null,
+    singleValueSentence(d),
+    breakdownPanels(d),
+    peopleAndSessions(d),
+    mergePanel(d),
+  ];
+}
+
+function issueDetail(id: string): Child[] {
+  return [later(() => issueView(id), 'Loading issue')];
 }
 
 function sourcemapsPanel(): HTMLElement {

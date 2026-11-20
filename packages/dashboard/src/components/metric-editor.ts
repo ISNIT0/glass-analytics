@@ -4,7 +4,7 @@
  * property pickers; metrics are edited in place.
  */
 
-import { h, mount } from '../dom.ts';
+import { type Child, h, mount } from '../dom.ts';
 import { icon } from './icons.ts';
 import { eventPicker, propertyPicker } from './picker.ts';
 
@@ -110,6 +110,194 @@ function amount(
   );
 }
 
+type Paint = () => void;
+
+function metricEvent(m: Metric, project: string | undefined, paint: Paint): HTMLElement {
+  return field(
+    m.kind === 'retention' ? 'Comes back and does' : 'Event',
+    eventPicker({
+      value: String(m.event ?? ''),
+      project,
+      label: 'Metric event',
+      onChange: (v) => {
+        m.event = v;
+        paint();
+      },
+    }),
+  );
+}
+
+function perPersonField(m: Metric, project: string | undefined, paint: Paint): HTMLElement {
+  const math = select(
+    String(m.math ?? 'count'),
+    [
+      ['count', 'Times they did it'],
+      ['sum', 'Sum of a property'],
+    ],
+    (v) => {
+      m.math = v;
+      if (v === 'count') delete m.property;
+      paint();
+    },
+  );
+  const property =
+    m.math === 'sum'
+      ? propertyPicker({
+          value: String(m.property ?? ''),
+          event: String(m.event ?? ''),
+          project,
+          columns: false,
+          person: false,
+          placeholder: 'Numeric property',
+          onChange: (v) => {
+            m.property = v.replace(/^props\./, '');
+          },
+        })
+      : null;
+  return field('Per person', h('div', { class: 'row' }, math, property));
+}
+
+function outliersField(m: Metric): HTMLElement {
+  return field(
+    'Outliers',
+    select(
+      String((m.winsorize as { upper?: number } | undefined)?.upper ?? ''),
+      [
+        ['', 'Keep every value'],
+        ['99', 'Cap at the 99th percentile'],
+        ['95', 'Cap at the 95th percentile'],
+      ],
+      (v) => {
+        if (v) m.winsorize = { upper: Number(v) };
+        else delete m.winsorize;
+      },
+    ),
+  );
+}
+
+const smallButton = (label: string, cls: string, onclick: () => void, ...children: Child[]) =>
+  h('button', { type: 'button', class: cls, 'aria-label': label, onclick }, ...children);
+
+function funnelStepsField(m: Metric, project: string | undefined, paint: Paint): HTMLElement {
+  const steps = (m.steps as { event: string }[] | undefined) ?? [{ event: '' }];
+  m.steps = steps;
+  const row = (st: { event: string }, i: number) =>
+    h(
+      'div',
+      { class: 'row' },
+      h('span', { class: 'funnel-step-index' }, String(i + 1)),
+      eventPicker({
+        value: st.event,
+        project,
+        label: `Step ${i + 1}`,
+        onChange: (v) => {
+          st.event = v;
+          paint();
+        },
+      }),
+      steps.length > 1
+        ? smallButton(
+            'Remove step',
+            'icon-button push-right',
+            () => {
+              steps.splice(i, 1);
+              paint();
+            },
+            icon('x', 14),
+          )
+        : null,
+    );
+  const add = h(
+    'button',
+    {
+      type: 'button',
+      class: 'link-button add-button',
+      onclick: () => {
+        steps.push({ event: '' });
+        paint();
+      },
+    },
+    icon('plus', 14),
+    'Add step',
+  );
+  return field('Steps after exposure', h('div', { class: 'rich-list' }, steps.map(row), add));
+}
+
+/** The fields each kind of metric shows. */
+const METRIC_FIELDS: Record<
+  string,
+  (m: Metric, project: string | undefined, paint: Paint) => HTMLElement[]
+> = {
+  conversion: (m, project, paint) => [
+    metricEvent(m, project, paint),
+    field(
+      'Within (optional)',
+      text(m.within, 'e.g. 7d', (v) => setOrDelete(m, 'within', v)),
+    ),
+  ],
+  mean: (m, project, paint) => [
+    metricEvent(m, project, paint),
+    perPersonField(m, project, paint),
+    outliersField(m),
+  ],
+  ratio: (m, project, paint) => {
+    m.numerator ??= { event: '', math: 'count' };
+    m.denominator ??= { event: '', math: 'count' };
+    return [
+      amount(m.numerator as Record<string, unknown>, project, paint, 'Numerator'),
+      amount(m.denominator as Record<string, unknown>, project, paint, 'Denominator'),
+    ];
+  },
+  funnel: (m, project, paint) => [
+    funnelStepsField(m, project, paint),
+    field(
+      'Within',
+      text(m.window, '7d', (v) => setOrDelete(m, 'window', v)),
+    ),
+  ],
+  retention: (m, project, paint) => [
+    metricEvent(m, project, paint),
+    field(
+      'Between',
+      h(
+        'div',
+        { class: 'row' },
+        text(m.from, '1d', (v) => setOrDelete(m, 'from', v)),
+        h('span', { class: 'muted small' }, 'and'),
+        text(m.to, '8d', (v) => setOrDelete(m, 'to', v)),
+        h('span', { class: 'muted small' }, 'after exposure'),
+      ),
+    ),
+  ],
+};
+
+function metricHead(m: Metric, onRemove: (() => void) | null, onKind: () => void): HTMLElement {
+  return h(
+    'div',
+    { class: 'query-card-head' },
+    select(m.kind, KINDS, (v) => {
+      for (const k of Object.keys(m)) if (!['name', 'goal'].includes(k)) delete m[k];
+      m.kind = v;
+      if (v !== 'ratio' && v !== 'funnel') m.event = '';
+      onKind();
+    }),
+    select(
+      String(m.goal ?? 'increase'),
+      [
+        ['increase', 'higher is better'],
+        ['decrease', 'lower is better'],
+      ],
+      (v) => {
+        if (v === 'decrease') m.goal = 'decrease';
+        else delete m.goal;
+      },
+    ),
+    onRemove
+      ? smallButton('Remove metric', 'icon-button push-right', onRemove, icon('x', 14))
+      : null,
+  );
+}
+
 function metricCard(
   m: Metric,
   project: string | undefined,
@@ -118,211 +306,16 @@ function metricCard(
 ): HTMLElement {
   const card = h('div', { class: 'query-card rich-card' });
   const paint = () => {
-    const fields: HTMLElement[] = [];
-    if (m.kind === 'conversion' || m.kind === 'mean' || m.kind === 'retention') {
-      fields.push(
-        field(
-          m.kind === 'retention' ? 'Comes back and does' : 'Event',
-          eventPicker({
-            value: String(m.event ?? ''),
-            project,
-            label: 'Metric event',
-            onChange: (v) => {
-              m.event = v;
-              paint();
-            },
-          }),
-        ),
-      );
-    }
-    if (m.kind === 'conversion') {
-      fields.push(
-        field(
-          'Within (optional)',
-          text(m.within, 'e.g. 7d', (v) => setOrDelete(m, 'within', v)),
-        ),
-      );
-    }
-    if (m.kind === 'mean') {
-      fields.push(
-        field(
-          'Per person',
-          h(
-            'div',
-            { class: 'row' },
-            select(
-              String(m.math ?? 'count'),
-              [
-                ['count', 'Times they did it'],
-                ['sum', 'Sum of a property'],
-              ],
-              (v) => {
-                m.math = v;
-                if (v === 'count') delete m.property;
-                paint();
-              },
-            ),
-            m.math === 'sum'
-              ? propertyPicker({
-                  value: String(m.property ?? ''),
-                  event: String(m.event ?? ''),
-                  project,
-                  columns: false,
-                  person: false,
-                  placeholder: 'Numeric property',
-                  onChange: (v) => {
-                    m.property = v.replace(/^props\./, '');
-                  },
-                })
-              : null,
-          ),
-        ),
-        field(
-          'Outliers',
-          select(
-            String((m.winsorize as { upper?: number } | undefined)?.upper ?? ''),
-            [
-              ['', 'Keep every value'],
-              ['99', 'Cap at the 99th percentile'],
-              ['95', 'Cap at the 95th percentile'],
-            ],
-            (v) => {
-              if (v) m.winsorize = { upper: Number(v) };
-              else delete m.winsorize;
-            },
-          ),
-        ),
-      );
-    }
-    if (m.kind === 'ratio') {
-      m.numerator ??= { event: '', math: 'count' };
-      m.denominator ??= { event: '', math: 'count' };
-      fields.push(
-        amount(m.numerator as Record<string, unknown>, project, paint, 'Numerator'),
-        amount(m.denominator as Record<string, unknown>, project, paint, 'Denominator'),
-      );
-    }
-    if (m.kind === 'funnel') {
-      const steps = (m.steps as { event: string }[] | undefined) ?? [{ event: '' }];
-      m.steps = steps;
-      fields.push(
-        field(
-          'Steps after exposure',
-          h(
-            'div',
-            { class: 'rich-list' },
-            steps.map((s, i) =>
-              h(
-                'div',
-                { class: 'row' },
-                h('span', { class: 'funnel-step-index' }, String(i + 1)),
-                eventPicker({
-                  value: s.event,
-                  project,
-                  label: `Step ${i + 1}`,
-                  onChange: (v) => {
-                    s.event = v;
-                    paint();
-                  },
-                }),
-                steps.length > 1
-                  ? h(
-                      'button',
-                      {
-                        type: 'button',
-                        class: 'icon-button push-right',
-                        'aria-label': 'Remove step',
-                        onclick: () => {
-                          steps.splice(i, 1);
-                          paint();
-                        },
-                      },
-                      icon('x', 14),
-                    )
-                  : null,
-              ),
-            ),
-            h(
-              'button',
-              {
-                type: 'button',
-                class: 'link-button add-button',
-                onclick: () => {
-                  steps.push({ event: '' });
-                  paint();
-                },
-              },
-              icon('plus', 14),
-              'Add step',
-            ),
-          ),
-        ),
-        field(
-          'Within',
-          text(m.window, '7d', (v) => setOrDelete(m, 'window', v)),
-        ),
-      );
-    }
-    if (m.kind === 'retention') {
-      fields.push(
-        field(
-          'Between',
-          h(
-            'div',
-            { class: 'row' },
-            text(m.from, '1d', (v) => setOrDelete(m, 'from', v)),
-            h('span', { class: 'muted small' }, 'and'),
-            text(m.to, '8d', (v) => setOrDelete(m, 'to', v)),
-            h('span', { class: 'muted small' }, 'after exposure'),
-          ),
-        ),
-      );
-    }
+    const name = text(m.name, 'e.g. Checkout conversion', (v) => setOrDelete(m, 'name', v));
+    name.classList.remove('short');
     mount(
       card,
-      h(
-        'div',
-        { class: 'query-card-head' },
-        select(m.kind, KINDS, (v) => {
-          for (const k of Object.keys(m)) if (!['name', 'goal'].includes(k)) delete m[k];
-          m.kind = v;
-          if (v !== 'ratio' && v !== 'funnel') m.event = '';
-          paint();
-          repaintAll();
-        }),
-        select(
-          String(m.goal ?? 'increase'),
-          [
-            ['increase', 'higher is better'],
-            ['decrease', 'lower is better'],
-          ],
-          (v) => {
-            if (v === 'decrease') m.goal = 'decrease';
-            else delete m.goal;
-          },
-        ),
-        onRemove
-          ? h(
-              'button',
-              {
-                type: 'button',
-                class: 'icon-button push-right',
-                'aria-label': 'Remove metric',
-                onclick: onRemove,
-              },
-              icon('x', 14),
-            )
-          : null,
-      ),
-      h('div', { class: 'rich-grid' }, fields),
-      field(
-        'Name (optional)',
-        (() => {
-          const input = text(m.name, 'e.g. Checkout conversion', (v) => setOrDelete(m, 'name', v));
-          input.classList.remove('short');
-          return input;
-        })(),
-      ),
+      metricHead(m, onRemove, () => {
+        paint();
+        repaintAll();
+      }),
+      h('div', { class: 'rich-grid' }, METRIC_FIELDS[String(m.kind)]?.(m, project, paint) ?? []),
+      field('Name (optional)', name),
     );
   };
   paint();

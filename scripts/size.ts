@@ -20,9 +20,12 @@ const BUDGETS: Record<string, number> = {
   'packages/web/dist/glass.js': 6.25, // script-tag SDK
   'packages/web/dist/replay.js': 65, // replay recorder, loaded on demand
   // Admin-only: the Errors, Revenue, Groups and Pipelines pages, the cohort editor
-  // and the world map's country outlines (about 12 KB).
-  'packages/dashboard/dist/app.js': 200,
-  'packages/dashboard/dist/app.css': 18,
+  // and the world map's country outlines (about 12 KB). Raised to 210 for the JSON and
+  // formula editors (with their checkers from core), the measure picker and the insight
+  // starters: about 4 KB, and the rest of the headroom is for user paths next.
+  'packages/dashboard/dist/app.js': 210,
+  // 19: the code field, fold and chip styles shared by the new editors.
+  'packages/dashboard/dist/app.css': 19,
   // Destinations, exports, issues, revenue and group analytics (Workers allow 3 MB on Free).
   'packages/worker/dist/worker.js': 600,
   'packages/cli/dist/glass.js': 42, // import, sourcemaps and stripe commands

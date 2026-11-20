@@ -44,52 +44,93 @@ const field = (label: string, control: HTMLElement, hint?: Child) =>
     hint ? h('small', { class: 'muted' }, hint) : null,
   );
 
-function settingsForm(
-  settings: Settings,
-  destinations: { id: string; name: string }[],
-): HTMLElement {
-  const project = scope().project;
+/** A part of the settings form: its fields, and the settings it writes back. */
+interface Section {
+  fields: Child[];
+  read: () => Record<string, unknown>;
+}
+
+const input = (attrs: Record<string, unknown>) =>
+  h('input', { type: 'text', ...attrs }) as HTMLInputElement;
+const numberOrNull = (el: HTMLInputElement) => (el.value ? Number(el.value) : null);
+const listOrNull = (text: string) => {
+  const list = text
+    .split(',')
+    .map((x) => x.trim())
+    .filter(Boolean);
+  return list.length ? list : null;
+};
+
+function reportsSection(settings: Settings, project: string | undefined): Section {
   const zones =
     (Intl as unknown as { supportedValuesOf?: (k: string) => string[] }).supportedValuesOf?.(
       'timeZone',
     ) ?? [];
-  const timezone = h('input', {
-    type: 'text',
-    value: settings.timezone ?? '',
-    placeholder: 'UTC',
-    list: 'tz-list',
-  });
+  const timezone = input({ value: settings.timezone ?? '', placeholder: 'UTC', list: 'tz-list' });
   const tzList = h(
     'datalist',
     { id: 'tz-list' },
     zones.map((z) => h('option', { value: z })),
   );
-  const currency = h('input', {
-    type: 'text',
+  const internalRows = structuredClone((settings.internalFilters ?? []) as FilterRow[]);
+  return {
+    fields: [
+      h('h3', {}, 'Reports'),
+      field(
+        'Time zone',
+        h('div', {}, timezone, tzList),
+        'Day, week and month boundaries in every report (follows daylight saving).',
+      ),
+      field(
+        'Internal traffic',
+        filterEditor(internalRows, () => {}, { project }),
+        'Events matching any of these are your own or test traffic; "Filter out internal traffic" leaves them out.',
+      ),
+    ],
+    read: () => ({
+      timezone: timezone.value.trim() || null,
+      internalFilters: cleanFilters(internalRows) ?? null,
+    }),
+  };
+}
+
+function revenueSection(settings: Settings, project: string | undefined): Section {
+  const currency = input({
     value: settings.baseCurrency ?? '',
     placeholder: 'USD',
     maxlength: 3,
     class: 'short',
   });
-  const internalRows = structuredClone((settings.internalFilters ?? []) as FilterRow[]);
-  const internal = filterEditor(internalRows, () => {}, { project });
-  const revenueRules = structuredClone((settings.revenueEvents ?? []) as RevenueRule[]);
-  const revenue = revenueEventsEditor(revenueRules, project);
-  const inApp = h('input', {
-    type: 'text',
-    value: (settings.inAppIncludes ?? []).join(', '),
-    placeholder: '/assets/app-, /static/js/main',
-  });
-  const rate = h('input', {
-    type: 'number',
-    min: 1,
-    value: settings.errorRateLimitPerMinute ?? '',
-    placeholder: '100',
-    class: 'short',
-  });
-  let overrides = Boolean(settings.allowFlagOverrides);
-  const alerts = settings.errorAlerts;
-  const alertDest = h(
+  const rules = structuredClone((settings.revenueEvents ?? []) as RevenueRule[]);
+  return {
+    fields: [
+      h('h3', { id: 'revenue' }, 'Revenue'),
+      field(
+        'Base currency',
+        currency,
+        'Revenue is converted to it with the ECB rates of each payment’s day.',
+      ),
+      field(
+        'Revenue events',
+        revenueEventsEditor(rules, project),
+        'Events that carry money. Amounts are converted to the base currency; a subscription property tracks MRR.',
+      ),
+    ],
+    read: () => {
+      const complete = completeRevenueRules(rules);
+      return {
+        baseCurrency: currency.value.trim().toUpperCase() || null,
+        revenueEvents: complete.length ? complete : null,
+      };
+    },
+  };
+}
+
+function alertsSection(
+  alerts: Settings['errorAlerts'],
+  destinations: { id: string; name: string }[],
+): Section {
+  const dest = h(
     'select',
     {},
     h('option', { value: '' }, 'No alerts'),
@@ -99,92 +140,134 @@ function settingsForm(
   );
   let onNew = alerts?.onNew !== false;
   let onRegression = alerts?.onRegression !== false;
-  const spikeCount = h('input', {
+  const spikeCount = input({
     type: 'number',
     min: 2,
     value: alerts?.spike?.count ?? '',
     placeholder: '50',
     class: 'short',
   });
-  const spikeMinutes = h('input', {
+  const spikeMinutes = input({
     type: 'number',
     min: 1,
     value: alerts?.spike?.minutes ?? '',
     placeholder: '10',
     class: 'short',
   });
+  const hint = destinations.length
+    ? 'Sent through a destination (Slack, Discord, Teams or a webhook).'
+    : 'Add a Slack, Discord, Teams or webhook destination under Pipelines first.';
+  const read = () => {
+    if (!dest.value) return { errorAlerts: null };
+    const spike =
+      spikeCount.value && spikeMinutes.value
+        ? { count: Number(spikeCount.value), minutes: Number(spikeMinutes.value) }
+        : undefined;
+    return {
+      errorAlerts: { destination: dest.value, onNew, onRegression, ...(spike ? { spike } : {}) },
+    };
+  };
+  return {
+    fields: [
+      field(
+        'Alerts',
+        h(
+          'div',
+          { class: 'stack tight' },
+          dest,
+          h(
+            'div',
+            { class: 'row gap-lg' },
+            toggle({ checked: onNew, label: 'New issues', onChange: (c) => (onNew = c) }),
+            toggle({
+              checked: onRegression,
+              label: 'Regressions',
+              onChange: (c) => (onRegression = c),
+            }),
+          ),
+        ),
+        hint,
+      ),
+      field(
+        'Spike alert',
+        h(
+          'div',
+          { class: 'row' },
+          spikeCount,
+          h('span', {}, 'exceptions within'),
+          spikeMinutes,
+          h('span', {}, 'minutes'),
+        ),
+        'Optional; at most one alert per window.',
+      ),
+    ],
+    read,
+  };
+}
+
+function errorsSection(settings: Settings, destinations: { id: string; name: string }[]): Section {
+  const inApp = input({
+    value: (settings.inAppIncludes ?? []).join(', '),
+    placeholder: '/assets/app-, /static/js/main',
+  });
+  const rate = input({
+    type: 'number',
+    min: 1,
+    value: settings.errorRateLimitPerMinute ?? '',
+    placeholder: '100',
+    class: 'short',
+  });
+  const alerts = alertsSection(settings.errorAlerts, destinations);
+  return {
+    fields: [
+      h('h3', {}, 'Error tracking'),
+      field(
+        'Your code',
+        inApp,
+        'Path fragments of your own scripts, so their frames count as in-app (default: files on your site’s host).',
+      ),
+      field('Exceptions kept per issue per minute', rate),
+      ...alerts.fields,
+    ],
+    read: () => ({
+      inAppIncludes: listOrNull(inApp.value),
+      errorRateLimitPerMinute: numberOrNull(rate),
+      ...alerts.read(),
+    }),
+  };
+}
+
+function flagsSection(settings: Settings): Section {
+  let overrides = Boolean(settings.allowFlagOverrides);
+  return {
+    fields: [
+      h('h3', {}, 'Flags'),
+      toggle({
+        checked: overrides,
+        label: 'Allow ?__glass_flags=key:variant in page URLs to override flags (for QA)',
+        onChange: (c) => (overrides = c),
+      }),
+    ],
+    read: () => ({ allowFlagOverrides: overrides }),
+  };
+}
+
+function settingsForm(
+  settings: Settings,
+  destinations: { id: string; name: string }[],
+): HTMLElement {
+  const project = scope().project;
+  const sections = [
+    reportsSection(settings, project),
+    revenueSection(settings, project),
+    errorsSection(settings, destinations),
+    flagsSection(settings),
+  ];
   const error = h('div', {});
   const form = h(
     'form',
     { class: 'stack' },
-    h('h3', {}, 'Reports'),
-    field(
-      'Time zone',
-      h('div', {}, timezone, tzList),
-      'Day, week and month boundaries in every report (follows daylight saving).',
-    ),
-    field(
-      'Internal traffic',
-      internal,
-      'Events matching any of these are your own or test traffic; "Filter out internal traffic" leaves them out.',
-    ),
-    h('h3', { id: 'revenue' }, 'Revenue'),
-    field(
-      'Base currency',
-      currency,
-      'Revenue is converted to it with the ECB rates of each payment’s day.',
-    ),
-    field(
-      'Revenue events',
-      revenue,
-      'Events that carry money. Amounts are converted to the base currency; a subscription property tracks MRR.',
-    ),
-    h('h3', {}, 'Error tracking'),
-    field(
-      'Your code',
-      inApp,
-      'Path fragments of your own scripts, so their frames count as in-app (default: files on your site’s host).',
-    ),
-    field('Exceptions kept per issue per minute', rate),
-    field(
-      'Alerts',
-      h(
-        'div',
-        { class: 'stack tight' },
-        alertDest,
-        h(
-          'div',
-          { class: 'row gap-lg' },
-          toggle({ checked: onNew, label: 'New issues', onChange: (c) => (onNew = c) }),
-          toggle({
-            checked: onRegression,
-            label: 'Regressions',
-            onChange: (c) => (onRegression = c),
-          }),
-        ),
-      ),
-      destinations.length
-        ? 'Sent through a destination (Slack, Discord, Teams or a webhook).'
-        : 'Add a Slack, Discord, Teams or webhook destination under Pipelines first.',
-    ),
-    field(
-      'Spike alert',
-      h(
-        'div',
-        { class: 'row' },
-        spikeCount,
-        h('span', {}, 'exceptions within'),
-        spikeMinutes,
-        h('span', {}, 'minutes'),
-      ),
-      'Optional; at most one alert per window.',
-    ),
-    h('h3', {}, 'Flags'),
-    toggle({
-      checked: overrides,
-      label: 'Allow ?__glass_flags=key:variant in page URLs to override flags (for QA)',
-      onChange: (c) => (overrides = c),
-    }),
+    sections.map((x) => x.fields),
     error,
     h(
       'div',
@@ -195,31 +278,9 @@ function settingsForm(
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     try {
-      const spike =
-        spikeCount.value && spikeMinutes.value
-          ? { count: Number(spikeCount.value), minutes: Number(spikeMinutes.value) }
-          : undefined;
       await api.patch('/api/settings', {
         project,
-        settings: {
-          timezone: timezone.value.trim() || null,
-          baseCurrency: currency.value.trim().toUpperCase() || null,
-          internalFilters: cleanFilters(internalRows) ?? null,
-          revenueEvents: completeRevenueRules(revenueRules).length
-            ? completeRevenueRules(revenueRules)
-            : null,
-          inAppIncludes: inApp.value.trim()
-            ? inApp.value
-                .split(',')
-                .map((x) => x.trim())
-                .filter(Boolean)
-            : null,
-          errorRateLimitPerMinute: rate.value ? Number(rate.value) : null,
-          allowFlagOverrides: overrides,
-          errorAlerts: alertDest.value
-            ? { destination: alertDest.value, onNew, onRegression, ...(spike ? { spike } : {}) }
-            : null,
-        },
+        settings: Object.assign({}, ...sections.map((x) => x.read())),
       });
       toast('Settings saved');
       mount(error);
@@ -230,7 +291,7 @@ function settingsForm(
   return form;
 }
 
-function stripePanel(status: {
+type StripeStatus = {
   connected: boolean;
   webhookUrl: string;
   events: string[];
@@ -239,35 +300,61 @@ function stripePanel(status: {
   lastEventAt?: string | null;
   customers?: { known: number; linked: number };
   summary: string;
-}): HTMLElement {
+};
+
+function stripeSubtitle(status: StripeStatus): string {
+  if (!status.connected)
+    return 'Not connected. Record payments, refunds and subscriptions (MRR) from Stripe.';
+  const last = status.lastEventAt
+    ? `, the last ${new Date(status.lastEventAt).toLocaleString()}`
+    : '';
+  return `Connected · ${status.received ?? 0} webhooks received${last} · ${status.customers?.linked ?? 0} of ${status.customers?.known ?? 0} customers linked to people`;
+}
+
+async function disconnectStripe(project: string | undefined): Promise<void> {
+  if (!confirm('Disconnect Stripe? Revenue already recorded stays.')) return;
+  await api.delete('/api/stripe', { project });
+  toast('Stripe disconnected');
+  location.reload();
+}
+
+/** Only the keys with a value: secrets left empty keep what's stored. */
+const nonEmpty = (o: Record<string, string>) =>
+  Object.fromEntries(Object.entries(o).filter(([, v]) => v));
+
+function stripePanel(status: StripeStatus): HTMLElement {
   const project = scope().project;
+  const config = status.config ?? {};
   const secret = h('input', {
     type: 'password',
     placeholder: status.connected ? '•••••• (set; leave empty to keep)' : 'whsec_…',
     autocomplete: 'off',
     required: !status.connected,
   });
+  const submit = h(
+    'button',
+    { type: 'submit', class: 'primary' },
+    status.connected ? 'Save' : 'Connect Stripe',
+  );
+  const disconnect = status.connected
+    ? h(
+        'button',
+        { type: 'button', class: 'danger', onclick: () => disconnectStripe(project) },
+        'Disconnect',
+      )
+    : null;
   const apiKey = h('input', {
     type: 'password',
     placeholder: 'rk_live_… (optional: read access to Customers)',
     autocomplete: 'off',
   });
-  const personKey = h('input', {
-    type: 'text',
-    value: status.config?.personKey ?? '',
-    placeholder: 'dataflare_id',
-  });
-  const groupType = h('input', {
-    type: 'text',
-    value: status.config?.groupType ?? '',
-    placeholder: 'company (optional)',
-  });
-  const groupKey = h('input', {
-    type: 'text',
-    value: status.config?.groupKey ?? '',
+  const personKey = input({ value: config.personKey ?? '', placeholder: 'dataflare_id' });
+  const groupType = input({ value: config.groupType ?? '', placeholder: 'company (optional)' });
+  const groupKey = input({
+    value: config.groupKey ?? '',
     placeholder: 'metadata key, default the customer id',
   });
-  let byEmail = Boolean(status.config?.linkByEmail);
+  let byEmail = Boolean(config.linkByEmail);
   const error = h('div', {});
   const form = h(
     'form',
@@ -298,31 +385,7 @@ function stripePanel(status: {
       onChange: (c) => (byEmail = c),
     }),
     error,
-    h(
-      'div',
-      { class: 'form-actions' },
-      h(
-        'button',
-        { type: 'submit', class: 'primary' },
-        status.connected ? 'Save' : 'Connect Stripe',
-      ),
-      status.connected
-        ? h(
-            'button',
-            {
-              type: 'button',
-              class: 'danger',
-              onclick: async () => {
-                if (!confirm('Disconnect Stripe? Revenue already recorded stays.')) return;
-                await api.delete('/api/stripe', { project });
-                toast('Stripe disconnected');
-                location.reload();
-              },
-            },
-            'Disconnect',
-          )
-        : null,
-    ),
+    h('div', { class: 'form-actions' }, submit, disconnect),
     h(
       'p',
       { class: 'muted small' },
@@ -334,8 +397,7 @@ function stripePanel(status: {
     try {
       const r = await api.post<{ summary: string }>('/api/stripe', {
         project,
-        ...(secret.value ? { webhookSecret: secret.value } : {}),
-        ...(apiKey.value ? { apiKey: apiKey.value } : {}),
+        ...nonEmpty({ webhookSecret: secret.value, apiKey: apiKey.value }),
         personKey: personKey.value || undefined,
         groupType: groupType.value || undefined,
         groupKey: groupKey.value || undefined,
@@ -346,10 +408,7 @@ function stripePanel(status: {
       mount(error, errorState(err));
     }
   });
-  const subtitle = status.connected
-    ? `Connected · ${status.received ?? 0} webhooks received${status.lastEventAt ? `, the last ${new Date(status.lastEventAt).toLocaleString()}` : ''} · ${status.customers?.linked ?? 0} of ${status.customers?.known ?? 0} customers linked to people`
-    : 'Not connected. Record payments, refunds and subscriptions (MRR) from Stripe.';
-  return panel('Stripe', form, { icon: 'dollar', subtitle });
+  return panel('Stripe', form, { icon: 'dollar', subtitle: stripeSubtitle(status) });
 }
 
 export function projectSettingsPanels(): HTMLElement {
@@ -361,7 +420,7 @@ export function projectSettingsPanels(): HTMLElement {
         '/api/destinations',
         { project },
       ),
-      api.get<Parameters<typeof stripePanel>[0]>('/api/stripe', { project }),
+      api.get<StripeStatus>('/api/stripe', { project }),
     ]);
     const chat = destinations.filter((d) =>
       ['slack', 'discord', 'teams', 'webhook', 'zapier', 'make', 'n8n'].includes(d.template),

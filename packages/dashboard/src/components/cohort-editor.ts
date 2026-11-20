@@ -189,6 +189,187 @@ function eventFilters(
   );
 }
 
+interface ConditionContext {
+  c: Condition;
+  project: string | undefined;
+  cohorts: CohortChoice[];
+  repaint: () => void;
+  onChange: () => void;
+  /** A setter for one key that also reports the change. */
+  set: (key: string) => (v: unknown) => void;
+}
+
+const sentence = (...children: Child[]) => h('div', { class: 'cohort-sentence' }, ...children);
+
+function performedBody({ c, project, repaint, onChange, set }: ConditionContext): Child[] {
+  const count = (c.count as { op: string; value: number } | undefined) ?? { op: 'gte', value: 1 };
+  c.count = count;
+  const op = select(
+    count.op,
+    [
+      ['gte', 'at least'],
+      ['eq', 'exactly'],
+      ['lte', 'at most'],
+    ],
+    (v) => {
+      count.op = v;
+      onChange();
+    },
+    'How many times',
+  );
+  const times = numberInput(
+    count.value,
+    (n) => {
+      count.value = n;
+      onChange();
+    },
+    'Times',
+  );
+  return [
+    sentence(
+      eventField(c, project, repaint),
+      op,
+      times,
+      words('times in the last'),
+      durationInput(c.within, '30d', set('within'), 'Window'),
+    ),
+    eventFilters(c, project, onChange),
+  ];
+}
+
+function inWindowBody({ c, project, repaint, onChange, set }: ConditionContext): Child[] {
+  return [
+    sentence(
+      eventField(c, project, repaint),
+      words(c.type === 'first_performed' ? 'for the first time in the last' : 'in the last'),
+      durationInput(c.within, '30d', set('within'), 'Window'),
+    ),
+    eventFilters(c, project, onChange),
+  ];
+}
+
+function regularlyBody({ c, project, repaint, onChange, set }: ConditionContext): Child[] {
+  const period = select(
+    String(c.period ?? 'week'),
+    [
+      ['day', 'days'],
+      ['week', 'weeks'],
+      ['month', 'months'],
+    ],
+    set('period'),
+    'Period',
+  );
+  return [
+    sentence(
+      eventField(c, project, repaint),
+      words('in at least'),
+      numberInput(c.minPeriods, set('minPeriods'), 'Periods with the event', 1),
+      words('of the last'),
+      numberInput(c.periods, set('periods'), 'Periods to look at', 1),
+      period,
+    ),
+    eventFilters(c, project, onChange),
+  ];
+}
+
+function stoppedBody({ c, project, repaint, onChange, set }: ConditionContext): Child[] {
+  // The earlier window defaults to the recent one's length; set it so the form shows what runs.
+  if (c.before === undefined) c.before = c.within;
+  return [
+    sentence(
+      eventField(c, project, repaint),
+      words('in the'),
+      durationInput(c.before, '14d', set('before'), 'Earlier window'),
+      words('before, but not in the last'),
+      durationInput(c.within, '14d', set('within'), 'Recent window'),
+    ),
+    eventFilters(c, project, onChange),
+  ];
+}
+
+function startedBody({ c, project, repaint, onChange, set }: ConditionContext): Child[] {
+  if (c.before === undefined) c.before = c.within;
+  return [
+    sentence(
+      eventField(c, project, repaint),
+      words('in the last'),
+      durationInput(c.within, '7d', set('within'), 'Recent window'),
+      words('but not in the'),
+      durationInput(c.before, '7d', set('before'), 'Earlier window'),
+      words('before'),
+    ),
+    eventFilters(c, project, onChange),
+  ];
+}
+
+function sequenceBody({ c, project, repaint, set }: ConditionContext): Child[] {
+  const next = (c.followedBy as Record<string, unknown> | undefined) ?? { event: '' };
+  c.followedBy = next;
+  return [
+    sentence(
+      eventField(c, project, repaint, 'First event'),
+      words('then'),
+      eventField(next, project, repaint, 'Then event'),
+      words('within'),
+      durationInput(c.gap, '1d', set('gap'), 'Gap'),
+      words('in the last'),
+      durationInput(c.within, '30d', set('within'), 'Window'),
+    ),
+  ];
+}
+
+function cohortBody({ c, cohorts, onChange, set }: ConditionContext): Child[] {
+  const choices = cohorts.filter((x) => x.key);
+  const inOut = select(
+    c.negate ? 'out' : 'in',
+    [
+      ['in', 'is in'],
+      ['out', 'is not in'],
+    ],
+    (v) => {
+      if (v === 'out') c.negate = true;
+      else delete c.negate;
+      onChange();
+    },
+    'In or not in',
+  );
+  const which = choices.length
+    ? select(
+        String(c.key ?? ''),
+        [['', 'Choose a cohort'], ...choices.map((x): [string, string] => [x.key, x.name])],
+        set('key'),
+        'Cohort',
+      )
+    : h('span', { class: 'muted small' }, 'Save another cohort first.');
+  return [sentence(inOut, which)];
+}
+
+function propertyBody({ c, project, onChange }: ConditionContext): Child[] {
+  return [
+    h(
+      'div',
+      { class: 'cohort-property' },
+      filterEditor([c as unknown as FilterRow], onChange, {
+        project,
+        personOnly: true,
+        single: true,
+      }),
+    ),
+  ];
+}
+
+const CONDITION_BODIES: Record<string, (ctx: ConditionContext) => Child[]> = {
+  property: propertyBody,
+  performed: performedBody,
+  not_performed: inWindowBody,
+  first_performed: inWindowBody,
+  performed_regularly: regularlyBody,
+  stopped: stoppedBody,
+  started: startedBody,
+  sequence: sequenceBody,
+  cohort: cohortBody,
+};
+
 function conditionBody(
   c: Condition,
   project: string | undefined,
@@ -200,165 +381,9 @@ function conditionBody(
     c[key] = v;
     onChange();
   };
-  switch (c.type) {
-    case 'property':
-      return [
-        h(
-          'div',
-          { class: 'cohort-property' },
-          filterEditor([c as unknown as FilterRow], onChange, {
-            project,
-            personOnly: true,
-            single: true,
-          }),
-        ),
-      ];
-    case 'performed': {
-      const count = (c.count as { op: string; value: number } | undefined) ?? {
-        op: 'gte',
-        value: 1,
-      };
-      c.count = count;
-      return [
-        h(
-          'div',
-          { class: 'cohort-sentence' },
-          eventField(c, project, repaint),
-          select(
-            count.op,
-            [
-              ['gte', 'at least'],
-              ['eq', 'exactly'],
-              ['lte', 'at most'],
-            ],
-            (v) => {
-              count.op = v;
-              onChange();
-            },
-            'How many times',
-          ),
-          numberInput(
-            count.value,
-            (n) => {
-              count.value = n;
-              onChange();
-            },
-            'Times',
-          ),
-          words('times in the last'),
-          durationInput(c.within, '30d', set('within'), 'Window'),
-        ),
-        eventFilters(c, project, onChange),
-      ];
-    }
-    case 'not_performed':
-    case 'first_performed':
-      return [
-        h(
-          'div',
-          { class: 'cohort-sentence' },
-          eventField(c, project, repaint),
-          words(c.type === 'first_performed' ? 'for the first time in the last' : 'in the last'),
-          durationInput(c.within, '30d', set('within'), 'Window'),
-        ),
-        eventFilters(c, project, onChange),
-      ];
-    case 'performed_regularly':
-      return [
-        h(
-          'div',
-          { class: 'cohort-sentence' },
-          eventField(c, project, repaint),
-          words('in at least'),
-          numberInput(c.minPeriods, set('minPeriods'), 'Periods with the event', 1),
-          words('of the last'),
-          numberInput(c.periods, set('periods'), 'Periods to look at', 1),
-          select(
-            String(c.period ?? 'week'),
-            [
-              ['day', 'days'],
-              ['week', 'weeks'],
-              ['month', 'months'],
-            ],
-            set('period'),
-            'Period',
-          ),
-        ),
-        eventFilters(c, project, onChange),
-      ];
-    case 'stopped':
-    case 'started': {
-      // The earlier window defaults to the recent one's length; set it so the form shows what runs.
-      if (c.before === undefined) c.before = c.within;
-      const before = c.before;
-      return [
-        h(
-          'div',
-          { class: 'cohort-sentence' },
-          eventField(c, project, repaint),
-          words(c.type === 'stopped' ? 'in the' : 'in the last'),
-          c.type === 'stopped'
-            ? durationInput(before, '14d', set('before'), 'Earlier window')
-            : durationInput(c.within, '7d', set('within'), 'Recent window'),
-          words(c.type === 'stopped' ? 'before, but not in the last' : 'but not in the'),
-          c.type === 'stopped'
-            ? durationInput(c.within, '14d', set('within'), 'Recent window')
-            : durationInput(before, '7d', set('before'), 'Earlier window'),
-          c.type === 'started' ? words('before') : '',
-        ),
-        eventFilters(c, project, onChange),
-      ];
-    }
-    case 'sequence': {
-      const next = (c.followedBy as Record<string, unknown> | undefined) ?? { event: '' };
-      c.followedBy = next;
-      return [
-        h(
-          'div',
-          { class: 'cohort-sentence' },
-          eventField(c, project, repaint, 'First event'),
-          words('then'),
-          eventField(next, project, repaint, 'Then event'),
-          words('within'),
-          durationInput(c.gap, '1d', set('gap'), 'Gap'),
-          words('in the last'),
-          durationInput(c.within, '30d', set('within'), 'Window'),
-        ),
-      ];
-    }
-    case 'cohort': {
-      const choices = cohorts.filter((x) => x.key);
-      return [
-        h(
-          'div',
-          { class: 'cohort-sentence' },
-          select(
-            c.negate ? 'out' : 'in',
-            [
-              ['in', 'is in'],
-              ['out', 'is not in'],
-            ],
-            (v) => {
-              if (v === 'out') c.negate = true;
-              else delete c.negate;
-              onChange();
-            },
-            'In or not in',
-          ),
-          choices.length
-            ? select(
-                String(c.key ?? ''),
-                [['', 'Choose a cohort'], ...choices.map((x): [string, string] => [x.key, x.name])],
-                set('key'),
-                'Cohort',
-              )
-            : h('span', { class: 'muted small' }, 'Save another cohort first.'),
-        ),
-      ];
-    }
-    default:
-      return [h('span', { class: 'muted small' }, `Unknown condition "${c.type}"`)];
-  }
+  const body = CONDITION_BODIES[c.type];
+  if (!body) return [h('span', { class: 'muted small' }, `Unknown condition "${c.type}"`)];
+  return body({ c, project, cohorts, repaint, onChange, set });
 }
 
 function groupCard(
@@ -585,6 +610,21 @@ const BEHAVIOUR = new Set([
 ]);
 
 /** One condition ready to send, or null while it is incomplete. */
+/** A behaviour condition without its defaults, or null when it's unfinished. */
+function completeBehaviour(c: Condition): Condition | null {
+  if (!BEHAVIOUR.has(c.type) || !c.event) return null;
+  if (c.type === 'sequence' && !(c.followedBy as { event?: string } | undefined)?.event)
+    return null;
+  const out: Condition = { ...c };
+  const filters = cleanFilters(c.filters as FilterRow[] | undefined);
+  if (filters?.length) out.filters = filters;
+  else delete out.filters;
+  const count = c.count as { op: string; value: number } | undefined;
+  if (c.type === 'performed' && (!count || (count.op === 'gte' && count.value === 1)))
+    delete out.count;
+  return out;
+}
+
 function completeCondition(c: Condition): Condition | null {
   if (c.type === 'property') {
     const [row] = cleanFilters([c as unknown as FilterRow]) ?? [];
@@ -592,20 +632,7 @@ function completeCondition(c: Condition): Condition | null {
     return { type: 'property', ...row, ...(c.negate ? { negate: true } : {}) };
   }
   if (c.type === 'cohort') return c.key ? { ...c } : null;
-  if (!BEHAVIOUR.has(c.type) || !c.event) return null;
-  const out: Condition = { ...c };
-  const filters = cleanFilters(c.filters as FilterRow[] | undefined);
-  if (filters?.length) out.filters = filters;
-  else delete out.filters;
-  if (c.type === 'performed') {
-    const count = c.count as { op: string; value: number } | undefined;
-    if (!count || (count.op === 'gte' && count.value === 1)) delete out.count;
-  }
-  if (c.type === 'sequence') {
-    const next = c.followedBy as { event?: string } | undefined;
-    if (!next?.event) return null;
-  }
-  return out;
+  return completeBehaviour(c);
 }
 
 /** The definition ready to send: incomplete conditions and empty groups left out. */

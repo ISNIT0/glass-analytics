@@ -143,7 +143,10 @@ async function putMap(
 
 function reportUpload(uploaded: { path: string; bytes: number }[], options: Options): void {
   const result = { release: options.release, files: uploaded, dryRun: Boolean(options.dryRun) };
-  if (options.json) return printJson(result);
+  if (options.json) {
+    printJson(result);
+    return;
+  }
   const n = uploaded.length;
   ok(
     `${options.dryRun ? 'Would upload' : 'Uploaded'} ${n} source map${n === 1 ? '' : 's'} for release ${options.release}`,

@@ -14,6 +14,7 @@ import { api } from '../api.ts';
 import { lineChart } from '../components/charts.ts';
 import { cleanFilters, type FilterRow, filterEditor } from '../components/filter-editor.ts';
 import { icon } from '../components/icons.ts';
+import { jsonEditor } from '../components/json-editor.ts';
 import { toggle } from '../components/menu.ts';
 import { eventPicker } from '../components/picker.ts';
 import {
@@ -81,15 +82,128 @@ const field = (label: string, control: HTMLElement, hint?: string) =>
     hint ? h('small', { class: 'muted' }, hint) : null,
   );
 
-const parseJson = (text: string, what: string): unknown => {
-  try {
-    return text.trim() ? JSON.parse(text) : undefined;
-  } catch {
-    throw new Error(`${what} is not valid JSON`);
-  }
-};
-
 // ── Destinations ───────────────────────────────────────────────────────────
+
+/** A destination setting's control, and how to read its value back (undefined: leave unset). */
+interface InputControl {
+  el: HTMLElement;
+  read: () => unknown;
+}
+
+/** JSON settings get the JSON editor: highlighted, checked as you type. */
+function jsonInput(i: TemplateInput, current: unknown): InputControl {
+  const editor = jsonEditor({ value: current, label: i.label, emptyText: 'Empty: not set' });
+  return {
+    el: editor.el,
+    read: () => {
+      const st = editor.state();
+      if (!st.ok) {
+        editor.focus();
+        throw new Error(`${i.label}: ${st.message}`);
+      }
+      return st.empty ? undefined : st.value;
+    },
+  };
+}
+
+function textInput(i: TemplateInput, current: unknown, existing: Destination | null): InputControl {
+  const secret = i.type === 'secret';
+  const isSet = secret && Boolean(existing?.secretsSet.includes(i.key));
+  const el = h('input', {
+    type: secret ? 'password' : 'text',
+    value: secret || current === undefined ? '' : String(current),
+    placeholder: isSet ? '•••••• (set; leave empty to keep)' : '',
+    required: Boolean(i.required) && !isSet,
+    autocomplete: 'off',
+  });
+  return { el, read: () => (el.value === '' ? undefined : el.value) };
+}
+
+function inputControl(i: TemplateInput, existing: Destination | null): InputControl {
+  const current = existing?.config[i.key] ?? i.default;
+  if (i.type === 'boolean') {
+    const el = h('input', { type: 'checkbox', checked: current === true });
+    return { el, read: () => el.checked };
+  }
+  if (i.type === 'select') {
+    const el = h(
+      'select',
+      {},
+      (i.options ?? []).map((o) => h('option', { value: o, selected: o === current }, o)),
+    );
+    return { el, read: () => (el.value === '' ? undefined : el.value) };
+  }
+  if (i.type === 'json') return jsonInput(i, current);
+  return textInput(i, current, existing);
+}
+
+function templateSelect(
+  templates: Template[],
+  t: Template,
+  onPick: (id: string) => void,
+): HTMLElement {
+  const sel = h(
+    'select',
+    {},
+    templates.map((x) => h('option', { value: x.id, selected: x.id === t.id }, x.name)),
+  );
+  sel.addEventListener('change', () => onPick(sel.value));
+  return field('Destination', sel, t.description);
+}
+
+async function saveDestination(
+  existing: Destination | null,
+  body: Record<string, unknown>,
+): Promise<void> {
+  const r = existing
+    ? await api.put<{ destination: Destination }>(`/api/destinations/${existing.id}`, body)
+    : await api.post<{ destination: Destination }>('/api/destinations', body);
+  toast(existing ? 'Destination saved' : 'Destination created: send a test event to check it');
+  go(`pipelines/destinations/${r.destination.id}`);
+}
+
+function destinationFields(
+  t: Template,
+  existing: Destination | null,
+  project: string | undefined,
+): { fields: HTMLElement[]; body: () => Record<string, unknown> } {
+  const name = h('input', { type: 'text', value: existing?.name ?? t.name, required: true });
+  const eventList = [...(existing?.match.events ?? t.defaultEvents ?? [])];
+  if (eventList.length === 0) eventList.push('');
+  const filterRows = structuredClone((existing?.match.filters ?? []) as FilterRow[]);
+  const controls = t.inputs.map((i) => ({ i, c: inputControl(i, existing) }));
+  const fields = [
+    field('Name', name),
+    field(
+      'Events to send',
+      eventListEditor(eventList, project, { allLabel: 'All events (except bookkeeping)' }),
+    ),
+    field(
+      'Only events matching (optional)',
+      filterEditor(filterRows, () => {}, { project }),
+      'e.g. paid plans only.',
+    ),
+    ...controls.map(({ i, c }) =>
+      field(`${i.label}${i.required ? '' : ' (optional)'}`, c.el, i.description),
+    ),
+  ];
+  const body = () => {
+    const inputs: Record<string, unknown> = {};
+    for (const { i, c } of controls) {
+      const v = c.read();
+      if (v !== undefined) inputs[i.key] = v;
+    }
+    return {
+      project,
+      name: name.value,
+      template: t.id,
+      events: eventList.filter(Boolean),
+      filters: cleanFilters(filterRows) ?? [],
+      inputs,
+    };
+  };
+  return { fields, body };
+}
 
 function destinationForm(
   templates: Template[],
@@ -100,70 +214,13 @@ function destinationForm(
   const holder = h('div', {});
   const paint = (templateId: string) => {
     const t = templates.find((x) => x.id === templateId) ?? templates[0]!;
-    const name = h('input', { type: 'text', value: existing?.name ?? t.name, required: true });
-    const eventList = [...(existing?.match.events ?? t.defaultEvents ?? [])];
-    if (eventList.length === 0) eventList.push('');
-    const events = eventListEditor(eventList, project, {
-      allLabel: 'All events (except bookkeeping)',
-    });
-    const filterRows = structuredClone((existing?.match.filters ?? []) as FilterRow[]);
-    const filters = filterEditor(filterRows, () => {}, { project });
-    const controls = new Map<string, HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>();
-    const inputs = t.inputs.map((i) => {
-      const current = existing?.config[i.key] ?? i.default;
-      let control: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
-      if (i.type === 'boolean')
-        control = h('input', { type: 'checkbox', checked: current === true });
-      else if (i.type === 'select')
-        control = h(
-          'select',
-          {},
-          (i.options ?? []).map((o) => h('option', { value: o, selected: o === current }, o)),
-        );
-      else if (i.type === 'json')
-        control = h(
-          'textarea',
-          { rows: 3, spellcheck: false },
-          current === undefined ? '' : JSON.stringify(current, null, 2),
-        );
-      else
-        control = h('input', {
-          type: i.type === 'secret' ? 'password' : 'text',
-          value: i.type === 'secret' ? '' : current === undefined ? '' : String(current),
-          placeholder:
-            i.type === 'secret' && existing?.secretsSet.includes(i.key)
-              ? '•••••• (set; leave empty to keep)'
-              : '',
-          required:
-            Boolean(i.required) && !(i.type === 'secret' && existing?.secretsSet.includes(i.key)),
-          autocomplete: 'off',
-        });
-      controls.set(i.key, control);
-      return field(`${i.label}${i.required ? '' : ' (optional)'}`, control, i.description);
-    });
+    const { fields, body } = destinationFields(t, existing, project);
     const error = h('div', {});
     const form = h(
       'form',
       { class: 'stack' },
-      existing
-        ? null
-        : field(
-            'Destination',
-            (() => {
-              const sel = h(
-                'select',
-                {},
-                templates.map((x) => h('option', { value: x.id, selected: x.id === t.id }, x.name)),
-              );
-              sel.addEventListener('change', () => paint(sel.value));
-              return sel;
-            })(),
-            t.description,
-          ),
-      field('Name', name),
-      field('Events to send', events),
-      field('Only events matching (optional)', filters, 'e.g. paid plans only.'),
-      inputs,
+      existing ? null : templateSelect(templates, t, paint),
+      fields,
       error,
       h(
         'div',
@@ -174,30 +231,7 @@ function destinationForm(
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       try {
-        const values: Record<string, unknown> = {};
-        for (const i of t.inputs) {
-          const c = controls.get(i.key)!;
-          if (i.type === 'boolean') values[i.key] = (c as HTMLInputElement).checked;
-          else if (i.type === 'json') {
-            const v = parseJson(c.value, i.label);
-            if (v !== undefined) values[i.key] = v;
-          } else if (c.value !== '') values[i.key] = c.value;
-        }
-        const body = {
-          project,
-          name: name.value,
-          template: t.id,
-          events: eventList.filter(Boolean),
-          filters: cleanFilters(filterRows) ?? [],
-          inputs: values,
-        };
-        const r = existing
-          ? await api.put<{ destination: Destination }>(`/api/destinations/${existing.id}`, body)
-          : await api.post<{ destination: Destination }>('/api/destinations', body);
-        toast(
-          existing ? 'Destination saved' : 'Destination created: send a test event to check it',
-        );
-        go(`pipelines/destinations/${r.destination.id}`);
+        await saveDestination(existing, body());
       } catch (err) {
         mount(error, errorState(err));
       }
@@ -455,10 +489,9 @@ function transformations(): Child {
       patterns: ['email', 'phone'],
     };
     let sampleEvent = 'signup';
-    const sampleProps = h(
-      'textarea',
-      { rows: 2, spellcheck: false },
-      '{"note":"mail ann@example.com","plan":"pro"}',
+    const sampleProps = jsonInput(
+      { key: 'props', label: 'Sample properties', type: 'json' },
+      { note: 'mail ann@example.com', plan: 'pro' },
     );
     const out = h('div', {});
     const run = async (save: boolean) => {
@@ -481,7 +514,7 @@ function transformations(): Child {
             rule: parsed,
             event: {
               event: sampleEvent,
-              props: parseJson(sampleProps.value, 'The sample properties') ?? {},
+              props: sampleProps.read() ?? {},
             },
           },
         );
@@ -579,7 +612,7 @@ function transformations(): Child {
                   sampleEvent = v;
                 },
               }),
-              sampleProps,
+              sampleProps.el,
             ),
             'The sample’s properties, as JSON.',
           ),
@@ -633,203 +666,215 @@ const TARGET_FIELDS: Record<
   ],
 };
 
+interface ExportRow {
+  id: string;
+  name: string;
+  target: string;
+  format: string;
+  frequency: string;
+  enabled: boolean;
+  watermark: string;
+  running: boolean;
+}
+
+interface ExportRun {
+  status: string;
+  window: { from: string; to: string };
+  rows: number;
+  files: number;
+  error?: string;
+  startedAt: string;
+}
+
+type TargetField = (typeof TARGET_FIELDS)[string][number];
+
+const options = (values: string[], label: (v: string) => string) =>
+  values.map((v) => h('option', { value: v }, label(v)));
+
+const TARGET_LABELS: Record<string, string> = {
+  s3: 'S3 or R2 (files)',
+  bigquery: 'BigQuery (rows)',
+  http: 'HTTP (NDJSON)',
+};
+
+/** One target setting: request headers get the JSON editor, the rest are text. */
+function targetControl(f: TargetField): InputControl {
+  if (f.key === 'headers')
+    return jsonInput({ key: f.key, label: f.label, type: 'json' }, undefined);
+  const el = f.json
+    ? h('textarea', { rows: 3, spellcheck: false, placeholder: f.placeholder ?? '' })
+    : h('input', {
+        type: f.secret ? 'password' : 'text',
+        placeholder: f.placeholder ?? '',
+        autocomplete: 'off',
+      });
+  return { el, read: () => el.value.trim() || undefined };
+}
+
+function exportForm(project: string | undefined): HTMLElement {
+  const target = h(
+    'select',
+    {},
+    options(['s3', 'bigquery', 'http'], (t) => TARGET_LABELS[t]!),
+  );
+  const format = h(
+    'select',
+    {},
+    options(['jsonl', 'csv'], (t) => t.toUpperCase()),
+  );
+  const frequency = h(
+    'select',
+    {},
+    options(['hour', 'day'], (t) => `Every ${t}`),
+  );
+  const from = h('input', { type: 'text', value: '-7d', placeholder: '-30d' });
+  const fields = h('div', { class: 'stack' });
+  let controls: { f: TargetField; c: InputControl }[] = [];
+  const paint = () => {
+    controls = TARGET_FIELDS[target.value]!.map((f) => ({ f, c: targetControl(f) }));
+    mount(
+      fields,
+      controls.map(({ f, c }) => field(f.label, c.el)),
+    );
+  };
+  target.addEventListener('change', paint);
+  paint();
+  const error = h('div', {});
+  const form = h(
+    'form',
+    { class: 'stack' },
+    h(
+      'div',
+      { class: 'grid-3' },
+      field('Target', target),
+      field('Format', format),
+      field('How often', frequency),
+    ),
+    fields,
+    field('Start with events received since', from),
+    error,
+    h(
+      'div',
+      { class: 'form-actions' },
+      h('button', { type: 'submit', class: 'primary' }, 'Create export'),
+    ),
+  );
+  const settings = () => {
+    const out: Record<string, unknown> = {};
+    for (const { f, c } of controls) {
+      const v = c.read();
+      if (v !== undefined) out[f.key] = v;
+    }
+    return out;
+  };
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      await api.post('/api/exports', {
+        project,
+        target: target.value,
+        format: format.value,
+        frequency: frequency.value,
+        settings: settings(),
+        from: from.value || undefined,
+      });
+      toast('Export created: files appear after the first full period');
+      go('pipelines/exports', { t: String(Date.now()) });
+    } catch (err) {
+      mount(error, errorState(err));
+    }
+  });
+  return form;
+}
+
+async function showRuns(
+  x: ExportRow,
+  project: string | undefined,
+  into: HTMLElement,
+): Promise<void> {
+  const res = await api.get<{ runs: ExportRun[] }>(`/api/exports/${x.id}/runs`, { project });
+  const list = res.runs.length
+    ? table(
+        ['Started', 'Window', 'Status', 'Rows', 'Files'],
+        res.runs.map((u) => [
+          ago(u.startedAt),
+          `${dateTime(u.window.from)} → ${dateTime(u.window.to)}`,
+          u.error ? `${u.status}: ${u.error}` : u.status,
+          count(u.rows),
+          String(u.files),
+        ]),
+        { numeric: [3, 4] },
+      )
+    : empty('No runs yet.');
+  mount(into, panel(`Runs of ${x.name}`, list, { icon: 'clock' }));
+}
+
+async function backfill(x: ExportRow, project: string | undefined): Promise<void> {
+  const since = prompt('Re-export everything received since (e.g. -30d or 2026-01-01):', '-30d');
+  if (!since) return;
+  const res = await api.post<{ summary: string }>(`/api/exports/${x.id}/backfill`, {
+    project,
+    from: since,
+  });
+  toast(res.summary);
+}
+
+function exportRow(x: ExportRow, project: string | undefined, runs: HTMLElement): Child[] {
+  return [
+    h(
+      'button',
+      { type: 'button', class: 'link-button', onclick: () => showRuns(x, project, runs) },
+      x.name,
+    ),
+    `${x.target} · ${x.format}`,
+    x.frequency,
+    `${dateTime(x.watermark)}${x.running ? ' (sending)' : ''}`,
+    toggle({
+      checked: x.enabled,
+      label: h('span', { class: 'visually-hidden' }, 'on'),
+      onChange: async (checked) => {
+        await api.put(`/api/exports/${x.id}`, { project, enabled: checked });
+        toast(checked ? 'Export on' : 'Export paused');
+      },
+    }),
+    h('button', { type: 'button', onclick: () => backfill(x, project) }, 'Backfill'),
+  ];
+}
+
+function exportList(
+  list: ExportRow[],
+  project: string | undefined,
+  runs: HTMLElement,
+): HTMLElement {
+  if (!list.length)
+    return empty(
+      'Send events to your warehouse every hour or day: gzipped JSONL/CSV files in S3 or R2 (Snowflake, Databricks and Spark read these), rows in BigQuery, or NDJSON to your own endpoint.',
+      null,
+      { icon: 'database', title: 'No exports' },
+    );
+  return panel(
+    'Exports',
+    table(
+      ['Export', 'Target', 'Every', 'Sent up to', 'On', ''],
+      list.map((x) => exportRow(x, project, runs)),
+    ),
+    {
+      icon: 'database',
+      subtitle:
+        'Each run sends the events received in a closed hour or day; runs pick up where the last one stopped.',
+    },
+  );
+}
+
 function exports(): Child {
   const project = scope().project;
   return later(async () => {
-    const r = await api.get<{
-      exports: {
-        id: string;
-        name: string;
-        target: string;
-        format: string;
-        frequency: string;
-        enabled: boolean;
-        watermark: string;
-        running: boolean;
-      }[];
-      summary: string;
-    }>('/api/exports', { project });
-    const target = h(
-      'select',
-      {},
-      ['s3', 'bigquery', 'http'].map((t) =>
-        h(
-          'option',
-          { value: t },
-          { s3: 'S3 or R2 (files)', bigquery: 'BigQuery (rows)', http: 'HTTP (NDJSON)' }[t]!,
-        ),
-      ),
-    );
-    const format = h(
-      'select',
-      {},
-      ['jsonl', 'csv'].map((t) => h('option', { value: t }, t.toUpperCase())),
-    );
-    const frequency = h(
-      'select',
-      {},
-      ['hour', 'day'].map((t) => h('option', { value: t }, `Every ${t}`)),
-    );
-    const from = h('input', { type: 'text', value: '-7d', placeholder: '-30d' });
-    const fields = h('div', { class: 'stack' });
-    const controls = new Map<string, HTMLInputElement | HTMLTextAreaElement>();
-    const paint = () => {
-      controls.clear();
-      mount(
-        fields,
-        TARGET_FIELDS[target.value]!.map((f) => {
-          const c = f.json
-            ? h('textarea', { rows: 3, spellcheck: false, placeholder: f.placeholder ?? '' })
-            : h('input', {
-                type: f.secret ? 'password' : 'text',
-                placeholder: f.placeholder ?? '',
-                autocomplete: 'off',
-              });
-          controls.set(f.key, c);
-          return field(f.label, c);
-        }),
-      );
-    };
-    target.addEventListener('change', paint);
-    paint();
-    const error = h('div', {});
-    const form = h(
-      'form',
-      { class: 'stack' },
-      h(
-        'div',
-        { class: 'grid-3' },
-        field('Target', target),
-        field('Format', format),
-        field('How often', frequency),
-      ),
-      fields,
-      field('Start with events received since', from),
-      error,
-      h(
-        'div',
-        { class: 'form-actions' },
-        h('button', { type: 'submit', class: 'primary' }, 'Create export'),
-      ),
-    );
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      try {
-        const settings: Record<string, unknown> = {};
-        for (const f of TARGET_FIELDS[target.value]!) {
-          const v = controls.get(f.key)!.value.trim();
-          if (v) settings[f.key] = f.json && f.key === 'headers' ? parseJson(v, f.label) : v;
-        }
-        await api.post('/api/exports', {
-          project,
-          target: target.value,
-          format: format.value,
-          frequency: frequency.value,
-          settings,
-          from: from.value || undefined,
-        });
-        toast('Export created: files appear after the first full period');
-        go('pipelines/exports', { t: String(Date.now()) });
-      } catch (err) {
-        mount(error, errorState(err));
-      }
-    });
+    const r = await api.get<{ exports: ExportRow[]; summary: string }>('/api/exports', { project });
     const runs = h('div', {});
     return [
-      r.exports.length
-        ? panel(
-            'Exports',
-            table(
-              ['Export', 'Target', 'Every', 'Sent up to', 'On', ''],
-              r.exports.map((x) => [
-                h(
-                  'button',
-                  {
-                    type: 'button',
-                    class: 'link-button',
-                    onclick: async () => {
-                      const res = await api.get<{
-                        runs: {
-                          status: string;
-                          window: { from: string; to: string };
-                          rows: number;
-                          files: number;
-                          error?: string;
-                          startedAt: string;
-                        }[];
-                      }>(`/api/exports/${x.id}/runs`, { project });
-                      mount(
-                        runs,
-                        panel(
-                          `Runs of ${x.name}`,
-                          res.runs.length
-                            ? table(
-                                ['Started', 'Window', 'Status', 'Rows', 'Files'],
-                                res.runs.map((u) => [
-                                  ago(u.startedAt),
-                                  `${dateTime(u.window.from)} → ${dateTime(u.window.to)}`,
-                                  u.error ? `${u.status}: ${u.error}` : u.status,
-                                  count(u.rows),
-                                  String(u.files),
-                                ]),
-                                { numeric: [3, 4] },
-                              )
-                            : empty('No runs yet.'),
-                          { icon: 'clock' },
-                        ),
-                      );
-                    },
-                  },
-                  x.name,
-                ),
-                `${x.target} · ${x.format}`,
-                x.frequency,
-                `${dateTime(x.watermark)}${x.running ? ' (sending)' : ''}`,
-                toggle({
-                  checked: x.enabled,
-                  label: h('span', { class: 'visually-hidden' }, 'on'),
-                  onChange: async (checked) => {
-                    await api.put(`/api/exports/${x.id}`, { project, enabled: checked });
-                    toast(checked ? 'Export on' : 'Export paused');
-                  },
-                }),
-                h(
-                  'button',
-                  {
-                    type: 'button',
-                    onclick: async () => {
-                      const since = prompt(
-                        'Re-export everything received since (e.g. -30d or 2026-01-01):',
-                        '-30d',
-                      );
-                      if (!since) return;
-                      const res = await api.post<{ summary: string }>(
-                        `/api/exports/${x.id}/backfill`,
-                        { project, from: since },
-                      );
-                      toast(res.summary);
-                    },
-                  },
-                  'Backfill',
-                ),
-              ]),
-            ),
-            {
-              icon: 'database',
-              subtitle:
-                'Each run sends the events received in a closed hour or day; runs pick up where the last one stopped.',
-            },
-          )
-        : empty(
-            'Send events to your warehouse every hour or day: gzipped JSONL/CSV files in S3 or R2 (Snowflake, Databricks and Spark read these), rows in BigQuery, or NDJSON to your own endpoint.',
-            null,
-            {
-              icon: 'database',
-              title: 'No exports',
-            },
-          ),
+      exportList(r.exports, project, runs),
       runs,
-      panel('New export', form, {
+      panel('New export', exportForm(project), {
         icon: 'plus',
         subtitle: 'Credentials are encrypted and never shown again.',
       }),
@@ -885,6 +930,87 @@ function readRecords(
   return { records, bad };
 }
 
+/** Send the events in batches, showing progress; returns what the server kept. */
+async function sendImport(
+  project: string | undefined,
+  events: WireEvent[],
+  progress: HTMLElement,
+): Promise<{ accepted: number; dropped: number }> {
+  let accepted = 0;
+  let dropped = 0;
+  for (let i = 0; i < events.length; i += IMPORT_BATCH) {
+    const r = await api.post<{ accepted: number; dropped: number }>('/api/import', {
+      project,
+      events: events.slice(i, i + IMPORT_BATCH),
+    });
+    accepted += r.accepted;
+    dropped += r.dropped;
+    progress.textContent = `Imported ${count(accepted)} of ${count(events.length)}…`;
+  }
+  progress.textContent = '';
+  toast(`Imported ${count(accepted)} events${dropped ? ` (${count(dropped)} rejected)` : ''}`);
+  return { accepted, dropped };
+}
+
+function importedNotice(
+  { accepted, dropped }: { accepted: number; dropped: number },
+  fileName: string,
+): HTMLElement {
+  const rejected = dropped ? `; ${count(dropped)} were rejected` : '';
+  return h(
+    'div',
+    { class: 'notice good' },
+    icon('check', 16),
+    h(
+      'span',
+      {},
+      `Imported ${count(accepted)} events from ${fileName}${rejected}. Importing the same file again won’t double count.`,
+    ),
+  );
+}
+
+function importPreview(
+  fileName: string,
+  events: WireEvent[],
+  skipped: number,
+  format: string,
+): Child[] {
+  const skippedNote = skipped
+    ? h(
+        'span',
+        { class: 'muted' },
+        `, ${count(skipped)} ${skipped === 1 ? 'record' : 'records'} skipped (no event, time or id the ${format} format could read)`,
+      )
+    : null;
+  const sample = events.length
+    ? table(
+        ['Time', 'Event', 'Person', 'Page'],
+        events
+          .slice(0, 5)
+          .map((e) => [
+            h('span', { class: 'nowrap muted' }, dateTime(Number(e.ts))),
+            h('span', { class: 'event-pill' }, e.event),
+            h('span', { class: 'cell-clip' }, e.user_id ?? e.distinct_id ?? ''),
+            h('span', { class: 'cell-clip' }, e.url ?? ''),
+          ]),
+      )
+    : null;
+  return [
+    h(
+      'p',
+      {},
+      h('strong', {}, fileName),
+      `: ${count(events.length)} event${events.length === 1 ? '' : 's'} to import`,
+      skippedNote,
+      '.',
+    ),
+    sample,
+    events.length > 5
+      ? h('p', { class: 'muted small' }, `The first 5 of ${count(events.length)}.`)
+      : null,
+  ];
+}
+
 function imports(): Child {
   const project = scope().project;
   let preset: ImportPreset = 'posthog';
@@ -917,72 +1043,18 @@ function imports(): Child {
     const progress = h('p', { class: 'muted small', 'aria-live': 'polite' });
     button.addEventListener('click', async () => {
       button.disabled = true;
-      let accepted = 0;
-      let dropped = 0;
       try {
-        for (let i = 0; i < events.length; i += IMPORT_BATCH) {
-          const r = await api.post<{ accepted: number; dropped: number }>('/api/import', {
-            project,
-            events: events.slice(i, i + IMPORT_BATCH),
-          });
-          accepted += r.accepted;
-          dropped += r.dropped;
-          progress.textContent = `Imported ${count(accepted)} of ${count(events.length)}…`;
-        }
-        progress.textContent = '';
-        toast(
-          `Imported ${count(accepted)} events${dropped ? ` (${count(dropped)} rejected)` : ''}`,
-        );
-        mount(
-          preview,
-          h(
-            'div',
-            { class: 'notice good' },
-            icon('check', 16),
-            h(
-              'span',
-              {},
-              `Imported ${count(accepted)} events from ${fileName}${dropped ? `; ${count(dropped)} were rejected` : ''}. Importing the same file again won’t double count.`,
-            ),
-          ),
-        );
+        const done = await sendImport(project, events, progress);
+        mount(preview, importedNotice(done, fileName));
       } catch (err) {
         mount(progress, errorState(err));
         button.disabled = false;
       }
     });
+    const format = SOURCES.find((x) => x.value === preset)?.label ?? preset;
     mount(
       preview,
-      h(
-        'p',
-        {},
-        h('strong', {}, fileName),
-        `: ${count(events.length)} event${events.length === 1 ? '' : 's'} to import`,
-        skipped
-          ? h(
-              'span',
-              { class: 'muted' },
-              `, ${count(skipped)} ${skipped === 1 ? 'record' : 'records'} skipped (no event, time or id the ${SOURCES.find((x) => x.value === preset)?.label ?? preset} format could read)`,
-            )
-          : null,
-        '.',
-      ),
-      events.length
-        ? table(
-            ['Time', 'Event', 'Person', 'Page'],
-            events
-              .slice(0, 5)
-              .map((e) => [
-                h('span', { class: 'nowrap muted' }, dateTime(Number(e.ts))),
-                h('span', { class: 'event-pill' }, e.event),
-                h('span', { class: 'cell-clip' }, e.user_id ?? e.distinct_id ?? ''),
-                h('span', { class: 'cell-clip' }, e.url ?? ''),
-              ]),
-          )
-        : null,
-      events.length > 5
-        ? h('p', { class: 'muted small' }, `The first 5 of ${count(events.length)}.`)
-        : null,
+      importPreview(fileName, events, skipped, format),
       h('div', { class: 'form-actions' }, button, progress),
     );
   };

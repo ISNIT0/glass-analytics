@@ -54,6 +54,44 @@ interface CorrelationItem {
   significant: boolean;
 }
 
+function oddsCell(it: CorrelationItem, good: boolean): HTMLElement {
+  const tone = good ? 'good' : 'bad';
+  const odds = it.oddsRatio >= 10 ? Math.round(it.oddsRatio) : it.oddsRatio.toFixed(1);
+  return h(
+    'span',
+    {
+      class: it.significant ? tone : 'muted',
+      title: it.significant ? 'Significant (p < 0.05)' : 'Not significant yet',
+    },
+    `${odds}×`,
+  );
+}
+
+function correlationList(
+  items: CorrelationItem[],
+  title: string,
+  good: boolean,
+  mode: 'events' | 'properties',
+): HTMLElement {
+  const events = mode === 'events';
+  const body = items.length
+    ? table(
+        [events ? 'Event' : 'Value', 'Converted', 'Dropped off', 'Conversion', 'Odds'],
+        items.map((it) => [
+          events
+            ? h('span', { class: 'event-pill' }, it.event ?? it.name)
+            : h('span', { class: 'cell-clip', title: it.name }, it.name),
+          count(it.successCount),
+          count(it.failureCount),
+          `${Math.round(it.conversionRate * 100)}%`,
+          oddsCell(it, good),
+        ]),
+        { numeric: [1, 2, 3, 4] },
+      )
+    : h('p', { class: 'muted small' }, 'Nothing stands out.');
+  return h('div', { class: 'correlation-list' }, h('h4', {}, title), body);
+}
+
 /**
  * What goes with converting through a funnel, and with dropping off: other
  * events people did (or values of a property they had), by odds ratio. Runs on
@@ -66,39 +104,7 @@ export function correlationView(spec: Spec): HTMLElement {
   let property = '';
   const results = h('div', {});
   const list = (items: CorrelationItem[], title: string, good: boolean) =>
-    h(
-      'div',
-      { class: 'correlation-list' },
-      h('h4', {}, title),
-      items.length
-        ? table(
-            [
-              mode === 'events' ? 'Event' : 'Value',
-              'Converted',
-              'Dropped off',
-              'Conversion',
-              'Odds',
-            ],
-            items.map((it) => [
-              mode === 'events'
-                ? h('span', { class: 'event-pill' }, it.event ?? it.name)
-                : h('span', { class: 'cell-clip', title: it.name }, it.name),
-              count(it.successCount),
-              count(it.failureCount),
-              `${Math.round(it.conversionRate * 100)}%`,
-              h(
-                'span',
-                {
-                  class: it.significant ? (good ? 'good' : 'bad') : 'muted',
-                  title: it.significant ? 'Significant (p < 0.05)' : 'Not significant yet',
-                },
-                `${it.oddsRatio >= 10 ? Math.round(it.oddsRatio) : it.oddsRatio.toFixed(1)}×`,
-              ),
-            ]),
-            { numeric: [1, 2, 3, 4] },
-          )
-        : h('p', { class: 'muted small' }, 'Nothing stands out.'),
-    );
+    correlationList(items, title, good, mode);
   const run = async () => {
     if (mode === 'properties' && !property) {
       mount(results, h('p', { class: 'muted small' }, 'Pick a property to compare its values.'));

@@ -308,6 +308,30 @@ function planPanel(
   );
 }
 
+/** Web experiment changes, grouped into transforms per variant. */
+function transformsOf(changes: Change[]): Record<string, unknown[]> {
+  const transforms: Record<string, unknown[]> = {};
+  for (const c of changes.filter((x) => x.selector)) {
+    const t =
+      c.type === 'hide'
+        ? { selector: c.selector, hide: true }
+        : { selector: c.selector, [c.type]: c.value };
+    transforms[c.variant] = [...(transforms[c.variant] ?? []), t];
+  }
+  return transforms;
+}
+
+/** "control:50, test:50" → [{key, weight}]. */
+function parseVariants(text: string): { key: string; weight: number }[] {
+  return text
+    .split(',')
+    .map((part) => {
+      const [k, w] = part.trim().split(':');
+      return { key: k!.trim(), weight: Number(w ?? 1) };
+    })
+    .filter((v) => v.key);
+}
+
 function createForm(holdouts: Holdout[]): HTMLElement {
   const project = scope().project;
   const key = h('input', { type: 'text', required: true, placeholder: 'pricing-page-v2' });
@@ -365,43 +389,30 @@ function createForm(holdouts: Holdout[]): HTMLElement {
       h('button', { type: 'submit', class: 'primary' }, 'Create experiment'),
     ),
   );
+  const body = () => {
+    const metrics = completeMetrics(primary);
+    if (!metrics.length) throw new Error('Pick an event for the primary metric.');
+    const transforms = web ? transformsOf(changes) : {};
+    const parsedVariants = parseVariants(variants.value);
+    const guardrails = completeMetrics(secondary);
+    return {
+      project,
+      key: key.value,
+      hypothesis: hypothesis.value || undefined,
+      metrics,
+      ...(guardrails.length ? { secondary: guardrails } : {}),
+      variants: parsedVariants.length >= 2 ? parsedVariants : undefined,
+      engine: state.engine,
+      confidence: state.confidence,
+      minimumDays: state.minimumDays,
+      ...(holdout.value ? { holdout: holdout.value } : {}),
+      ...(Object.keys(transforms).length ? { transforms } : {}),
+    };
+  };
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     try {
-      const metrics = completeMetrics(primary);
-      if (!metrics.length) throw new Error('Pick an event for the primary metric.');
-      const transforms: Record<string, unknown[]> = {};
-      if (web) {
-        for (const c of changes.filter((x) => x.selector)) {
-          const t =
-            c.type === 'hide'
-              ? { selector: c.selector, hide: true }
-              : { selector: c.selector, [c.type]: c.value };
-          const list = transforms[c.variant] ?? [];
-          list.push(t);
-          transforms[c.variant] = list;
-        }
-      }
-      const parsedVariants = variants.value
-        .split(',')
-        .map((part) => {
-          const [k, w] = part.trim().split(':');
-          return { key: k!.trim(), weight: Number(w ?? 1) };
-        })
-        .filter((v) => v.key);
-      await api.post('/api/experiments', {
-        project,
-        key: key.value,
-        hypothesis: hypothesis.value || undefined,
-        metrics,
-        ...(completeMetrics(secondary).length ? { secondary: completeMetrics(secondary) } : {}),
-        variants: parsedVariants.length >= 2 ? parsedVariants : undefined,
-        engine: state.engine,
-        confidence: state.confidence,
-        minimumDays: state.minimumDays,
-        ...(holdout.value ? { holdout: holdout.value } : {}),
-        ...(Object.keys(transforms).length ? { transforms } : {}),
-      });
+      await api.post('/api/experiments', body());
       toast('Experiment created');
       go(`experiments/${encodeURIComponent(key.value)}`);
     } catch (err) {
@@ -450,134 +461,169 @@ function liftBar(low: number, high: number, expected: number, span: number): HTM
   );
 }
 
-function results(r: ExperimentResult): HTMLElement {
+type VariantView = ExperimentResult['variants'][number];
+
+const VARIANT_COLORS = ['smoke', 'glass-cobalt', 'glass-amber', 'glass-ruby'];
+
+function resultStats(r: ExperimentResult): HTMLElement {
   const exposures = r.variants.reduce((n, v) => n + v.exposures, 0);
   const conversions = r.variants.reduce((n, v) => n + v.conversions, 0);
-  const span = Math.max(
-    0.1,
-    ...r.variants.flatMap((v) =>
-      v.vsControl
-        ? [Math.abs(v.vsControl.liftInterval[0]), Math.abs(v.vsControl.liftInterval[1])]
-        : [],
-    ),
-  );
   const best = r.variants
     .filter((v) => v.vsControl)
     .sort(
       (a, b) => b.vsControl!.probabilityToBeatControl - a.vsControl!.probabilityToBeatControl,
     )[0];
+  const chance = best?.vsControl
+    ? kpiStat(
+        `Chance ${best.variant} beats control`,
+        percent(best.vsControl.probabilityToBeatControl, 0),
+        r.winner ? h('span', { class: 'good' }, `Winner: ${r.winner}`) : 'Needs 95% to call it',
+      )
+    : null;
+  const eta =
+    r.estimatedDaysToSignificance !== null && !r.winner
+      ? kpiStat(
+          'Time to a result',
+          `~${Math.ceil(r.estimatedDaysToSignificance)} days`,
+          'to detect a 10% lift',
+        )
+      : null;
+  return h(
+    'div',
+    { class: 'stats' },
+    kpiStat('Exposed', count(exposures), `${r.variants.length} variants`),
+    kpiStat(
+      'Converted',
+      count(conversions),
+      exposures ? `${percent(conversions / exposures, 1)} overall` : undefined,
+    ),
+    chance,
+    eta,
+  );
+}
+
+function variantLift(v: VariantView, i: number, span: number): HTMLElement {
+  const c = v.vsControl;
+  if (!c)
+    return h(
+      'div',
+      { class: 'variant-lift muted small' },
+      i === 0
+        ? 'Every other variant is compared with this one.'
+        : 'Not enough data to compare yet.',
+    );
+  return h(
+    'div',
+    { class: 'variant-lift' },
+    h(
+      'div',
+      { class: 'variant-lift-head' },
+      h('span', {}, 'Lift vs control'),
+      h(
+        'strong',
+        { class: c.expectedLift >= 0 ? 'good' : 'bad' },
+        `${c.expectedLift >= 0 ? '+' : ''}${percent(c.expectedLift, 1)}`,
+      ),
+    ),
+    liftBar(c.liftInterval[0], c.liftInterval[1], c.expectedLift, span),
+    h(
+      'div',
+      { class: 'muted small' },
+      `${percent(c.probabilityToBeatControl, 0)} chance to beat control`,
+    ),
+  );
+}
+
+function variantCard(r: ExperimentResult, v: VariantView, i: number, span: number): HTMLElement {
+  const winner = r.winner === v.variant;
+  return h(
+    'div',
+    { class: `variant-card ${winner ? 'winner' : ''}` },
+    h(
+      'div',
+      { class: 'variant-head' },
+      h(
+        'span',
+        { class: 'series-tag', style: `--tag:var(--${VARIANT_COLORS[i % 4]})` },
+        String.fromCharCode(65 + i),
+      ),
+      h('strong', {}, v.variant),
+      i === 0 ? h('span', { class: 'badge' }, 'Control') : null,
+      winner ? h('span', { class: 'badge good' }, 'Winner') : null,
+    ),
+    h(
+      'div',
+      { class: 'variant-rate' },
+      percent(v.conversionRate, 1),
+      h('span', { class: 'muted small' }, ' conversion'),
+    ),
+    h(
+      'div',
+      { class: 'meter' },
+      h('span', { style: `width:${Math.min(100, v.conversionRate * 100)}%` }),
+    ),
+    h(
+      'div',
+      { class: 'muted small' },
+      `${count(v.conversions)} of ${count(v.exposures)} · 95% interval ${percent(v.rateInterval[0])}–${percent(v.rateInterval[1])}`,
+    ),
+    variantLift(v, i, span),
+  );
+}
+
+function chanceCell(r: ExperimentResult, v: VariantView): Child {
+  if (v.vsControl)
+    return h(
+      'span',
+      { class: v.vsControl.probabilityToBeatControl >= 0.95 ? 'good' : '' },
+      percent(v.vsControl.probabilityToBeatControl, 0),
+    );
+  return v === r.variants[0] ? 'control' : '—';
+}
+
+function variantRow(r: ExperimentResult, v: VariantView): Child[] {
+  const c = v.vsControl;
+  return [
+    h('strong', {}, v.variant),
+    count(v.exposures),
+    count(v.conversions),
+    percent(v.conversionRate),
+    `${percent(v.rateInterval[0])} to ${percent(v.rateInterval[1])}`,
+    chanceCell(r, v),
+    c
+      ? `${percent(c.expectedLift, 0)} (${percent(c.liftInterval[0], 0)} to ${percent(c.liftInterval[1], 0)})`
+      : '',
+  ];
+}
+
+function srmWarning(r: ExperimentResult): HTMLElement | null {
+  if (!r.srm.mismatch) return null;
+  return h(
+    'div',
+    { class: 'state error' },
+    icon('alert', 18),
+    h(
+      'p',
+      {},
+      `Sample ratio mismatch (p = ${r.srm.pValue.toExponential(1)}). Exposure tracking or assignment is broken; don't trust these numbers yet.`,
+    ),
+  );
+}
+
+function results(r: ExperimentResult): HTMLElement {
+  const span = Math.max(
+    0.1,
+    ...r.variants.flatMap((v) => (v.vsControl ? v.vsControl.liftInterval.map(Math.abs) : [])),
+  );
   return h(
     'div',
     { class: 'experiment-results' },
-    h(
-      'div',
-      { class: 'stats' },
-      kpiStat('Exposed', count(exposures), `${r.variants.length} variants`),
-      kpiStat(
-        'Converted',
-        count(conversions),
-        exposures ? `${percent(conversions / exposures, 1)} overall` : undefined,
-      ),
-      best?.vsControl
-        ? kpiStat(
-            `Chance ${best.variant} beats control`,
-            percent(best.vsControl.probabilityToBeatControl, 0),
-            r.winner ? h('span', { class: 'good' }, `Winner: ${r.winner}`) : 'Needs 95% to call it',
-          )
-        : null,
-      r.estimatedDaysToSignificance !== null && !r.winner
-        ? kpiStat(
-            'Time to a result',
-            `~${Math.ceil(r.estimatedDaysToSignificance)} days`,
-            'to detect a 10% lift',
-          )
-        : null,
-    ),
-    r.srm.mismatch
-      ? h(
-          'div',
-          { class: 'state error' },
-          icon('alert', 18),
-          h(
-            'p',
-            {},
-            `Sample ratio mismatch (p = ${r.srm.pValue.toExponential(1)}). Exposure tracking or assignment is broken; don't trust these numbers yet.`,
-          ),
-        )
-      : null,
+    resultStats(r),
+    srmWarning(r),
     h(
       'div',
       { class: 'variant-cards' },
-      r.variants.map((v, i) =>
-        h(
-          'div',
-          { class: `variant-card ${r.winner === v.variant ? 'winner' : ''}` },
-          h(
-            'div',
-            { class: 'variant-head' },
-            h(
-              'span',
-              {
-                class: 'series-tag',
-                style: `--tag:var(--${['smoke', 'glass-cobalt', 'glass-amber', 'glass-ruby'][i % 4]})`,
-              },
-              String.fromCharCode(65 + i),
-            ),
-            h('strong', {}, v.variant),
-            i === 0 ? h('span', { class: 'badge' }, 'Control') : null,
-            r.winner === v.variant ? h('span', { class: 'badge good' }, 'Winner') : null,
-          ),
-          h(
-            'div',
-            { class: 'variant-rate' },
-            percent(v.conversionRate, 1),
-            h('span', { class: 'muted small' }, ' conversion'),
-          ),
-          h(
-            'div',
-            { class: 'meter' },
-            h('span', { style: `width:${Math.min(100, v.conversionRate * 100)}%` }),
-          ),
-          h(
-            'div',
-            { class: 'muted small' },
-            `${count(v.conversions)} of ${count(v.exposures)} · 95% interval ${percent(v.rateInterval[0])}–${percent(v.rateInterval[1])}`,
-          ),
-          v.vsControl
-            ? h(
-                'div',
-                { class: 'variant-lift' },
-                h(
-                  'div',
-                  { class: 'variant-lift-head' },
-                  h('span', {}, 'Lift vs control'),
-                  h(
-                    'strong',
-                    { class: v.vsControl.expectedLift >= 0 ? 'good' : 'bad' },
-                    `${v.vsControl.expectedLift >= 0 ? '+' : ''}${percent(v.vsControl.expectedLift, 1)}`,
-                  ),
-                ),
-                liftBar(
-                  v.vsControl.liftInterval[0],
-                  v.vsControl.liftInterval[1],
-                  v.vsControl.expectedLift,
-                  span,
-                ),
-                h(
-                  'div',
-                  { class: 'muted small' },
-                  `${percent(v.vsControl.probabilityToBeatControl, 0)} chance to beat control`,
-                ),
-              )
-            : h(
-                'div',
-                { class: 'variant-lift muted small' },
-                i === 0
-                  ? 'Every other variant is compared with this one.'
-                  : 'Not enough data to compare yet.',
-              ),
-        ),
-      ),
+      r.variants.map((v, i) => variantCard(r, v, i, span)),
     ),
     h('p', { class: 'summary' }, icon('bot', 15), h('span', {}, r.summary)),
     table(
@@ -590,25 +636,7 @@ function results(r: ExperimentResult): HTMLElement {
         'Chance to beat control',
         'Lift (95% interval)',
       ],
-      r.variants.map((v) => [
-        h('strong', {}, v.variant),
-        count(v.exposures),
-        count(v.conversions),
-        percent(v.conversionRate),
-        `${percent(v.rateInterval[0])} to ${percent(v.rateInterval[1])}`,
-        v.vsControl
-          ? h(
-              'span',
-              { class: v.vsControl.probabilityToBeatControl >= 0.95 ? 'good' : '' },
-              percent(v.vsControl.probabilityToBeatControl, 0),
-            )
-          : v === r.variants[0]
-            ? 'control'
-            : '—',
-        v.vsControl
-          ? `${percent(v.vsControl.expectedLift, 0)} (${percent(v.vsControl.liftInterval[0], 0)} to ${percent(v.vsControl.liftInterval[1], 0)})`
-          : '',
-      ]),
+      r.variants.map((v) => variantRow(r, v)),
       { numeric: [1, 2, 3] },
     ),
     r.excludedMultipleVariants
@@ -622,25 +650,87 @@ function results(r: ExperimentResult): HTMLElement {
 }
 
 /** Every metric (primary and secondary): each variant's value and how it compares with control. */
+type MetricVariantView = MetricResult['variants'][number];
+
+const isRateMetric = (m: MetricResult) =>
+  m.kind === 'conversion' || m.kind === 'funnel' || m.kind === 'retention';
+const metricValue = (m: MetricResult, v: number) => (isRateMetric(m) ? percent(v, 1) : decimal(v));
+
+/** Each metric's bars share a scale (its widest interval, at most ±200%). */
+function liftSpan(m: MetricResult): number {
+  const widths = m.variants.flatMap((v) =>
+    v.vsControl ? v.vsControl.liftInterval.map(Math.abs) : [],
+  );
+  return Math.min(2, Math.max(0.1, ...widths));
+}
+
+function metricCell(m: MetricResult, secondary: boolean): HTMLElement {
+  const role = `${secondary ? 'Guardrail' : 'Primary'} · ${m.goal === 'decrease' ? 'lower is better' : 'higher is better'}`;
+  return h(
+    'div',
+    { class: 'metric-cell' },
+    h('strong', {}, m.name),
+    h('span', { class: 'muted small' }, role),
+    m.significantVariant
+      ? h('span', { class: 'badge good' }, `${m.significantVariant} wins`)
+      : null,
+  );
+}
+
+function liftCell(m: MetricResult, v: MetricVariantView): HTMLElement {
+  const c = v.vsControl;
+  if (!c) return h('span', { class: 'muted' }, '—');
+  const better = m.goal === 'decrease' ? -c.expectedLift : c.expectedLift;
+  const cls = better > 0.005 ? 'good' : better < -0.005 ? 'bad' : '';
+  return h(
+    'div',
+    { class: 'lift-cell' },
+    h('strong', { class: cls }, `${c.expectedLift >= 0 ? '+' : ''}${percent(c.expectedLift, 1)}`),
+    liftBar(c.liftInterval[0], c.liftInterval[1], c.expectedLift, liftSpan(m)),
+  );
+}
+
+/** The p-value (frequentist) or the chance to beat control (Bayesian). */
+function evidence(v: MetricVariantView, frequentist: boolean): string {
+  const c = v.vsControl;
+  if (!c) return '';
+  if (!frequentist) return percent(c.probabilityToBeatControl, 0);
+  return c.pValue < 0.001 ? '< 0.001' : decimal(c.pValue, 3);
+}
+
+function metricRow(
+  m: MetricResult,
+  secondary: boolean,
+  v: MetricVariantView,
+  i: number,
+  frequentist: boolean,
+): Child[] {
+  return [
+    i === 0 ? metricCell(m, secondary) : '',
+    h(
+      'span',
+      { class: 'nowrap' },
+      v.variant,
+      i === 0 ? h('span', { class: 'muted small' }, ' (control)') : null,
+    ),
+    metricValue(m, v.value),
+    h(
+      'span',
+      { class: 'nowrap muted' },
+      `${metricValue(m, v.interval[0])} – ${metricValue(m, v.interval[1])}`,
+    ),
+    liftCell(m, v),
+    evidence(v, frequentist),
+    v.exposures ? percent(v.probabilityToBeBest, 0) : '—',
+  ];
+}
+
 function metricsTable(r: ExperimentResult): HTMLElement | null {
-  const all: { m: MetricResult; secondary: boolean }[] = [
+  const all = [
     ...r.metrics.map((m) => ({ m, secondary: false })),
     ...r.secondary.map((m) => ({ m, secondary: true })),
   ];
   if (!all.length) return null;
-  const fmt = (m: MetricResult, v: number) =>
-    m.kind === 'conversion' || m.kind === 'funnel' || m.kind === 'retention'
-      ? percent(v, 1)
-      : decimal(v);
-  // Each metric's bars share a scale (its widest interval, at most ±200%).
-  const spanOf = (m: MetricResult) =>
-    Math.min(
-      2,
-      Math.max(
-        0.1,
-        ...m.variants.flatMap((v) => (v.vsControl ? v.vsControl.liftInterval.map(Math.abs) : [])),
-      ),
-    );
   const frequentist = r.engine === 'frequentist';
   return table(
     [
@@ -653,67 +743,7 @@ function metricsTable(r: ExperimentResult): HTMLElement | null {
       'Chance to be best',
     ],
     all.flatMap(({ m, secondary }) =>
-      m.variants.map((v, i) => {
-        const better = v.vsControl
-          ? m.goal === 'decrease'
-            ? -v.vsControl.expectedLift
-            : v.vsControl.expectedLift
-          : 0;
-        return [
-          i === 0
-            ? h(
-                'div',
-                { class: 'metric-cell' },
-                h('strong', {}, m.name),
-                h(
-                  'span',
-                  { class: 'muted small' },
-                  `${secondary ? 'Guardrail' : 'Primary'} · ${m.goal === 'decrease' ? 'lower is better' : 'higher is better'}`,
-                ),
-                m.significantVariant
-                  ? h('span', { class: 'badge good' }, `${m.significantVariant} wins`)
-                  : null,
-              )
-            : '',
-          h(
-            'span',
-            { class: 'nowrap' },
-            v.variant,
-            i === 0 ? h('span', { class: 'muted small' }, ' (control)') : null,
-          ),
-          fmt(m, v.value),
-          h(
-            'span',
-            { class: 'nowrap muted' },
-            `${fmt(m, v.interval[0])} – ${fmt(m, v.interval[1])}`,
-          ),
-          v.vsControl
-            ? h(
-                'div',
-                { class: 'lift-cell' },
-                h(
-                  'strong',
-                  { class: better > 0.005 ? 'good' : better < -0.005 ? 'bad' : '' },
-                  `${v.vsControl.expectedLift >= 0 ? '+' : ''}${percent(v.vsControl.expectedLift, 1)}`,
-                ),
-                liftBar(
-                  v.vsControl.liftInterval[0],
-                  v.vsControl.liftInterval[1],
-                  v.vsControl.expectedLift,
-                  spanOf(m),
-                ),
-              )
-            : h('span', { class: 'muted' }, '—'),
-          v.vsControl
-            ? frequentist
-              ? v.vsControl.pValue < 0.001
-                ? '< 0.001'
-                : decimal(v.vsControl.pValue, 3)
-              : percent(v.vsControl.probabilityToBeatControl, 0)
-            : '',
-          v.exposures ? percent(v.probabilityToBeBest, 0) : '—',
-        ];
-      }),
+      m.variants.map((v, i) => metricRow(m, secondary, v, i, frequentist)),
     ),
     { numeric: [2, 5, 6], class: 'metrics-table' },
   );
@@ -807,129 +837,170 @@ function settingsForm(e: Experiment, holdouts: Holdout[]): HTMLElement {
   return form;
 }
 
+const DONE: Record<string, string> = {
+  start: 'Experiment started',
+  pause: 'Paused: everyone gets the default experience',
+  resume: 'Resumed',
+  stop: 'Stopped: results are frozen',
+  reset: 'Reset to draft: it counts afresh from the next start',
+  archive: 'Archived',
+  unarchive: 'Unarchived',
+};
+
+/** Run a lifecycle action (start, pause, ship…) and reload the page. */
+async function experimentAction(
+  key: string,
+  project: string | undefined,
+  action: string,
+  variant?: string,
+): Promise<void> {
+  try {
+    await api.post(`/api/experiments/${encodeURIComponent(key)}/${action}`, { project, variant });
+    toast(action === 'ship' ? `Shipped ${variant}` : (DONE[action] ?? 'Done'));
+    go(`experiments/${encodeURIComponent(key)}`, { t: String(Date.now()) });
+  } catch (err) {
+    toast(err instanceof Error ? err.message : String(err), 'error');
+  }
+}
+
+async function duplicateExperiment(key: string, project: string | undefined): Promise<void> {
+  const newKey = prompt('Key of the copy (also its new flag):', `${key}-2`);
+  if (!newKey) return;
+  try {
+    await api.post(`/api/experiments/${encodeURIComponent(key)}/duplicate`, { project, newKey });
+    toast('Duplicated');
+    go(`experiments/${encodeURIComponent(newKey)}`);
+  } catch (err) {
+    toast(err instanceof Error ? err.message : String(err), 'error');
+  }
+}
+
+/** Which lifecycle buttons each status offers: [label, action, class]. */
+const STATUS_ACTIONS: Record<string, [string, string, string?][]> = {
+  draft: [['Start experiment', 'start', 'primary']],
+  running: [
+    ['Pause', 'pause'],
+    ['Stop', 'stop'],
+  ],
+  paused: [
+    ['Resume', 'resume', 'primary'],
+    ['Stop', 'stop'],
+    ['Reset', 'reset'],
+  ],
+  stopped: [
+    ['Restart', 'start'],
+    ['Reset', 'reset'],
+    ['Archive', 'archive'],
+  ],
+  shipped: [
+    ['Reset', 'reset'],
+    ['Archive', 'archive'],
+  ],
+  archived: [['Unarchive', 'unarchive']],
+};
+
+function experimentActions(
+  e: Experiment,
+  variants: string[],
+  project: string | undefined,
+): HTMLElement[] {
+  const act = (action: string, variant?: string) => () =>
+    void experimentAction(e.key, project, action, variant);
+  const buttons = (STATUS_ACTIONS[e.status] ?? []).map(([label, action, cls]) =>
+    h('button', { type: 'button', class: cls ?? '', onclick: act(action) }, label),
+  );
+  const ship = ['running', 'paused', 'stopped'].includes(e.status)
+    ? variants.map((v) => h('button', { type: 'button', onclick: act('ship', v) }, `Ship ${v}`))
+    : [];
+  // Ship buttons sit before reset and archive, as before.
+  const at = buttons.findIndex((b) => /^(Reset|Archive)$/.test(b.textContent ?? ''));
+  const ordered =
+    at < 0 ? [...buttons, ...ship] : [...buttons.slice(0, at), ...ship, ...buttons.slice(at)];
+  const duplicate = h(
+    'button',
+    { type: 'button', onclick: () => void duplicateExperiment(e.key, project) },
+    'Duplicate',
+  );
+  return [...ordered, duplicate];
+}
+
+function experimentMeta(e: Experiment, r: ExperimentResult): HTMLElement {
+  const engine = r.engine === 'frequentist' ? 'Frequentist' : 'Bayesian';
+  const extras = [
+    e.holdout ? `holdout ${e.holdout}` : '',
+    e.startedAt ? `started ${dateTime(e.startedAt)}` : '',
+    e.shippedVariant ? `shipped ${e.shippedVariant}` : '',
+  ]
+    .filter(Boolean)
+    .map((x) => ` · ${x}`)
+    .join('');
+  return h(
+    'p',
+    { class: 'muted experiment-meta' },
+    statusBadge(e.status),
+    ' Flag ',
+    h('a', { href: href(`flags/${encodeURIComponent(e.flag)}`) }, e.flag),
+    ` · ${engine}, ${Math.round(r.confidence * 100)}% confidence${extras}`,
+  );
+}
+
+function statusNotice(r: ExperimentResult): HTMLElement | null {
+  const note = STATUS_NOTE[r.status];
+  if (!note) return null;
+  const srm = r.status === 'srm';
+  return h(
+    'div',
+    { class: `notice ${srm ? 'bad' : ''}` },
+    icon(srm ? 'alert' : 'clock', 16),
+    h('span', {}, note),
+  );
+}
+
+async function experimentView(key: string, project: string | undefined): Promise<Child[]> {
+  const [r, { holdouts }] = await Promise.all([
+    api.get<{ experiment: Experiment; results: ExperimentResult }>(
+      `/api/experiments/${encodeURIComponent(key)}`,
+      { project },
+    ),
+    api.get<{ holdouts: Holdout[] }>('/api/holdouts', { project }),
+  ]);
+  const e = r.experiment;
+  const metrics = metricsTable(r.results);
+  return [
+    pageHeader(
+      e.key,
+      e.hypothesis || firstGoal(e),
+      copyButton(
+        `if (glass.flag('${e.flag}') === 'test') {\n  // show the new variant\n}`,
+        'Copy code',
+      ),
+    ),
+    experimentMeta(e, r.results),
+    h(
+      'div',
+      { class: 'page-actions experiment-actions' },
+      experimentActions(
+        e,
+        r.results.variants.map((v) => v.variant),
+        project,
+      ),
+    ),
+    statusNotice(r.results),
+    panel('Results', results(r.results), { sql: r.results.sql, icon: 'flask' }),
+    metrics
+      ? panel('All metrics', metrics, {
+          icon: 'gauge',
+          subtitle: 'Guardrails are reported but never decide the winner',
+        })
+      : null,
+    timelinePanel(r.results),
+    panel('Settings', settingsForm(e, holdouts), { icon: 'settings' }),
+  ];
+}
+
 function detail(key: string): Node[] {
   const project = scope().project;
-  return [
-    later(async () => {
-      const [r, { holdouts }] = await Promise.all([
-        api.get<{ experiment: Experiment; results: ExperimentResult }>(
-          `/api/experiments/${encodeURIComponent(key)}`,
-          { project },
-        ),
-        api.get<{ holdouts: Holdout[] }>('/api/holdouts', { project }),
-      ]);
-      const e = r.experiment;
-      const act = async (action: string, variant?: string) => {
-        try {
-          await api.post(`/api/experiments/${encodeURIComponent(key)}/${action}`, {
-            project,
-            variant,
-          });
-          const done: Record<string, string> = {
-            start: 'Experiment started',
-            pause: 'Paused: everyone gets the default experience',
-            resume: 'Resumed',
-            stop: 'Stopped: results are frozen',
-            ship: `Shipped ${variant}`,
-            reset: 'Reset to draft: it counts afresh from the next start',
-            archive: 'Archived',
-            unarchive: 'Unarchived',
-          };
-          toast(done[action] ?? 'Done');
-          go(`experiments/${encodeURIComponent(key)}`, { t: String(Date.now()) });
-        } catch (err) {
-          toast(err instanceof Error ? err.message : String(err), 'error');
-        }
-      };
-      const button = (label: string, action: string, cls = '') =>
-        h('button', { type: 'button', class: cls, onclick: () => act(action) }, label);
-      const duplicate = h(
-        'button',
-        {
-          type: 'button',
-          onclick: async () => {
-            const newKey = prompt('Key of the copy (also its new flag):', `${key}-2`);
-            if (!newKey) return;
-            try {
-              await api.post(`/api/experiments/${encodeURIComponent(key)}/duplicate`, {
-                project,
-                newKey,
-              });
-              toast('Duplicated');
-              go(`experiments/${encodeURIComponent(newKey)}`);
-            } catch (err) {
-              toast(err instanceof Error ? err.message : String(err), 'error');
-            }
-          },
-        },
-        'Duplicate',
-      );
-      const ship = ['running', 'paused', 'stopped'].includes(e.status)
-        ? r.results.variants.map((v) =>
-            h(
-              'button',
-              { type: 'button', onclick: () => act('ship', v.variant) },
-              `Ship ${v.variant}`,
-            ),
-          )
-        : [];
-      const actions = [
-        e.status === 'draft' ? button('Start experiment', 'start', 'primary') : null,
-        e.status === 'running' ? button('Pause', 'pause') : null,
-        e.status === 'paused' ? button('Resume', 'resume', 'primary') : null,
-        e.status === 'running' || e.status === 'paused' ? button('Stop', 'stop') : null,
-        e.status === 'stopped' ? button('Restart', 'start') : null,
-        ship,
-        ['stopped', 'shipped', 'paused'].includes(e.status) ? button('Reset', 'reset') : null,
-        e.status === 'shipped' || e.status === 'stopped' ? button('Archive', 'archive') : null,
-        e.status === 'archived' ? button('Unarchive', 'unarchive') : null,
-        duplicate,
-      ];
-      const note = STATUS_NOTE[r.results.status];
-      return [
-        pageHeader(
-          e.key,
-          e.hypothesis || firstGoal(e),
-          copyButton(
-            `if (glass.flag('${e.flag}') === 'test') {\n  // show the new variant\n}`,
-            'Copy code',
-          ),
-        ),
-        h(
-          'p',
-          { class: 'muted experiment-meta' },
-          statusBadge(e.status),
-          ' Flag ',
-          h('a', { href: href(`flags/${encodeURIComponent(e.flag)}`) }, e.flag),
-          ` · ${r.results.engine === 'frequentist' ? 'Frequentist' : 'Bayesian'}, ${Math.round(r.results.confidence * 100)}% confidence`,
-          e.holdout ? ` · holdout ${e.holdout}` : '',
-          e.startedAt ? ` · started ${dateTime(e.startedAt)}` : '',
-          e.shippedVariant ? ` · shipped ${e.shippedVariant}` : '',
-        ),
-        h('div', { class: 'page-actions experiment-actions' }, actions),
-        note
-          ? h(
-              'div',
-              { class: `notice ${r.results.status === 'srm' ? 'bad' : ''}` },
-              icon(r.results.status === 'srm' ? 'alert' : 'clock', 16),
-              h('span', {}, note),
-            )
-          : null,
-        panel('Results', results(r.results), { sql: r.results.sql, icon: 'flask' }),
-        (() => {
-          const t = metricsTable(r.results);
-          return t
-            ? panel('All metrics', t, {
-                icon: 'gauge',
-                subtitle: 'Guardrails are reported but never decide the winner',
-              })
-            : null;
-        })(),
-        timelinePanel(r.results),
-        panel('Settings', settingsForm(e, holdouts), { icon: 'settings' }),
-      ];
-    }),
-  ];
+  return [later(() => experimentView(key, project))];
 }
 
 function holdoutsPanel(): HTMLElement {
@@ -1018,33 +1089,141 @@ function holdoutDetail(key: string): Node[] {
   ];
 }
 
+const newExperimentLink = () =>
+  h(
+    'a',
+    { class: 'button primary', href: href('experiments/new') },
+    icon('plus', 15),
+    'New experiment',
+  );
+
+/** The headline numbers for a list row: exposures, the best lift and its chance, the winner. */
+function previewBits(r: ExperimentResult): Child[] {
+  const m = r.metrics[0];
+  const exposed = m ? m.variants.reduce((n, v) => n + v.exposures, 0) : 0;
+  const best = m?.variants
+    .filter((v) => v.vsControl)
+    .sort(
+      (a, b) => b.vsControl!.probabilityToBeatControl - a.vsControl!.probabilityToBeatControl,
+    )[0];
+  const bits: Child[] = [h('span', {}, h('strong', {}, count(exposed)), ' exposed')];
+  const c = best?.vsControl;
+  if (best && c)
+    bits.push(
+      h(
+        'span',
+        {},
+        h(
+          'strong',
+          { class: c.expectedLift >= 0 ? 'good' : 'bad' },
+          `${c.expectedLift >= 0 ? '+' : ''}${percent(c.expectedLift, 1)}`,
+        ),
+        ` lift for ${best.variant}`,
+      ),
+      h(
+        'span',
+        { class: 'experiment-chance' },
+        h(
+          'span',
+          { class: 'meter' },
+          h('span', { style: `width:${c.probabilityToBeatControl * 100}%` }),
+        ),
+        `${percent(c.probabilityToBeatControl, 0)} to beat control`,
+      ),
+    );
+  if (r.winner) bits.push(h('span', { class: 'badge good' }, `Winner: ${r.winner}`));
+  return bits;
+}
+
+function experimentRow(e: Experiment, project: string | undefined): HTMLElement {
+  const preview = h(
+    'div',
+    { class: 'experiment-preview' },
+    h('span', { class: 'sk', style: 'width:60%;height:12px' }),
+  );
+  void api
+    .get<{ results: ExperimentResult }>(`/api/experiments/${encodeURIComponent(e.key)}`, {
+      project,
+    })
+    .then(({ results }) => mount(preview, previewBits(results)))
+    .catch(() => mount(preview, h('span', { class: 'muted small' }, 'Results unavailable')));
+  return h(
+    'a',
+    { class: 'experiment-row', href: href(`experiments/${encodeURIComponent(e.key)}`) },
+    h(
+      'div',
+      { class: 'experiment-main' },
+      h('div', { class: 'experiment-title' }, h('strong', {}, e.key), statusBadge(e.status)),
+      h('div', { class: 'muted small' }, e.hypothesis || firstGoal(e)),
+    ),
+    h(
+      'div',
+      { class: 'experiment-goal' },
+      h('span', { class: 'muted small' }, 'Measures'),
+      h(
+        'span',
+        { class: 'event-pill' },
+        e.metrics[0] ? describeMetric(e.metrics[0]) : (e.goal?.event ?? '—'),
+      ),
+    ),
+    preview,
+    h(
+      'div',
+      { class: 'experiment-started muted small' },
+      e.startedAt ? `Started ${dateTime(e.startedAt)}` : 'Not started',
+    ),
+  );
+}
+
+async function experimentList(
+  project: string | undefined,
+  archived: boolean,
+): Promise<HTMLElement> {
+  const { experiments } = await api.get<{ experiments: Experiment[] }>('/api/experiments', {
+    project,
+    include_archived: archived ? 'true' : undefined,
+  });
+  if (experiments.length === 0)
+    return empty(
+      'Create one here, or ask your agent to use create_experiment.',
+      newExperimentLink(),
+      {
+        icon: 'flask',
+        title: 'No experiments yet',
+      },
+    );
+  return h(
+    'div',
+    { class: 'experiment-list' },
+    experiments.map((e) => experimentRow(e, project)),
+  );
+}
+
+function newExperimentPage(project: string | undefined): Node[] {
+  return [
+    pageHeader(
+      'New experiment',
+      'Pick what it measures, how sure it must be, and (optionally) the page changes to test without code.',
+    ),
+    later(async () => {
+      const { holdouts } = await api.get<{ holdouts: Holdout[] }>('/api/holdouts', { project });
+      return createForm(holdouts);
+    }),
+  ];
+}
+
 export function experimentsPage(route: Route): Node[] {
   const project = scope().project;
   const target = route.rest[0];
   if (target === 'holdouts' && route.rest[1]) return holdoutDetail(route.rest[1]);
-  if (target === 'new')
-    return [
-      pageHeader(
-        'New experiment',
-        'Pick what it measures, how sure it must be, and (optionally) the page changes to test without code.',
-      ),
-      later(async () => {
-        const { holdouts } = await api.get<{ holdouts: Holdout[] }>('/api/holdouts', { project });
-        return createForm(holdouts);
-      }),
-    ];
+  if (target === 'new') return newExperimentPage(project);
   if (target) return detail(target);
   const archived = route.params.get('archived') === '1';
   return [
     pageHeader(
       'Experiments',
       'A/B tests on top of flags. Results update as exposures and conversions arrive.',
-      h(
-        'a',
-        { class: 'button primary', href: href('experiments/new') },
-        icon('plus', 15),
-        'New experiment',
-      ),
+      newExperimentLink(),
     ),
     h(
       'div',
@@ -1055,116 +1234,7 @@ export function experimentsPage(route: Route): Node[] {
         onChange: (c) => go('experiments', { archived: c ? '1' : null }),
       }),
     ),
-    later(
-      async () => {
-        const { experiments } = await api.get<{ experiments: Experiment[] }>('/api/experiments', {
-          project,
-          include_archived: archived ? 'true' : undefined,
-        });
-        if (experiments.length === 0) {
-          return empty(
-            'Create one here, or ask your agent to use create_experiment.',
-            h(
-              'a',
-              { class: 'button primary', href: href('experiments/new') },
-              icon('plus', 15),
-              'New experiment',
-            ),
-            { icon: 'flask', title: 'No experiments yet' },
-          );
-        }
-        return h(
-          'div',
-          { class: 'experiment-list' },
-          experiments.map((e) => {
-            const preview = h(
-              'div',
-              { class: 'experiment-preview' },
-              h('span', { class: 'sk', style: 'width:60%;height:12px' }),
-            );
-            void api
-              .get<{ results: ExperimentResult }>(`/api/experiments/${encodeURIComponent(e.key)}`, {
-                project,
-              })
-              .then(({ results: r }) => {
-                const m = r.metrics[0];
-                const exposed = m ? m.variants.reduce((n, v) => n + v.exposures, 0) : 0;
-                const best = m?.variants
-                  .filter((v) => v.vsControl)
-                  .sort(
-                    (a, b) =>
-                      b.vsControl!.probabilityToBeatControl - a.vsControl!.probabilityToBeatControl,
-                  )[0];
-                const bits: Child[] = [h('span', {}, h('strong', {}, count(exposed)), ' exposed')];
-                if (best?.vsControl) {
-                  bits.push(
-                    h(
-                      'span',
-                      {},
-                      h(
-                        'strong',
-                        { class: best.vsControl.expectedLift >= 0 ? 'good' : 'bad' },
-                        `${best.vsControl.expectedLift >= 0 ? '+' : ''}${percent(best.vsControl.expectedLift, 1)}`,
-                      ),
-                      ` lift for ${best.variant}`,
-                    ),
-                    h(
-                      'span',
-                      { class: 'experiment-chance' },
-                      h(
-                        'span',
-                        { class: 'meter' },
-                        h('span', {
-                          style: `width:${best.vsControl.probabilityToBeatControl * 100}%`,
-                        }),
-                      ),
-                      `${percent(best.vsControl.probabilityToBeatControl, 0)} to beat control`,
-                    ),
-                  );
-                }
-                if (r.winner) bits.push(h('span', { class: 'badge good' }, `Winner: ${r.winner}`));
-                mount(preview, bits);
-              })
-              .catch(() =>
-                mount(preview, h('span', { class: 'muted small' }, 'Results unavailable')),
-              );
-            return h(
-              'a',
-              { class: 'experiment-row', href: href(`experiments/${encodeURIComponent(e.key)}`) },
-              h(
-                'div',
-                { class: 'experiment-main' },
-                h(
-                  'div',
-                  { class: 'experiment-title' },
-                  h('strong', {}, e.key),
-                  statusBadge(e.status),
-                ),
-                h('div', { class: 'muted small' }, e.hypothesis || firstGoal(e)),
-              ),
-              h(
-                'div',
-                { class: 'experiment-goal' },
-                h('span', { class: 'muted small' }, 'Measures'),
-                h(
-                  'span',
-                  { class: 'event-pill' },
-                  e.metrics[0] ? describeMetric(e.metrics[0]) : (e.goal?.event ?? '—'),
-                ),
-              ),
-              preview,
-              h(
-                'div',
-                { class: 'experiment-started muted small' },
-                e.startedAt ? `Started ${dateTime(e.startedAt)}` : 'Not started',
-              ),
-            );
-          }),
-        );
-      },
-      'Loading experiments',
-      'table',
-    ),
+    later(() => experimentList(project, archived), 'Loading experiments', 'table'),
     h('div', { class: 'section-gap' }, holdoutsPanel()),
   ];
 }

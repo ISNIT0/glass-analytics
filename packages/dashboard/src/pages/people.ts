@@ -388,6 +388,92 @@ function cohortTable(
   );
 }
 
+function staticEstimate(n: number, editing: Cohort | null): string {
+  if (!editing) return `${count(n)} ${n === 1 ? 'person' : 'people'}.`;
+  if (!n) return `Leave empty to keep the current ${count(editing.count)} people.`;
+  return `${count(n)} ${n === 1 ? 'id replaces' : 'ids replace'} the current ${count(editing.count)}.`;
+}
+
+/** Counts who matches a definition as it's edited, debounced; stale answers are dropped. */
+function liveCount(def: CohortDefinition, project: string | undefined, out: HTMLElement) {
+  let req = 0;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const run = async (id: number) => {
+    const definition = completeDefinition(def);
+    if (!definition) {
+      out.textContent = 'Pick an event or property to see how many people match.';
+      return;
+    }
+    out.textContent = 'Counting…';
+    let text: string;
+    try {
+      const r = await api.post<{ count: number }>('/api/cohorts/count', { project, definition });
+      text = `${count(r.count)} ${r.count === 1 ? 'person matches' : 'people match'} right now.`;
+    } catch (err) {
+      text = err instanceof Error ? err.message : 'Could not count this definition yet.';
+    }
+    if (id === req) out.textContent = text;
+  };
+  return {
+    cancel: () => clearTimeout(timer),
+    schedule: () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => void run(++req), 300);
+    },
+  };
+}
+
+function staticListEditor(
+  ids: HTMLTextAreaElement,
+  editing: Cohort | null,
+  onChange: () => void,
+): HTMLElement {
+  const upload = h('input', {
+    type: 'file',
+    accept: '.csv,.txt,text/csv,text/plain',
+    class: 'visually-hidden',
+  });
+  upload.addEventListener('change', async () => {
+    const file = upload.files?.[0];
+    if (!file) return;
+    ids.value = await file.text();
+    onChange();
+  });
+  const hint =
+    editing?.kind === 'static'
+      ? 'Replaces the list. To add or remove a few people, use People in the list above.'
+      : 'Up to 10,000 people. Use the ids you pass to glass.identify().';
+  return h(
+    'div',
+    { class: 'stack tight' },
+    ids,
+    h(
+      'div',
+      { class: 'row' },
+      h('label', { class: 'button ghost small' }, icon('arrowUp', 14), 'Upload a CSV', upload),
+      h('span', { class: 'muted small' }, hint),
+    ),
+  );
+}
+
+/** The request body for a cohort, or a message saying what's missing. */
+function cohortBody(
+  kind: 'dynamic' | 'static',
+  base: Record<string, unknown>,
+  ids: string,
+  def: CohortDefinition,
+  editing: Cohort | null,
+): Record<string, unknown> | string {
+  if (kind === 'static') {
+    const list = parseIds(ids);
+    if (!list.length && editing?.kind !== 'static') return 'Add at least one person id';
+    return { ...base, static: true, ...(list.length ? { ids: list } : {}) };
+  }
+  const definition = completeDefinition(def);
+  if (!definition) return 'Add a condition: pick an event, a property or a cohort';
+  return { ...base, definition };
+}
+
 function cohortForm(
   cohorts: Cohort[],
   editing: Cohort | null,
@@ -411,94 +497,25 @@ function cohortForm(
     ? structuredClone(editing.definition)
     : emptyDefinition();
   const estimate = h('p', { class: 'muted small cohort-estimate', 'aria-live': 'polite' });
-  let countReq = 0;
-  let countTimer: ReturnType<typeof setTimeout> | undefined;
+  const counter = liveCount(def, project, estimate);
   const ids = h('textarea', {
     rows: 5,
     placeholder: 'user-1\nuser-2\n… (one per line, or a CSV with an id column)',
     'aria-label': 'Person ids',
   });
   const recount = () => {
-    clearTimeout(countTimer);
-    if (kind === 'static') {
-      const n = parseIds(ids.value).length;
-      estimate.textContent = editing
-        ? n
-          ? `${count(n)} ${n === 1 ? 'id replaces' : 'ids replace'} the current ${count(editing.count)}.`
-          : `Leave empty to keep the current ${count(editing.count)} people.`
-        : `${count(n)} ${n === 1 ? 'person' : 'people'}.`;
-      return;
-    }
-    countTimer = setTimeout(() => {
-      const id = ++countReq;
-      const definition = completeDefinition(def);
-      if (!definition) {
-        estimate.textContent = 'Pick an event or property to see how many people match.';
-        return;
-      }
-      estimate.textContent = 'Counting…';
-      void api
-        .post<{ count: number }>('/api/cohorts/count', { project, definition })
-        .then((r) => {
-          if (id === countReq)
-            estimate.textContent = `${count(r.count)} ${r.count === 1 ? 'person matches' : 'people match'} right now.`;
-        })
-        .catch((err) => {
-          if (id === countReq)
-            estimate.textContent =
-              err instanceof Error ? err.message : 'Could not count this definition yet.';
-        });
-    }, 300);
+    if (kind === 'dynamic') return counter.schedule();
+    counter.cancel();
+    estimate.textContent = staticEstimate(parseIds(ids.value).length, editing);
   };
-  const upload = h('input', {
-    type: 'file',
-    accept: '.csv,.txt,text/csv,text/plain',
-    class: 'visually-hidden',
-  });
-  upload.addEventListener('change', async () => {
-    const file = upload.files?.[0];
-    if (!file) return;
-    ids.value = await file.text();
-    recount();
-  });
   ids.addEventListener('input', recount);
   const choices = cohorts
     .filter((c) => c.key !== editing?.key)
     .map((c) => ({ key: c.key, name: c.name }));
+  const staticEditor = staticListEditor(ids, editing, recount);
   const slot = h('div', {});
-  const paintKind = () => {
-    mount(
-      slot,
-      kind === 'dynamic'
-        ? cohortEditor(def, project, choices, recount)
-        : h(
-            'div',
-            { class: 'stack tight' },
-            ids,
-            h(
-              'div',
-              { class: 'row' },
-              h(
-                'label',
-                { class: 'button ghost small' },
-                icon('arrowUp', 14),
-                'Upload a CSV',
-                upload,
-              ),
-              h(
-                'span',
-                { class: 'muted small' },
-                editing?.kind === 'static'
-                  ? 'Replaces the list. To add or remove a few people, use People in the list above.'
-                  : 'Up to 10,000 people. Use the ids you pass to glass.identify().',
-              ),
-            ),
-          ),
-    );
-    recount();
-  };
   const kindTabs = h('div', {});
-  const paintTabs = () =>
+  const paint = () => {
     mount(
       kindTabs,
       tabs(
@@ -509,14 +526,15 @@ function cohortForm(
         kind,
         (v) => {
           kind = v;
-          paintTabs();
-          paintKind();
+          paint();
         },
         'tabs-small',
       ),
     );
-  paintTabs();
-  paintKind();
+    mount(slot, kind === 'dynamic' ? cohortEditor(def, project, choices, recount) : staticEditor);
+    recount();
+  };
+  paint();
   const error = h('div', {});
   const form = h(
     'form',
@@ -537,45 +555,29 @@ function cohortForm(
       estimate,
     ),
   );
+  const save = async () => {
+    mount(error);
+    if (!name.value.trim()) return toast('Name the cohort', 'error');
+    const base = {
+      project,
+      ...(editing ? { key: editing.key } : {}),
+      name: name.value.trim(),
+      description: description.value.trim() || undefined,
+    };
+    const body = cohortBody(kind, base, ids.value, def, editing);
+    if (typeof body === 'string') return toast(body, 'error');
+    try {
+      const r = await api.post<{ summary: string }>('/api/cohorts', body);
+      toast(r.summary.replace(/:.*$/, '.'));
+      invalidateValues('cohort');
+      onSaved();
+    } catch (err) {
+      mount(error, errorState(err));
+    }
+  };
   form.addEventListener('submit', (e) => {
     e.preventDefault();
-    void (async () => {
-      mount(error);
-      if (!name.value.trim()) {
-        toast('Name the cohort', 'error');
-        return;
-      }
-      const base = {
-        project,
-        ...(editing ? { key: editing.key } : {}),
-        name: name.value.trim(),
-        description: description.value.trim() || undefined,
-      };
-      let body: Record<string, unknown>;
-      if (kind === 'static') {
-        const list = parseIds(ids.value);
-        if (!list.length && editing?.kind !== 'static') {
-          toast('Add at least one person id', 'error');
-          return;
-        }
-        body = { ...base, static: true, ...(list.length ? { ids: list } : {}) };
-      } else {
-        const definition = completeDefinition(def);
-        if (!definition) {
-          toast('Add a condition: pick an event, a property or a cohort', 'error');
-          return;
-        }
-        body = { ...base, definition };
-      }
-      try {
-        const r = await api.post<{ summary: string }>('/api/cohorts', body);
-        toast(r.summary.replace(/:.*$/, '.'));
-        invalidateValues('cohort');
-        onSaved();
-      } catch (err) {
-        mount(error, errorState(err));
-      }
-    })();
+    void save();
   });
   return form;
 }
@@ -878,131 +880,110 @@ function revenueKpis(r: NonNullable<Person['revenue']>): HTMLElement {
   );
 }
 
-function detail(id: string): Node[] {
+function propertiesPanel(p: Person): HTMLElement {
+  const entries = Object.entries(p.properties);
+  const body = entries.length
+    ? h(
+        'dl',
+        { class: 'props' },
+        entries.map(([k, v]) => [
+          h('dt', {}, k),
+          h('dd', {}, typeof v === 'object' ? JSON.stringify(v) : String(v)),
+        ]),
+      )
+    : empty(
+        p.identified ? 'No properties set.' : 'Anonymous device: identify() has not been called.',
+      );
+  return panel('Properties', body);
+}
+
+function devicesPanel(p: Person): HTMLElement {
+  const seen = `First seen ${p.firstSeen ? dateTime(p.firstSeen) : 'never'}, last seen ${p.lastSeen ? ago(p.lastSeen) : 'never'}.`;
+  const devices = p.devices.length
+    ? h('p', {}, `${p.devices.length} linked device${p.devices.length === 1 ? '' : 's'}.`)
+    : null;
+  const replays = p.replays.length
+    ? h(
+        'ul',
+        { class: 'plain' },
+        p.replays.map((r) =>
+          h(
+            'li',
+            {},
+            h('a', { href: href(`replays/${r.session}`) }, dateTime(r.started)),
+            r.errors ? h('span', { class: 'badge bad' }, `${r.errors} errors`) : null,
+          ),
+        ),
+      )
+    : h('p', { class: 'muted' }, 'No recorded sessions.');
+  return panel(
+    'Devices and sessions',
+    h('div', {}, h('p', { class: 'muted' }, seen), devices, replays),
+  );
+}
+
+function groupsPanel(groups: NonNullable<Person['groups']>): HTMLElement {
+  const card = (g: (typeof groups)[number]) =>
+    h(
+      'a',
+      {
+        class: 'person-group',
+        href: href(`groups/${encodeURIComponent(g.type)}/${encodeURIComponent(g.key)}`),
+      },
+      avatar(`${g.type}:${g.key}`, initials(g.name ?? g.key), hue(g.key), 28),
+      h(
+        'span',
+        { class: 'person-text' },
+        h('span', { class: 'person-id' }, g.name ?? g.key),
+        h(
+          'span',
+          { class: 'muted small' },
+          `${g.type}${g.name ? ` · ${g.key}` : ''} · active ${ago(g.lastSeen)}`,
+        ),
+      ),
+    );
+  return panel('Groups', h('div', { class: 'person-groups' }, groups.map(card)), {
+    icon: 'layers',
+    subtitle: 'Companies, teams or accounts their events named in the last 90 days.',
+  });
+}
+
+function recentEventsPanel(p: Person): HTMLElement {
+  const body = p.recentEvents.length
+    ? table(
+        ['Time', 'Event', 'Page', 'Properties'],
+        p.recentEvents.map((e) => [
+          h('span', { class: 'muted' }, dateTime(e.time)),
+          h('span', { class: 'event-pill' }, e.event),
+          e.path,
+          h('span', { class: 'muted cell-clip' }, preview(e.properties)),
+        ]),
+      )
+    : empty('No events in the last 90 days.');
+  return panel('Recent events', body, { sql: p.sql });
+}
+
+async function personView(id: string): Promise<Child[]> {
+  const p = await api.get<Person>(`/api/persons/${encodeURIComponent(id)}`, {
+    project: scope().project,
+  });
+  const label = personLabel(p.id, p.properties).primary;
   return [
-    later(async () => {
-      const p = await api.get<Person>(`/api/persons/${encodeURIComponent(id)}`, {
-        project: scope().project,
-      });
-      return [
-        h(
-          'div',
-          { class: 'person-head' },
-          avatar(p.id, initials(personLabel(p.id, p.properties).primary), hue(p.id), 52),
-          pageHeader(
-            personLabel(p.id, p.properties).primary,
-            p.summary,
-            copyButton(p.id, 'Copy id'),
-          ),
-        ),
-        p.revenue ? revenueKpis(p.revenue) : null,
-        h(
-          'div',
-          { class: 'grid-2' },
-          panel(
-            'Properties',
-            Object.keys(p.properties).length
-              ? h(
-                  'dl',
-                  { class: 'props' },
-                  Object.entries(p.properties).map(([k, v]) => [
-                    h('dt', {}, k),
-                    h('dd', {}, typeof v === 'object' ? JSON.stringify(v) : String(v)),
-                  ]),
-                )
-              : empty(
-                  p.identified
-                    ? 'No properties set.'
-                    : 'Anonymous device: identify() has not been called.',
-                ),
-          ),
-          panel(
-            'Devices and sessions',
-            h(
-              'div',
-              {},
-              h(
-                'p',
-                { class: 'muted' },
-                `First seen ${p.firstSeen ? dateTime(p.firstSeen) : 'never'}, last seen ${p.lastSeen ? ago(p.lastSeen) : 'never'}.`,
-              ),
-              p.devices.length
-                ? h(
-                    'p',
-                    {},
-                    `${p.devices.length} linked device${p.devices.length === 1 ? '' : 's'}.`,
-                  )
-                : null,
-              p.replays.length
-                ? h(
-                    'ul',
-                    { class: 'plain' },
-                    p.replays.map((r) =>
-                      h(
-                        'li',
-                        {},
-                        h('a', { href: href(`replays/${r.session}`) }, dateTime(r.started)),
-                        r.errors ? h('span', { class: 'badge bad' }, `${r.errors} errors`) : null,
-                      ),
-                    ),
-                  )
-                : h('p', { class: 'muted' }, 'No recorded sessions.'),
-            ),
-          ),
-        ),
-        p.groups?.length
-          ? panel(
-              'Groups',
-              h(
-                'div',
-                { class: 'person-groups' },
-                p.groups.map((g) =>
-                  h(
-                    'a',
-                    {
-                      class: 'person-group',
-                      href: href(
-                        `groups/${encodeURIComponent(g.type)}/${encodeURIComponent(g.key)}`,
-                      ),
-                    },
-                    avatar(`${g.type}:${g.key}`, initials(g.name ?? g.key), hue(g.key), 28),
-                    h(
-                      'span',
-                      { class: 'person-text' },
-                      h('span', { class: 'person-id' }, g.name ?? g.key),
-                      h(
-                        'span',
-                        { class: 'muted small' },
-                        `${g.type}${g.name ? ` · ${g.key}` : ''} · active ${ago(g.lastSeen)}`,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              {
-                icon: 'layers',
-                subtitle: 'Companies, teams or accounts their events named in the last 90 days.',
-              },
-            )
-          : null,
-        panel(
-          'Recent events',
-          p.recentEvents.length
-            ? table(
-                ['Time', 'Event', 'Page', 'Properties'],
-                p.recentEvents.map((e) => [
-                  h('span', { class: 'muted' }, dateTime(e.time)),
-                  h('span', { class: 'event-pill' }, e.event),
-                  e.path,
-                  h('span', { class: 'muted cell-clip' }, preview(e.properties)),
-                ]),
-              )
-            : empty('No events in the last 90 days.'),
-          { sql: p.sql },
-        ),
-      ];
-    }),
+    h(
+      'div',
+      { class: 'person-head' },
+      avatar(p.id, initials(label), hue(p.id), 52),
+      pageHeader(label, p.summary, copyButton(p.id, 'Copy id')),
+    ),
+    p.revenue ? revenueKpis(p.revenue) : null,
+    h('div', { class: 'grid-2' }, propertiesPanel(p), devicesPanel(p)),
+    p.groups?.length ? groupsPanel(p.groups) : null,
+    recentEventsPanel(p),
   ];
+}
+
+function detail(id: string): Node[] {
+  return [later(() => personView(id))];
 }
 
 export function peoplePage(route: Route): Node[] {

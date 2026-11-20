@@ -17,6 +17,51 @@ interface GroupType {
   groups: number;
 }
 
+interface GroupRow {
+  key: string;
+  properties: Record<string, unknown>;
+  lastSeen: string;
+  firstSeen: string;
+}
+
+async function groupTable(
+  p: URLSearchParams,
+  type: string,
+  types: GroupType[],
+): Promise<HTMLElement> {
+  const q = p.get('q');
+  const r = await api.get<{ groups: GroupRow[]; summary: string }>('/api/groups', {
+    project: scope().project,
+    type,
+    search: q,
+    limit: 200,
+  });
+  if (!r.groups.length) return empty(r.summary);
+  const keys = [...new Set(r.groups.flatMap((g) => Object.keys(g.properties)))].slice(0, 4);
+  const t = types.find((x) => x.type === type);
+  const singular = t?.singular ?? type;
+  const noun = r.groups.length === 1 ? singular : (t?.plural ?? type);
+  return panel(
+    `${count(r.groups.length)} ${noun}`,
+    table(
+      [capitalize(singular), ...keys, 'Last seen'],
+      r.groups.map((g) => [
+        h(
+          'a',
+          { href: href(`groups/${encodeURIComponent(type)}/${encodeURIComponent(g.key)}`) },
+          g.key,
+        ),
+        ...keys.map((k) => (g.properties[k] === undefined ? '' : String(g.properties[k]))),
+        ago(g.lastSeen),
+      ]),
+    ),
+    {
+      icon: 'layers',
+      subtitle: q ? `Matching "${q}", most recently active first` : 'Most recently active first',
+    },
+  );
+}
+
 function groupList(route: Route, types: GroupType[]): HTMLElement {
   const p = route.params;
   const type = p.get('type') ?? types[0]!.type;
@@ -43,45 +88,7 @@ function groupList(route: Route, types: GroupType[]): HTMLElement {
       ),
       search,
     ),
-    later(
-      async () => {
-        const r = await api.get<{
-          groups: {
-            key: string;
-            properties: Record<string, unknown>;
-            lastSeen: string;
-            firstSeen: string;
-          }[];
-          summary: string;
-        }>('/api/groups', { project: scope().project, type, search: p.get('q'), limit: 200 });
-        if (!r.groups.length) return empty(r.summary);
-        const keys = [...new Set(r.groups.flatMap((g) => Object.keys(g.properties)))].slice(0, 4);
-        const t = types.find((x) => x.type === type);
-        return panel(
-          `${count(r.groups.length)} ${r.groups.length === 1 ? (t?.singular ?? type) : (t?.plural ?? type)}`,
-          table(
-            [capitalize(t?.singular ?? type), ...keys, 'Last seen'],
-            r.groups.map((g) => [
-              h(
-                'a',
-                { href: href(`groups/${encodeURIComponent(type)}/${encodeURIComponent(g.key)}`) },
-                g.key,
-              ),
-              ...keys.map((k) => (g.properties[k] === undefined ? '' : String(g.properties[k]))),
-              ago(g.lastSeen),
-            ]),
-          ),
-          {
-            icon: 'layers',
-            subtitle: p.get('q')
-              ? `Matching "${p.get('q')}", most recently active first`
-              : 'Most recently active first',
-          },
-        );
-      },
-      'Loading groups',
-      'table',
-    ),
+    later(() => groupTable(p, type, types), 'Loading groups', 'table'),
   );
 }
 

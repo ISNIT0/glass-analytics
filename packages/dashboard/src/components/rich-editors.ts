@@ -65,146 +65,169 @@ export interface RevenueRule {
 /** Strip "props." for storage: revenue rules name event properties directly. */
 const bare = (p: string) => p.replace(/^props\./, '');
 
+/** A small <select> of [value, label] pairs. */
+function shortSelect(
+  options: [string, string][],
+  selected: string,
+  onChange: (v: string) => void,
+): HTMLSelectElement {
+  const sel = h(
+    'select',
+    { class: 'short-select' },
+    options.map(([value, label]) => h('option', { value, selected: value === selected }, label)),
+  );
+  sel.addEventListener('change', () => onChange(sel.value));
+  return sel;
+}
+
+function currencyField(r: RevenueRule, props: RuleProps, paint: () => void): HTMLElement {
+  const fromProperty = Boolean(r.currencyProperty);
+  const mode = shortSelect(
+    [
+      ['fixed', 'Always'],
+      ['property', 'From property'],
+    ],
+    fromProperty ? 'property' : 'fixed',
+    (v) => {
+      if (v === 'fixed') delete r.currencyProperty;
+      else r.currencyProperty = r.currencyProperty ?? 'currency';
+      paint();
+    },
+  );
+  const fixed = h('input', {
+    type: 'text',
+    value: r.currency ?? '',
+    maxlength: 3,
+    placeholder: 'e.g. GBP',
+    class: 'short',
+  });
+  fixed.addEventListener('change', () => {
+    r.currency = fixed.value.trim().toUpperCase() || undefined;
+  });
+  const source = fromProperty
+    ? props(r.currencyProperty, 'Property with the ISO code', (v) => (r.currencyProperty = v))
+    : fixed;
+  return field('Currency', h('div', { class: 'row' }, mode, source));
+}
+
+type RuleProps = (
+  value: string | undefined,
+  placeholder: string,
+  set: (v: string) => void,
+) => HTMLElement;
+
+function subscriptionField(r: RevenueRule, props: RuleProps): HTMLElement {
+  const interval = shortSelect(
+    [
+      ['month', 'billed monthly'],
+      ['year', 'billed yearly'],
+    ],
+    r.interval === 'year' ? 'year' : 'month',
+    (v) => {
+      if (v === 'year') r.interval = 'year';
+      else delete r.interval;
+    },
+  );
+  return field(
+    'Subscription (optional, for MRR)',
+    h(
+      'div',
+      { class: 'row' },
+      props(
+        r.subscriptionProperty,
+        'Property with the subscription id',
+        (v) => (r.subscriptionProperty = v || undefined),
+      ),
+      r.subscriptionProperty ? interval : null,
+    ),
+  );
+}
+
+function revenueRuleCard(
+  rules: RevenueRule[],
+  i: number,
+  project: string | undefined,
+  paint: () => void,
+): HTMLElement {
+  const r = rules[i]!;
+  const props: RuleProps = (value, placeholder, set) =>
+    propertyPicker({
+      value: value ?? '',
+      event: r.event,
+      project,
+      columns: false,
+      person: false,
+      placeholder,
+      onChange: (v) => {
+        set(bare(v));
+        paint();
+      },
+    });
+  const kind = shortSelect(
+    [
+      ['sale', 'Payment'],
+      ['refund', 'Refund'],
+    ],
+    r.kind === 'refund' ? 'refund' : 'sale',
+    (v) => {
+      if (v === 'refund') r.kind = 'refund';
+      else delete r.kind;
+    },
+  );
+  return h(
+    'div',
+    { class: 'query-card rich-card' },
+    h(
+      'div',
+      { class: 'query-card-head' },
+      eventPicker({
+        value: r.event,
+        project,
+        label: 'Event',
+        placeholder: 'Event that carries money',
+        onChange: (v) => {
+          r.event = v;
+          paint();
+        },
+      }),
+      kind,
+      removeButton('Remove revenue event', () => {
+        rules.splice(i, 1);
+        paint();
+      }),
+    ),
+    h(
+      'div',
+      { class: 'rich-grid' },
+      field(
+        'Amount',
+        props(r.amountProperty, 'Property with the amount', (v) => (r.amountProperty = v)),
+      ),
+      currencyField(r, props, paint),
+      field(
+        'Product (optional)',
+        props(
+          r.productProperty,
+          'Property naming the product or plan',
+          (v) => (r.productProperty = v || undefined),
+        ),
+      ),
+      subscriptionField(r, props),
+    ),
+  );
+}
+
 export function revenueEventsEditor(rules: RevenueRule[], project?: string): HTMLElement {
   const root = h('div', { class: 'rich-list' });
-  const paint = () => {
+  const paint = () =>
     mount(
       root,
-      rules.map((r, i) => {
-        const card = h('div', { class: 'query-card rich-card' });
-        const props = (value: string | undefined, placeholder: string, set: (v: string) => void) =>
-          propertyPicker({
-            value: value ?? '',
-            event: r.event,
-            project,
-            columns: false,
-            person: false,
-            placeholder,
-            onChange: (v) => {
-              set(bare(v));
-              paint();
-            },
-          });
-        const currencyMode = r.currencyProperty ? 'property' : 'fixed';
-        const fixed = h('input', {
-          type: 'text',
-          value: r.currency ?? '',
-          maxlength: 3,
-          placeholder: 'e.g. GBP',
-          class: 'short',
-        });
-        fixed.addEventListener('change', () => {
-          r.currency = fixed.value.trim().toUpperCase() || undefined;
-        });
-        const mode = h(
-          'select',
-          { class: 'short-select' },
-          h('option', { value: 'fixed', selected: currencyMode === 'fixed' }, 'Always'),
-          h(
-            'option',
-            { value: 'property', selected: currencyMode === 'property' },
-            'From property',
-          ),
-        );
-        mode.addEventListener('change', () => {
-          if (mode.value === 'fixed') delete r.currencyProperty;
-          else r.currencyProperty = r.currencyProperty ?? 'currency';
-          paint();
-        });
-        const kind = h(
-          'select',
-          { class: 'short-select' },
-          h('option', { value: 'sale', selected: r.kind !== 'refund' }, 'Payment'),
-          h('option', { value: 'refund', selected: r.kind === 'refund' }, 'Refund'),
-        );
-        kind.addEventListener('change', () => {
-          if (kind.value === 'refund') r.kind = 'refund';
-          else delete r.kind;
-        });
-        const interval = h(
-          'select',
-          { class: 'short-select' },
-          h('option', { value: 'month', selected: r.interval !== 'year' }, 'billed monthly'),
-          h('option', { value: 'year', selected: r.interval === 'year' }, 'billed yearly'),
-        );
-        interval.addEventListener('change', () => {
-          if (interval.value === 'year') r.interval = 'year';
-          else delete r.interval;
-        });
-        mount(
-          card,
-          h(
-            'div',
-            { class: 'query-card-head' },
-            eventPicker({
-              value: r.event,
-              project,
-              label: 'Event',
-              placeholder: 'Event that carries money',
-              onChange: (v) => {
-                r.event = v;
-                paint();
-              },
-            }),
-            kind,
-            removeButton('Remove revenue event', () => {
-              rules.splice(i, 1);
-              paint();
-            }),
-          ),
-          h(
-            'div',
-            { class: 'rich-grid' },
-            field(
-              'Amount',
-              props(r.amountProperty, 'Property with the amount', (v) => (r.amountProperty = v)),
-            ),
-            field(
-              'Currency',
-              h(
-                'div',
-                { class: 'row' },
-                mode,
-                currencyMode === 'property'
-                  ? props(
-                      r.currencyProperty,
-                      'Property with the ISO code',
-                      (v) => (r.currencyProperty = v),
-                    )
-                  : fixed,
-              ),
-            ),
-            field(
-              'Product (optional)',
-              props(
-                r.productProperty,
-                'Property naming the product or plan',
-                (v) => (r.productProperty = v || undefined),
-              ),
-            ),
-            field(
-              'Subscription (optional, for MRR)',
-              h(
-                'div',
-                { class: 'row' },
-                props(
-                  r.subscriptionProperty,
-                  'Property with the subscription id',
-                  (v) => (r.subscriptionProperty = v || undefined),
-                ),
-                r.subscriptionProperty ? interval : null,
-              ),
-            ),
-          ),
-        );
-        return card;
-      }),
+      rules.map((_, i) => revenueRuleCard(rules, i, project, paint)),
       addButton('Add revenue event', () => {
         rules.push({ event: '', amountProperty: '' });
         paint();
       }),
     );
-  };
   paint();
   return root;
 }
@@ -341,6 +364,108 @@ function propertyList(
 }
 
 /** Edit one transformation rule; `rule` is replaced in place when the kind changes. */
+/** What someone typed as a value: true/false and numbers become those types. */
+function typedValue(v: string): unknown {
+  if (v === 'true') return true;
+  if (v === 'false') return false;
+  return v !== '' && Number.isFinite(Number(v)) ? Number(v) : v;
+}
+
+function textInputFor(
+  rule: Rule,
+  key: string,
+  placeholder: string,
+  read: (v: string) => unknown,
+): HTMLInputElement {
+  const input = h('input', {
+    type: 'text',
+    value: rule[key] === undefined ? '' : String(rule[key]),
+    placeholder,
+  });
+  input.addEventListener('change', () => (rule[key] = read(input.value)));
+  return input;
+}
+
+function propertyFor(
+  rule: Rule,
+  key: string,
+  project: string | undefined,
+  placeholder: string,
+): HTMLElement {
+  return propertyPicker({
+    value: String(rule[key] ?? ''),
+    project,
+    columns: false,
+    onChange: (v) => (rule[key] = v),
+    placeholder,
+  });
+}
+
+const REDACT_PATTERNS: [string, string][] = [
+  ['email', 'Emails'],
+  ['phone', 'Phone numbers'],
+  ['credit_card', 'Card numbers'],
+  ['ip', 'IP addresses'],
+];
+
+/** The fields each kind of rule adds. */
+const RULE_FIELDS: Record<string, (rule: Rule, project: string | undefined) => HTMLElement> = {
+  drop_properties: propertiesField,
+  hash_properties: propertiesField,
+  rename_property: (rule, project) =>
+    h(
+      'div',
+      { class: 'grid-2' },
+      field('From', propertyFor(rule, 'from', project, 'Old name')),
+      field(
+        'To',
+        textInputFor(rule, 'to', 'New name', (v) => v.trim()),
+      ),
+    ),
+  set_property: (rule, project) =>
+    h(
+      'div',
+      { class: 'grid-2' },
+      field('Property', propertyFor(rule, 'property', project, 'Property')),
+      field('Value', textInputFor(rule, 'value', 'Value', typedValue)),
+    ),
+  redact: (rule) => {
+    if (!Array.isArray(rule.patterns)) rule.patterns = ['email', 'phone'];
+    const patterns = rule.patterns as string[];
+    const onChange = (p: string) => (c: boolean) => {
+      const i = patterns.indexOf(p);
+      if (c && i < 0) patterns.push(p);
+      if (!c && i >= 0) patterns.splice(i, 1);
+    };
+    return field(
+      'Find and replace with [redacted]',
+      h(
+        'div',
+        { class: 'row gap-lg' },
+        REDACT_PATTERNS.map(([p, label]) =>
+          toggle({ checked: patterns.includes(p), label, onChange: onChange(p) }),
+        ),
+      ),
+    );
+  },
+};
+
+function propertiesField(rule: Rule, project: string | undefined): HTMLElement {
+  if (!Array.isArray(rule.properties)) rule.properties = [''];
+  return field(
+    'Properties',
+    propertyList(rule.properties as string[], project, () => {}, true),
+    'Event properties, person.* properties, or /regex/ patterns of names.',
+  );
+}
+
+/** Switch a rule to another kind, keeping which events it applies to. */
+function changeKind(rule: Rule, kind: string): void {
+  for (const k of Object.keys(rule)) if (!['events', 'filters', 'name'].includes(k)) delete rule[k];
+  rule.kind = kind;
+  if (kind === 'redact') rule.patterns = ['email', 'phone'];
+}
+
 export function transformationRuleEditor(rule: Rule, project?: string): HTMLElement {
   const root = h('div', { class: 'stack' });
   const paint = () => {
@@ -350,134 +475,23 @@ export function transformationRuleEditor(rule: Rule, project?: string): HTMLElem
       KINDS.map(([k, label]) => h('option', { value: k, selected: k === rule.kind }, label)),
     );
     kind.addEventListener('change', () => {
-      for (const k of Object.keys(rule))
-        if (!['events', 'filters', 'name'].includes(k)) delete rule[k];
-      rule.kind = kind.value;
-      if (kind.value === 'redact') rule.patterns = ['email', 'phone'];
+      changeKind(rule, kind.value);
       paint();
     });
-    const events = (rule.events as string[] | undefined) ?? [];
-    rule.events = events;
+    rule.events = (rule.events as string[] | undefined) ?? [];
     if (!Array.isArray(rule.filters)) rule.filters = [];
-    const filters = rule.filters as FilterRow[];
-    const specific: HTMLElement[] = [];
-    if (rule.kind === 'drop_properties' || rule.kind === 'hash_properties') {
-      if (!Array.isArray(rule.properties)) rule.properties = [''];
-      const list = rule.properties as string[];
-      specific.push(
-        field(
-          'Properties',
-          propertyList(list, project, () => {}, true),
-          'Event properties, person.* properties, or /regex/ patterns of names.',
-        ),
-      );
-    }
-    if (rule.kind === 'rename_property') {
-      specific.push(
-        h(
-          'div',
-          { class: 'grid-2' },
-          field(
-            'From',
-            propertyPicker({
-              value: String(rule.from ?? ''),
-              project,
-              columns: false,
-              onChange: (v) => (rule.from = v),
-              placeholder: 'Old name',
-            }),
-          ),
-          field(
-            'To',
-            (() => {
-              const to = h('input', {
-                type: 'text',
-                value: String(rule.to ?? ''),
-                placeholder: 'New name',
-              });
-              to.addEventListener('change', () => (rule.to = to.value.trim()));
-              return to;
-            })(),
-          ),
-        ),
-      );
-    }
-    if (rule.kind === 'set_property') {
-      const value = h('input', {
-        type: 'text',
-        value: rule.value === undefined ? '' : String(rule.value),
-        placeholder: 'Value',
-      });
-      value.addEventListener('change', () => {
-        const v = value.value;
-        rule.value =
-          v === 'true'
-            ? true
-            : v === 'false'
-              ? false
-              : v !== '' && Number.isFinite(Number(v))
-                ? Number(v)
-                : v;
-      });
-      specific.push(
-        h(
-          'div',
-          { class: 'grid-2' },
-          field(
-            'Property',
-            propertyPicker({
-              value: String(rule.property ?? ''),
-              project,
-              columns: false,
-              onChange: (v) => (rule.property = v),
-              placeholder: 'Property',
-            }),
-          ),
-          field('Value', value),
-        ),
-      );
-    }
-    if (rule.kind === 'redact') {
-      if (!Array.isArray(rule.patterns)) rule.patterns = ['email', 'phone'];
-      const patterns = rule.patterns as string[];
-      specific.push(
-        field(
-          'Find and replace with [redacted]',
-          h(
-            'div',
-            { class: 'row gap-lg' },
-            [
-              ['email', 'Emails'],
-              ['phone', 'Phone numbers'],
-              ['credit_card', 'Card numbers'],
-              ['ip', 'IP addresses'],
-            ].map(([p, label]) =>
-              toggle({
-                checked: patterns.includes(p!),
-                label: label!,
-                onChange: (c) => {
-                  const i = patterns.indexOf(p!);
-                  if (c && i < 0) patterns.push(p!);
-                  if (!c && i >= 0) patterns.splice(i, 1);
-                },
-              }),
-            ),
-          ),
-        ),
-      );
-    }
     mount(
       root,
       field('Rule', kind, KINDS.find(([k]) => k === rule.kind)?.[2]),
-      specific,
+      RULE_FIELDS[String(rule.kind)]?.(rule, project) ?? null,
       field(
         'Only these events (optional)',
-        eventListEditor(events, project, { allToggle: false }),
+        eventListEditor(rule.events as string[], project, { allToggle: false }),
         'Leave empty to apply it to every event.',
       ),
       field(
         'Only events matching (optional)',
-        filterEditor(filters, () => {}, { project }),
+        filterEditor(rule.filters as FilterRow[], () => {}, { project }),
       ),
     );
   };

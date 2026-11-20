@@ -27,6 +27,8 @@ export interface JsonEditorOptions {
   validate?: (value: unknown) => string[];
   snippets?: JsonSnippet[];
   onChange?: () => void;
+  /** What the status line says while it's empty (default "Empty"). */
+  emptyText?: string;
 }
 
 /** What the editor holds: nothing, a valid value, or a problem to show. */
@@ -245,7 +247,7 @@ export function jsonEditor(options: JsonEditorOptions): JsonEditor {
     if (!text.trim()) {
       state = { ok: true, empty: true, value: undefined };
       field.setMarkers([]);
-      paintStatus('Empty: no payload');
+      paintStatus(options.emptyText ?? 'Empty');
       return;
     }
     const r = checkJson(text);

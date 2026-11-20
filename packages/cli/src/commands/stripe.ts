@@ -170,14 +170,16 @@ function reportImport(
     acc[e.event] = (acc[e.event] ?? 0) + 1;
     return acc;
   }, {});
-  if (options.json)
-    return printJson({
+  if (options.json) {
+    printJson({
       customers: customers.size,
       events: unique.length,
       imported: accepted,
       byType: counts,
       dryRun: Boolean(options.dryRun),
     });
+    return;
+  }
   ok(
     `${options.dryRun ? 'Would import' : 'Imported'} ${unique.length} Stripe events for ${customers.size} customers`,
   );

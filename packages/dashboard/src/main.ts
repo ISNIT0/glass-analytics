@@ -232,19 +232,19 @@ function sidebar(route: Route): HTMLElement {
   );
 }
 
+/** The second crumb: a tab name, "New analysis", or the item open (a group, a holdout…). */
+function crumbLabel(route: Route, sub: string): string {
+  if (route.page === 'insights' && sub === 'new') return 'New analysis';
+  if (route.page === 'reports' || route.page === 'pipelines')
+    return sub[0]!.toUpperCase() + sub.slice(1);
+  const nested = route.page === 'groups' || (route.page === 'experiments' && sub === 'holdouts');
+  return nested && route.rest[1] ? route.rest[1] : sub;
+}
+
 function crumbs(route: Route): HTMLElement {
   const page = PAGES[route.page] ?? PAGES.reports!;
   const sub = route.rest[0];
-  const subLabel = sub
-    ? route.page === 'insights' && sub === 'new'
-      ? 'New analysis'
-      : route.page === 'reports' || route.page === 'pipelines'
-        ? sub[0]!.toUpperCase() + sub.slice(1)
-        : (route.page === 'groups' || (route.page === 'experiments' && sub === 'holdouts')) &&
-            route.rest[1]
-          ? route.rest[1]
-          : sub
-    : null;
+  const subLabel = sub ? crumbLabel(route, sub) : null;
   return h(
     'div',
     { class: 'crumbs' },

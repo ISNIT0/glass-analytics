@@ -134,52 +134,14 @@ function changeText(now: number, before: number): Child {
   );
 }
 
-/** A multi-series time chart (line, area or bars) with a hover readout and optional previous-period overlay. */
-export function lineChart(
-  buckets: number[],
-  series: LineSeries[],
-  interval: string,
-  options: ChartOptions = {},
-): HTMLElement {
-  const H = options.height ?? 260;
-  const type = options.type ?? 'line';
-  const fmt = options.format ?? count;
-  const n = Math.max(
-    buckets.length,
-    options.labels?.length ?? 0,
-    ...series.map((x) => x.values.length),
-  );
-  const label = (i: number) => options.labels?.[i] ?? bucketLabel(buckets[i] ?? 0, interval);
-  const id = `c${++chartIds}`;
-  const hasPrevious = series.some((x) => x.previous?.length);
+/** 100% stacks: each series' share of the bucket's total, and the band it fills. */
+interface Stack {
+  shares: number[][];
+  lower: number[][];
+  upper: number[][];
+}
 
-  const holder = h('div', { class: 'chart-canvas' });
-  const readout = h('div', { class: 'readout', hidden: true });
-  const legendItems = series.map((line, i) =>
-    h(
-      'li',
-      {},
-      h('span', { class: 'swatch', style: `background:${SERIES[i % SERIES.length]}` }),
-      line.label,
-    ),
-  );
-  if (hasPrevious)
-    legendItems.push(
-      h(
-        'li',
-        { class: 'legend-previous' },
-        h('span', { class: 'swatch dashed' }),
-        'Previous period',
-      ),
-    );
-  const legend =
-    (options.legend ?? true) && (series.length > 1 || hasPrevious)
-      ? h('ul', { class: 'legend' }, legendItems)
-      : null;
-  const wrap = h('div', { class: `chart-wrap chart-${type}` }, holder, readout, legend);
-
-  // 100% stacks: each series' share of the bucket's total, and the band it fills.
-  const stacked = Boolean(options.percentStack) && series.length > 1;
+function stackOf(series: LineSeries[], n: number): Stack {
   const totals = Array.from({ length: n }, (_, i) =>
     series.reduce((sum, l) => sum + Math.max(0, l.values[i] ?? 0), 0),
   );
@@ -192,351 +154,458 @@ export function lineChart(
     Array.from({ length: n }, (_, i) => shares.slice(0, si).reduce((sum, sh) => sum + sh[i]!, 0)),
   );
   const upper = lower.map((lo, si) => lo.map((v, i) => v + shares[si]![i]!));
-  const log = Boolean(options.logScale) && !stacked;
-  const axisFmt = stacked ? (v: number) => percent(v, 0) : fmt;
+  return { shares, lower, upper };
+}
+
+/** What a chart knows before it has a width. */
+interface ChartSetup {
+  series: LineSeries[];
+  buckets: number[];
+  n: number;
+  H: number;
+  type: ChartType;
+  fmt: (n: number) => string;
+  axisFmt: (n: number) => string;
+  label: (i: number) => string;
+  id: string;
+  stack: Stack | null;
+  log: boolean;
+  hasPrevious: boolean;
+  notesAt: Map<number, Annotation[]>;
+  options: ChartOptions;
+}
+
+/** A chart drawn at a width: its scales and padding. */
+interface Plot extends ChartSetup {
+  W: number;
+  pad: { top: number; right: number; bottom: number; left: number };
+  innerW: number;
+  innerH: number;
+  band: number;
+  ticks: number[];
+  x: (i: number) => number;
+  y: (v: number) => number;
+}
+
+function chartSetup(
+  buckets: number[],
+  series: LineSeries[],
+  interval: string,
+  options: ChartOptions,
+): ChartSetup {
+  const n = Math.max(
+    buckets.length,
+    options.labels?.length ?? 0,
+    ...series.map((x) => x.values.length),
+  );
+  const stack = options.percentStack && series.length > 1 ? stackOf(series, n) : null;
+  const fmt = options.format ?? count;
   const notesAt = new Map<number, Annotation[]>();
   for (const a of options.annotations ?? []) {
     const i = bucketIndex(buckets, a.at, interval);
     if (i !== null) notesAt.set(i, [...(notesAt.get(i) ?? []), a]);
   }
+  return {
+    series,
+    buckets,
+    n,
+    H: options.height ?? 260,
+    type: options.type ?? 'line',
+    fmt,
+    axisFmt: stack ? (v: number) => percent(v, 0) : fmt,
+    label: (i) => options.labels?.[i] ?? bucketLabel(buckets[i] ?? 0, interval),
+    id: `c${++chartIds}`,
+    stack,
+    log: Boolean(options.logScale) && !stack,
+    hasPrevious: series.some((x) => x.previous?.length),
+    notesAt,
+    options,
+  };
+}
 
-  const draw = (W: number) => {
-    const all = series.flatMap((x) => [...x.values, ...(x.previous ?? []), ...(x.trend ?? [])]);
-    const dataMax = Math.max(0, ...all);
-    const tickValues = stacked
-      ? [0, 0.25, 0.5, 0.75, 1]
-      : log
-        ? logTicks(dataMax)
-        : ticks(dataMax, options.yMax);
-    const max = tickValues[tickValues.length - 1]! || 1;
-    const longest = Math.max(...tickValues.map((t) => axisFmt(t).length));
-    const pad = { top: 14, right: 16, bottom: 28, left: Math.max(32, longest * 7 + 14) };
-    const innerW = Math.max(10, W - pad.left - pad.right);
-    const innerH = H - pad.top - pad.bottom;
-    const band = innerW / Math.max(1, n);
-    const x = (i: number) =>
-      type === 'bar'
-        ? pad.left + band * (i + 0.5)
-        : pad.left + (n <= 1 ? innerW / 2 : (i / (n - 1)) * innerW);
-    const y = (v: number) =>
-      log
-        ? pad.top + innerH - (Math.log10(Math.max(1, Math.min(v, max))) / Math.log10(max)) * innerH
-        : pad.top + innerH - (Math.min(v, max) / max) * innerH;
+function tickValuesFor(c: ChartSetup): number[] {
+  if (c.stack) return [0, 0.25, 0.5, 0.75, 1];
+  const all = c.series.flatMap((x) => [...x.values, ...(x.previous ?? []), ...(x.trend ?? [])]);
+  const dataMax = Math.max(0, ...all);
+  return c.log ? logTicks(dataMax) : ticks(dataMax, c.options.yMax);
+}
 
-    const defs = s(
-      'defs',
+function plotAt(c: ChartSetup, W: number): Plot {
+  const values = tickValuesFor(c);
+  const max = values[values.length - 1]! || 1;
+  const longest = Math.max(...values.map((t) => c.axisFmt(t).length));
+  const pad = { top: 14, right: 16, bottom: 28, left: Math.max(32, longest * 7 + 14) };
+  const innerW = Math.max(10, W - pad.left - pad.right);
+  const innerH = c.H - pad.top - pad.bottom;
+  const band = innerW / Math.max(1, c.n);
+  const x = (i: number) =>
+    c.type === 'bar'
+      ? pad.left + band * (i + 0.5)
+      : pad.left + (c.n <= 1 ? innerW / 2 : (i / (c.n - 1)) * innerW);
+  const y = (v: number) => {
+    const share = c.log
+      ? Math.log10(Math.max(1, Math.min(v, max))) / Math.log10(max)
+      : Math.min(v, max) / max;
+    return pad.top + innerH - share * innerH;
+  };
+  return { ...c, W, pad, innerW, innerH, band, ticks: values, x, y };
+}
+
+function gradientDefs(p: Plot): SVGElement {
+  const stop = (offset: string, color: string, opacity: number) =>
+    s('stop', { offset, 'stop-color': color, 'stop-opacity': opacity });
+  return s(
+    'defs',
+    {},
+    p.series.map((_, si) => {
+      const color = SERIES[si % SERIES.length]!;
+      return s(
+        'linearGradient',
+        { id: `${p.id}-g${si}`, x1: 0, x2: 0, y1: 0, y2: 1 },
+        stop('0%', color, si === 0 ? 0.22 : 0.12),
+        stop('100%', color, 0),
+      );
+    }),
+  );
+}
+
+function gridLines(p: Plot): SVGElement[] {
+  return p.ticks.map((v, i) =>
+    s(
+      'g',
       {},
-      series.map((_, si) =>
-        s(
-          'linearGradient',
-          { id: `${id}-g${si}`, x1: 0, x2: 0, y1: 0, y2: 1 },
-          s('stop', {
-            offset: '0%',
-            'stop-color': SERIES[si % SERIES.length],
-            'stop-opacity': si === 0 ? 0.22 : 0.12,
-          }),
-          s('stop', {
-            offset: '100%',
-            'stop-color': SERIES[si % SERIES.length],
-            'stop-opacity': 0,
-          }),
-        ),
-      ),
-    );
-    const grid = tickValues.map((v, i) =>
+      s('line', {
+        x1: p.pad.left,
+        x2: p.W - p.pad.right,
+        y1: p.y(v),
+        y2: p.y(v),
+        class: i === 0 ? 'grid baseline' : 'grid',
+      }),
       s(
-        'g',
-        {},
-        s('line', {
-          x1: pad.left,
-          x2: W - pad.right,
-          y1: y(v),
-          y2: y(v),
-          class: i === 0 ? 'grid baseline' : 'grid',
-        }),
-        s(
-          'text',
-          { x: pad.left - 10, y: y(v) + 4, class: 'axis', 'text-anchor': 'end' },
-          axisFmt(v),
-        ),
+        'text',
+        { x: p.pad.left - 10, y: p.y(v) + 4, class: 'axis', 'text-anchor': 'end' },
+        p.axisFmt(v),
       ),
-    );
-    const maxLabels = Math.max(2, Math.floor(innerW / 72));
-    const every = Math.max(1, Math.ceil(n / maxLabels));
-    const xLabels = Array.from({ length: n }, (_, i) =>
-      i % every === 0 || (type !== 'bar' && i === n - 1 && (n - 1) % every > every / 2)
-        ? s(
-            'text',
-            {
-              x: x(i),
-              y: H - 8,
-              class: 'axis',
-              'text-anchor':
-                type === 'bar' ? 'middle' : i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle',
-            },
-            label(i),
-          )
-        : null,
-    );
+    ),
+  );
+}
 
-    const marks: SVGElement[] = [];
-    const labels: SVGElement[] = [];
-    const roomy = innerW / Math.max(1, n) >= 30;
-    const valueLabel = (cx: number, cy: number, text: string) =>
-      labels.push(s('text', { x: cx, y: cy, class: 'value-label', 'text-anchor': 'middle' }, text));
-    if (stacked) {
-      series.forEach((_, si) => {
-        const color = SERIES[si % SERIES.length]!;
-        if (type === 'bar') {
-          const bw = Math.max(2, Math.min(40, band * 0.72));
-          for (let i = 0; i < n; i++) {
-            const top = y(upper[si]![i]!);
-            const bottom = y(lower[si]![i]!);
-            marks.push(
-              s('rect', {
-                x: x(i) - bw / 2,
-                y: top,
-                width: bw,
-                height: Math.max(0, bottom - top),
-                fill: color,
-                class: 'bar',
-              }),
-            );
-          }
-        } else {
-          const top = upper[si]!.map(
-            (v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`,
-          );
-          const bottom = lower[si]!.map(
-            (v, i) => `L${x(i).toFixed(1)},${y(v).toFixed(1)}`,
-          ).reverse();
-          marks.push(
-            s('path', {
-              d: `${top.join(' ')} ${bottom.join(' ')} Z`,
-              fill: color,
-              class: 'area stacked',
-            }),
-          );
-          marks.push(s('path', { d: top.join(' '), stroke: color, class: 'line' }));
-        }
-        if (options.showValues && roomy)
-          for (let i = 0; i < n; i++) {
-            const top = y(upper[si]![i]!);
-            const bottom = y(lower[si]![i]!);
-            if (bottom - top >= 16)
-              valueLabel(x(i), (top + bottom) / 2 + 4, percent(shares[si]![i]!, 0));
-          }
-      });
-    } else if (type === 'bar') {
-      const groups = series.length;
-      const bw = Math.max(2, Math.min(32, (band * 0.72) / groups));
-      series.forEach((line, si) => {
-        const color = SERIES[si % SERIES.length]!;
-        line.values.forEach((v, i) => {
-          const bx = x(i) - (bw * groups) / 2 + si * bw;
-          const top = y(v);
-          if (line.previous) {
-            const pv = line.previous[i] ?? 0;
-            marks.push(
-              s('rect', {
-                x: bx + 0.5,
-                y: y(pv),
-                width: Math.max(1, bw - 1),
-                height: Math.max(0, y(0) - y(pv)),
-                class: 'bar-previous',
-                stroke: color,
-              }),
-            );
-          }
-          marks.push(
-            s('rect', {
-              x: bx + 0.5,
-              y: top,
-              width: Math.max(1, bw - 1),
-              height: Math.max(0, y(0) - top),
-              rx: Math.min(3, bw / 3),
-              fill: color,
-              class: 'bar',
-            }),
-          );
-          if (options.showValues && roomy && n * groups <= 120)
-            valueLabel(bx + bw / 2, top - 5, (line.format ?? fmt)(v));
-        });
-        if (line.trend)
-          marks.push(
-            s('path', {
-              d: line.trend
-                .map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`)
-                .join(' '),
-              stroke: color,
-              class: 'line trend',
-            }),
-          );
-      });
-    } else {
-      series.forEach((line, si) => {
-        const color = SERIES[si % SERIES.length]!;
-        const path = (values: number[]) =>
-          values.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
-        if (line.previous?.length)
-          marks.push(
-            s('path', {
-              d: path(line.previous.slice(0, n)),
-              stroke: color,
-              class: 'line previous',
-            }),
-          );
-        const d = path(line.values);
-        const fill = type === 'area' || (si === 0 && series.length === 1);
-        if (fill && line.values.length > 1) {
-          marks.push(
-            s('path', {
-              d: `${d} L${x(line.values.length - 1).toFixed(1)},${y(0)} L${x(0).toFixed(1)},${y(0)} Z`,
-              fill: `url(#${id}-g${si})`,
-              class: 'area',
-            }),
-          );
-        }
-        marks.push(s('path', { d, stroke: color, class: 'line' }));
-        if (line.trend?.length)
-          marks.push(s('path', { d: path(line.trend), stroke: color, class: 'line trend' }));
-        if (n <= 1)
-          marks.push(s('circle', { cx: x(0), cy: y(line.values[0] ?? 0), r: 4, fill: color }));
-        if (options.showValues && roomy && n * series.length <= 120)
-          line.values.forEach((v, i) => {
-            valueLabel(x(i), y(v) - 8, (line.format ?? fmt)(v));
-          });
-      });
+/** Labels along the x axis, as many as fit, always including the last point of a line. */
+function xAxisLabels(p: Plot): (SVGElement | null)[] {
+  const every = Math.max(1, Math.ceil(p.n / Math.max(2, Math.floor(p.innerW / 72))));
+  const anchor = (i: number) => {
+    if (p.type === 'bar') return 'middle';
+    if (i === 0) return 'start';
+    return i === p.n - 1 ? 'end' : 'middle';
+  };
+  const shown = (i: number) =>
+    i % every === 0 || (p.type !== 'bar' && i === p.n - 1 && (p.n - 1) % every > every / 2);
+  return Array.from({ length: p.n }, (_, i) =>
+    shown(i)
+      ? s('text', { x: p.x(i), y: p.H - 8, class: 'axis', 'text-anchor': anchor(i) }, p.label(i))
+      : null,
+  );
+}
+
+/** What the marks functions draw into: shapes, and values written on them. */
+interface Layers {
+  marks: SVGElement[];
+  labels: SVGElement[];
+  /** Wide enough per point to write values. */
+  roomy: boolean;
+}
+
+function valueText(L: Layers, cx: number, cy: number, text: string): void {
+  L.labels.push(s('text', { x: cx, y: cy, class: 'value-label', 'text-anchor': 'middle' }, text));
+}
+
+const pathOf = (p: Plot, values: number[]) =>
+  values.map((v, i) => `${i ? 'L' : 'M'}${p.x(i).toFixed(1)},${p.y(v).toFixed(1)}`).join(' ');
+
+function stackedSeries(p: Plot, L: Layers, si: number): void {
+  const { lower, upper, shares } = p.stack!;
+  const color = SERIES[si % SERIES.length]!;
+  if (p.type === 'bar') {
+    const bw = Math.max(2, Math.min(40, p.band * 0.72));
+    for (let i = 0; i < p.n; i++) {
+      const top = p.y(upper[si]![i]!);
+      const bottom = p.y(lower[si]![i]!);
+      L.marks.push(
+        s('rect', {
+          x: p.x(i) - bw / 2,
+          y: top,
+          width: bw,
+          height: Math.max(0, bottom - top),
+          fill: color,
+          class: 'bar',
+        }),
+      );
     }
-    const notes = [...notesAt.entries()].map(([i, list]) =>
-      s(
-        'g',
-        { class: 'annotation' },
-        s('line', {
-          x1: x(i),
-          x2: x(i),
-          y1: pad.top,
-          y2: pad.top + innerH,
-          class: 'annotation-line',
-        }),
-        s(
-          'circle',
-          { cx: x(i), cy: pad.top + innerH, r: 4.5, class: 'annotation-dot' },
-          s('title', {}, list.map((a) => a.text).join('\n')),
-        ),
-      ),
+  } else {
+    const top = pathOf(p, upper[si]!);
+    const bottom = lower[si]!.map((v, i) => `L${p.x(i).toFixed(1)},${p.y(v).toFixed(1)}`).reverse();
+    L.marks.push(
+      s('path', { d: `${top} ${bottom.join(' ')} Z`, fill: color, class: 'area stacked' }),
     );
+    L.marks.push(s('path', { d: top, stroke: color, class: 'line' }));
+  }
+  if (!p.options.showValues || !L.roomy) return;
+  for (let i = 0; i < p.n; i++) {
+    const top = p.y(upper[si]![i]!);
+    const bottom = p.y(lower[si]![i]!);
+    if (bottom - top >= 16)
+      valueText(L, p.x(i), (top + bottom) / 2 + 4, percent(shares[si]![i]!, 0));
+  }
+}
 
-    const cursor = s('line', {
-      y1: pad.top,
-      y2: pad.top + innerH,
-      class: 'cursor',
-      visibility: 'hidden',
+function barSeries(p: Plot, L: Layers, si: number): void {
+  const line = p.series[si]!;
+  const groups = p.series.length;
+  const bw = Math.max(2, Math.min(32, (p.band * 0.72) / groups));
+  const color = SERIES[si % SERIES.length]!;
+  const labelled = p.options.showValues && L.roomy && p.n * groups <= 120;
+  const rect = (bx: number, v: number, attrs: Record<string, string | number>) =>
+    s('rect', {
+      x: bx + 0.5,
+      y: p.y(v),
+      width: Math.max(1, bw - 1),
+      height: Math.max(0, p.y(0) - p.y(v)),
+      ...attrs,
     });
-    const dots = series.map((_, si) =>
-      s('circle', {
-        r: 4,
-        class: 'dot',
-        fill: 'var(--surface)',
-        stroke: SERIES[si % SERIES.length],
-        visibility: 'hidden',
+  line.values.forEach((v, i) => {
+    const bx = p.x(i) - (bw * groups) / 2 + si * bw;
+    if (line.previous)
+      L.marks.push(rect(bx, line.previous[i] ?? 0, { class: 'bar-previous', stroke: color }));
+    L.marks.push(rect(bx, v, { rx: Math.min(3, bw / 3), fill: color, class: 'bar' }));
+    if (labelled) valueText(L, bx + bw / 2, p.y(v) - 5, (line.format ?? p.fmt)(v));
+  });
+  if (line.trend)
+    L.marks.push(s('path', { d: pathOf(p, line.trend), stroke: color, class: 'line trend' }));
+}
+
+function lineSeries(p: Plot, L: Layers, si: number): void {
+  const line = p.series[si]!;
+  const color = SERIES[si % SERIES.length]!;
+  if (line.previous?.length)
+    L.marks.push(
+      s('path', {
+        d: pathOf(p, line.previous.slice(0, p.n)),
+        stroke: color,
+        class: 'line previous',
       }),
     );
-    const hit = s('rect', { x: pad.left, y: pad.top, width: innerW, height: innerH, class: 'hit' });
-    const svg = s(
-      'svg',
-      {
-        viewBox: `0 0 ${W} ${H}`,
-        width: W,
-        height: H,
-        class: 'chart',
-        role: 'img',
-        'aria-label': series.map((x) => x.label).join(', '),
-      },
-      defs,
-      ...grid,
-      ...xLabels,
-      ...marks,
-      ...labels,
-      cursor,
-      ...dots,
-      hit,
-      ...notes,
-    );
-
-    const show = (px: number) => {
-      const i =
-        type === 'bar'
-          ? Math.max(0, Math.min(n - 1, Math.floor((px - pad.left) / band)))
-          : Math.max(0, Math.min(n - 1, Math.round(((px - pad.left) / innerW) * (n - 1))));
-      const cx = x(i);
-      cursor.setAttribute('x1', String(cx));
-      cursor.setAttribute('x2', String(cx));
-      cursor.setAttribute('visibility', 'visible');
-      if (type !== 'bar') {
-        dots.forEach((dot, si) => {
-          dot.setAttribute('cx', String(cx));
-          dot.setAttribute(
-            'cy',
-            String(stacked ? y(upper[si]![i]!) : y(series[si]!.values[i] ?? 0)),
-          );
-          dot.setAttribute('visibility', 'visible');
-        });
-      }
-      readout.hidden = false;
-      mount(
-        readout,
-        h('strong', {}, label(i)),
-        ...series.map((line, si) =>
-          h(
-            'span',
-            { class: 'readout-row' },
-            h('span', { class: 'swatch', style: `background:${SERIES[si % SERIES.length]}` }),
-            h('span', { class: 'readout-label' }, line.label),
-            h(
-              'span',
-              { class: 'readout-value' },
-              stacked
-                ? `${percent(shares[si]![i]!, 0)} · ${(line.format ?? fmt)(line.values[i] ?? 0)}`
-                : (line.format ?? fmt)(line.values[i] ?? 0),
-            ),
-            line.previous ? changeText(line.values[i] ?? 0, line.previous[i] ?? 0) : null,
-          ),
-        ),
-        ...(notesAt.get(i) ?? []).map((a) =>
-          h(
-            'span',
-            { class: 'readout-note' },
-            h('span', { class: 'note-icon' }, icon('flag', 12)),
-            a.text,
-          ),
-        ),
-        hasPrevious
-          ? h(
-              'span',
-              { class: 'readout-prev muted' },
-              `Previous: ${series.map((l) => (l.previous ? (l.format ?? fmt)(l.previous[i] ?? 0) : '–')).join(' · ')}`,
-            )
-          : null,
-      );
-      const flip = cx > W * 0.62;
-      readout.style.left = `${cx}px`;
-      readout.style.transform = flip ? 'translateX(calc(-100% - 14px))' : 'translateX(14px)';
-    };
-    const hide = () => {
-      cursor.setAttribute('visibility', 'hidden');
-      for (const d of dots) d.setAttribute('visibility', 'hidden');
-      readout.hidden = true;
-    };
-    svg.addEventListener('mousemove', (event: Event) => {
-      const e = event as MouseEvent;
-      const rect = svg.getBoundingClientRect();
-      show(((e.clientX - rect.left) / rect.width) * W);
+  const d = pathOf(p, line.values);
+  const fill = p.type === 'area' || (si === 0 && p.series.length === 1);
+  if (fill && line.values.length > 1) {
+    const close = `L${p.x(line.values.length - 1).toFixed(1)},${p.y(0)} L${p.x(0).toFixed(1)},${p.y(0)} Z`;
+    L.marks.push(s('path', { d: `${d} ${close}`, fill: `url(#${p.id}-g${si})`, class: 'area' }));
+  }
+  L.marks.push(s('path', { d, stroke: color, class: 'line' }));
+  if (line.trend?.length)
+    L.marks.push(s('path', { d: pathOf(p, line.trend), stroke: color, class: 'line trend' }));
+  if (p.n <= 1)
+    L.marks.push(s('circle', { cx: p.x(0), cy: p.y(line.values[0] ?? 0), r: 4, fill: color }));
+  if (p.options.showValues && L.roomy && p.n * p.series.length <= 120)
+    line.values.forEach((v, i) => {
+      valueText(L, p.x(i), p.y(v) - 8, (line.format ?? p.fmt)(v));
     });
-    svg.addEventListener('mouseleave', hide);
-    holder.replaceChildren(svg);
-  };
+}
 
+function seriesLayers(p: Plot): Layers {
+  const L: Layers = { marks: [], labels: [], roomy: p.innerW / Math.max(1, p.n) >= 30 };
+  const draw = p.stack ? stackedSeries : p.type === 'bar' ? barSeries : lineSeries;
+  p.series.forEach((_, si) => {
+    draw(p, L, si);
+  });
+  return L;
+}
+
+function annotationMarks(p: Plot): SVGElement[] {
+  return [...p.notesAt.entries()].map(([i, list]) =>
+    s(
+      'g',
+      { class: 'annotation' },
+      s('line', {
+        x1: p.x(i),
+        x2: p.x(i),
+        y1: p.pad.top,
+        y2: p.pad.top + p.innerH,
+        class: 'annotation-line',
+      }),
+      s(
+        'circle',
+        { cx: p.x(i), cy: p.pad.top + p.innerH, r: 4.5, class: 'annotation-dot' },
+        s('title', {}, list.map((a) => a.text).join('\n')),
+      ),
+    ),
+  );
+}
+
+/** The point under the pointer's x. */
+function hoverIndex(p: Plot, px: number): number {
+  const raw =
+    p.type === 'bar'
+      ? Math.floor((px - p.pad.left) / p.band)
+      : Math.round(((px - p.pad.left) / p.innerW) * (p.n - 1));
+  return Math.max(0, Math.min(p.n - 1, raw));
+}
+
+function readoutRow(p: Plot, si: number, i: number): HTMLElement {
+  const line = p.series[si]!;
+  const value = (line.format ?? p.fmt)(line.values[i] ?? 0);
+  return h(
+    'span',
+    { class: 'readout-row' },
+    h('span', { class: 'swatch', style: `background:${SERIES[si % SERIES.length]}` }),
+    h('span', { class: 'readout-label' }, line.label),
+    h(
+      'span',
+      { class: 'readout-value' },
+      p.stack ? `${percent(p.stack.shares[si]![i]!, 0)} · ${value}` : value,
+    ),
+    line.previous ? changeText(line.values[i] ?? 0, line.previous[i] ?? 0) : null,
+  );
+}
+
+function readoutContent(p: Plot, i: number): Child[] {
+  const previous = p.series
+    .map((l) => (l.previous ? (l.format ?? p.fmt)(l.previous[i] ?? 0) : '–'))
+    .join(' · ');
+  return [
+    h('strong', {}, p.label(i)),
+    ...p.series.map((_, si) => readoutRow(p, si, i)),
+    ...(p.notesAt.get(i) ?? []).map((a) =>
+      h(
+        'span',
+        { class: 'readout-note' },
+        h('span', { class: 'note-icon' }, icon('flag', 12)),
+        a.text,
+      ),
+    ),
+    p.hasPrevious ? h('span', { class: 'readout-prev muted' }, `Previous: ${previous}`) : null,
+  ];
+}
+
+/** The hover cursor, dots on each line, and the readout that follows them. */
+function hoverLayer(p: Plot, svg: SVGElement, readout: HTMLElement) {
+  const cursor = s('line', {
+    y1: p.pad.top,
+    y2: p.pad.top + p.innerH,
+    class: 'cursor',
+    visibility: 'hidden',
+  });
+  const dots = p.series.map((_, si) =>
+    s('circle', {
+      r: 4,
+      class: 'dot',
+      fill: 'var(--surface)',
+      stroke: SERIES[si % SERIES.length],
+      visibility: 'hidden',
+    }),
+  );
+  const dotY = (si: number, i: number) =>
+    p.stack ? p.y(p.stack.upper[si]![i]!) : p.y(p.series[si]!.values[i] ?? 0);
+  const show = (px: number) => {
+    const i = hoverIndex(p, px);
+    const cx = p.x(i);
+    for (const k of ['x1', 'x2']) cursor.setAttribute(k, String(cx));
+    cursor.setAttribute('visibility', 'visible');
+    if (p.type !== 'bar')
+      dots.forEach((dot, si) => {
+        dot.setAttribute('cx', String(cx));
+        dot.setAttribute('cy', String(dotY(si, i)));
+        dot.setAttribute('visibility', 'visible');
+      });
+    readout.hidden = false;
+    mount(readout, ...readoutContent(p, i));
+    readout.style.left = `${cx}px`;
+    readout.style.transform =
+      cx > p.W * 0.62 ? 'translateX(calc(-100% - 14px))' : 'translateX(14px)';
+  };
+  const hide = () => {
+    cursor.setAttribute('visibility', 'hidden');
+    for (const d of dots) d.setAttribute('visibility', 'hidden');
+    readout.hidden = true;
+  };
+  svg.addEventListener('mousemove', (event: Event) => {
+    const rect = svg.getBoundingClientRect();
+    show((((event as MouseEvent).clientX - rect.left) / rect.width) * p.W);
+  });
+  svg.addEventListener('mouseleave', hide);
+  return { cursor, dots };
+}
+
+function chartSvg(p: Plot, readout: HTMLElement): SVGElement {
+  const L = seriesLayers(p);
+  const svg = s('svg', {
+    viewBox: `0 0 ${p.W} ${p.H}`,
+    width: p.W,
+    height: p.H,
+    class: 'chart',
+    role: 'img',
+    'aria-label': p.series.map((x) => x.label).join(', '),
+  });
+  const { cursor, dots } = hoverLayer(p, svg, readout);
+  const hit = s('rect', {
+    x: p.pad.left,
+    y: p.pad.top,
+    width: p.innerW,
+    height: p.innerH,
+    class: 'hit',
+  });
+  svg.append(
+    gradientDefs(p),
+    ...gridLines(p),
+    ...xAxisLabels(p).filter((x) => x !== null),
+    ...L.marks,
+    ...L.labels,
+    cursor,
+    ...dots,
+    hit,
+    ...annotationMarks(p),
+  );
+  return svg;
+}
+
+function chartLegend(
+  series: LineSeries[],
+  hasPrevious: boolean,
+  show: boolean,
+): HTMLElement | null {
+  if (!show || (series.length <= 1 && !hasPrevious)) return null;
+  const items = series.map((line, i) =>
+    h(
+      'li',
+      {},
+      h('span', { class: 'swatch', style: `background:${SERIES[i % SERIES.length]}` }),
+      line.label,
+    ),
+  );
+  if (hasPrevious)
+    items.push(
+      h(
+        'li',
+        { class: 'legend-previous' },
+        h('span', { class: 'swatch dashed' }),
+        'Previous period',
+      ),
+    );
+  return h('ul', { class: 'legend' }, items);
+}
+
+/** A multi-series time chart (line, area or bars) with a hover readout and optional previous-period overlay. */
+export function lineChart(
+  buckets: number[],
+  series: LineSeries[],
+  interval: string,
+  options: ChartOptions = {},
+): HTMLElement {
+  const c = chartSetup(buckets, series, interval, options);
+  const holder = h('div', { class: 'chart-canvas' });
+  const readout = h('div', { class: 'readout', hidden: true });
+  const legend = chartLegend(series, c.hasPrevious, options.legend ?? true);
+  const wrap = h('div', { class: `chart-wrap chart-${c.type}` }, holder, readout, legend);
+  const draw = (W: number) => holder.replaceChildren(chartSvg(plotAt(c, W), readout));
   responsive(wrap, draw);
   return wrap;
 }
@@ -711,6 +780,204 @@ export function kpiStat(
  * Amplitude-style funnel: headline KPIs, vertical bars scaled to the first
  * step with the drop-off hatched, then a step table and breakdowns.
  */
+/** Under a step: how many converted from the previous one, how many dropped, and their replays. */
+function stepRates(step: FunnelStepView, prev: FunnelStepView | null): HTMLElement {
+  if (!prev)
+    return h(
+      'div',
+      { class: 'funnel-col-rates' },
+      h('span', { class: 'muted' }, 'Entered the funnel'),
+    );
+  const dropped = Math.max(0, prev.count - step.count);
+  const replays =
+    dropped > 0 && prev.event && step.event
+      ? h(
+          'a',
+          {
+            class: 'funnel-replays',
+            href: href('replays', { did: prev.event, not: step.event }),
+            title: `Recorded sessions with ${prev.event} but no ${step.event}`,
+          },
+          icon('replay', 12),
+          'Watch drop-offs',
+        )
+      : null;
+  return h(
+    'div',
+    { class: 'funnel-col-rates' },
+    h(
+      'span',
+      { class: 'funnel-bridge-convert' },
+      `${percent(step.conversionFromPrevious, 1)} converted`,
+    ),
+    h('span', { class: 'funnel-bridge-drop' }, `${count(dropped)} dropped`),
+    step.avgSecondsFromPrevious !== null
+      ? h('span', { class: 'muted' }, `avg ${duration(step.avgSecondsFromPrevious)}`)
+      : null,
+    replays,
+  );
+}
+
+function funnelColumn(
+  steps: FunnelStepView[],
+  i: number,
+  base: number,
+  noun: string,
+  worst: boolean,
+): HTMLElement {
+  const step = steps[i]!;
+  const prev = i > 0 ? steps[i - 1]! : null;
+  const dropped = prev ? Math.max(0, prev.count - step.count) : 0;
+  const share = step.count / base;
+  return h(
+    'div',
+    { class: `funnel-col ${worst ? 'worst' : ''}` },
+    h(
+      'div',
+      { class: 'funnel-col-head' },
+      h('span', { class: 'funnel-step-index' }, String(i + 1)),
+      h('span', { class: 'step-name', title: step.label }, step.label),
+      step.optional ? h('span', { class: 'badge' }, 'optional') : null,
+    ),
+    h(
+      'div',
+      {
+        class: 'funnel-col-track',
+        title: `${count(step.count)} ${noun}${prev ? `, ${count(dropped)} dropped` : ''}`,
+      },
+      prev
+        ? h('div', { class: 'funnel-col-drop', style: `height:${(dropped / base) * 100}%` })
+        : null,
+      h(
+        'div',
+        {
+          class: `funnel-col-fill ${share > 0.82 ? 'tall' : ''}`,
+          style: `height:${Math.max(step.count ? 1 : 0, share * 100)}%`,
+        },
+        h('span', { class: 'funnel-col-pct' }, percent(step.conversionFromStart, 1)),
+      ),
+    ),
+    h(
+      'div',
+      { class: 'funnel-col-foot' },
+      h(
+        'div',
+        { class: 'funnel-col-count' },
+        count(step.count),
+        h('span', { class: 'muted' }, ` ${noun}`),
+      ),
+      stepRates(step, prev),
+    ),
+  );
+}
+
+function breakdownRow(b: FunnelBreakdownView, bi: number): HTMLElement {
+  const first = b.steps[0]?.count ?? 0;
+  const conv = first ? (b.steps[b.steps.length - 1]?.count ?? 0) / first : 0;
+  return h(
+    'tr',
+    {},
+    h(
+      'td',
+      {},
+      h('span', { class: 'swatch', style: `background:${SERIES[bi % SERIES.length]}` }),
+      h('code', {}, b.value),
+    ),
+    ...b.steps.map((st) =>
+      h(
+        'td',
+        { class: 'num' },
+        h('div', { class: 'funnel-bd-count' }, count(st.count)),
+        h('div', { class: 'muted small' }, percent(st.conversionFromStart, 0)),
+      ),
+    ),
+    h(
+      'td',
+      { class: 'num' },
+      h(
+        'div',
+        { class: 'funnel-bd-conv' },
+        h(
+          'span',
+          { class: 'funnel-bd-conv-track' },
+          h('span', { class: 'funnel-bd-conv-bar', style: `width:${conv * 100}%` }),
+        ),
+        h('span', {}, percent(conv, 1)),
+      ),
+    ),
+  );
+}
+
+function funnelBreakdowns(steps: FunnelStepView[], breakdowns: FunnelBreakdownView[]): HTMLElement {
+  return h(
+    'div',
+    { class: 'funnel-breakdowns' },
+    h('h3', { class: 'funnel-breakdowns-title' }, 'Breakdown'),
+    h(
+      'div',
+      { class: 'table-wrap' },
+      h(
+        'table',
+        { class: 'funnel-breakdown-table' },
+        h(
+          'thead',
+          {},
+          h(
+            'tr',
+            {},
+            h('th', {}, 'Segment'),
+            ...steps.map((st) => h('th', { class: 'num' }, st.label)),
+            h('th', { class: 'num' }, 'Conversion'),
+          ),
+        ),
+        h('tbody', {}, breakdowns.map(breakdownRow)),
+      ),
+    ),
+  );
+}
+
+/** The step people are most often lost before (by conversion from the previous step). */
+function worstStep(steps: FunnelStepView[]): { i: number; rate: number } | null {
+  let worst: { i: number; rate: number } | null = null;
+  steps.forEach((step, i) => {
+    if (i > 0 && (!worst || step.conversionFromPrevious < worst.rate))
+      worst = { i, rate: step.conversionFromPrevious };
+  });
+  return worst;
+}
+
+function funnelStats(
+  steps: FunnelStepView[],
+  noun: string,
+  windowSeconds: number | undefined,
+): HTMLElement {
+  const first = steps[0]!;
+  const last = steps[steps.length - 1]!;
+  const totalDrop = Math.max(0, first.count - last.count);
+  const avgThrough = steps
+    .slice(1)
+    .reduce((sum, step) => sum + (step.avgSecondsFromPrevious ?? 0), 0);
+  return h(
+    'div',
+    { class: 'stats' },
+    kpiStat(
+      'Conversion',
+      percent(first.count ? last.count / first.count : 0, 1),
+      `${count(last.count)} of ${count(first.count)} ${noun}`,
+    ),
+    kpiStat('Completed', count(last.count), last.label),
+    kpiStat(
+      'Drop-off',
+      count(totalDrop),
+      first.count ? `${percent(totalDrop / first.count, 1)} of starters` : undefined,
+    ),
+    avgThrough > 0
+      ? kpiStat('Avg. time to convert', duration(avgThrough), 'first step → last step')
+      : null,
+    windowSeconds ? kpiStat('Conversion window', duration(windowSeconds)) : null,
+  );
+}
+
 export function funnelChart(
   steps: FunnelStepView[],
   options: {
@@ -721,198 +988,17 @@ export function funnelChart(
   } = {},
 ): HTMLElement {
   const noun = options.noun ?? 'people';
-  const first = steps[0]!;
-  const last = steps[steps.length - 1]!;
-  const base = Math.max(1, first.count);
-  const overall = first.count ? last.count / first.count : 0;
-  const totalDrop = Math.max(0, first.count - last.count);
-  const avgThrough =
-    steps.length > 1
-      ? steps.slice(1).reduce((sum, step) => sum + (step.avgSecondsFromPrevious ?? 0), 0)
-      : null;
-  const worst = steps
-    .slice(1)
-    .reduce<{ i: number; rate: number } | null>(
-      (acc, step, k) =>
-        !acc || step.conversionFromPrevious < acc.rate
-          ? { i: k + 1, rate: step.conversionFromPrevious }
-          : acc,
-      null,
-    );
-
-  const columns = h(
-    'div',
-    { class: 'funnel-columns', style: `--steps:${steps.length}` },
-    steps.map((step, i) => {
-      const prev = i > 0 ? steps[i - 1]! : null;
-      const dropped = prev ? Math.max(0, prev.count - step.count) : 0;
-      return h(
-        'div',
-        { class: `funnel-col ${worst && worst.i === i ? 'worst' : ''}` },
-        h(
-          'div',
-          { class: 'funnel-col-head' },
-          h('span', { class: 'funnel-step-index' }, String(i + 1)),
-          h('span', { class: 'step-name', title: step.label }, step.label),
-          step.optional ? h('span', { class: 'badge' }, 'optional') : null,
-        ),
-        h(
-          'div',
-          {
-            class: 'funnel-col-track',
-            title: `${count(step.count)} ${noun}${prev ? `, ${count(dropped)} dropped` : ''}`,
-          },
-          prev
-            ? h('div', { class: 'funnel-col-drop', style: `height:${(dropped / base) * 100}%` })
-            : null,
-          h(
-            'div',
-            {
-              class: `funnel-col-fill ${step.count / base > 0.82 ? 'tall' : ''}`,
-              style: `height:${Math.max(step.count ? 1 : 0, (step.count / base) * 100)}%`,
-            },
-            h('span', { class: 'funnel-col-pct' }, percent(step.conversionFromStart, 1)),
-          ),
-        ),
-        h(
-          'div',
-          { class: 'funnel-col-foot' },
-          h(
-            'div',
-            { class: 'funnel-col-count' },
-            count(step.count),
-            h('span', { class: 'muted' }, ` ${noun}`),
-          ),
-          prev
-            ? h(
-                'div',
-                { class: 'funnel-col-rates' },
-                h(
-                  'span',
-                  { class: 'funnel-bridge-convert' },
-                  `${percent(step.conversionFromPrevious, 1)} converted`,
-                ),
-                h('span', { class: 'funnel-bridge-drop' }, `${count(dropped)} dropped`),
-                step.avgSecondsFromPrevious !== null
-                  ? h('span', { class: 'muted' }, `avg ${duration(step.avgSecondsFromPrevious)}`)
-                  : null,
-                dropped > 0 && prev.event && step.event
-                  ? h(
-                      'a',
-                      {
-                        class: 'funnel-replays',
-                        href: href('replays', { did: prev.event, not: step.event }),
-                        title: `Recorded sessions with ${prev.event} but no ${step.event}`,
-                      },
-                      icon('replay', 12),
-                      'Watch drop-offs',
-                    )
-                  : null,
-              )
-            : h(
-                'div',
-                { class: 'funnel-col-rates' },
-                h('span', { class: 'muted' }, 'Entered the funnel'),
-              ),
-        ),
-      );
-    }),
-  );
-
-  const breakdowns = options.breakdowns?.length
-    ? h(
-        'div',
-        { class: 'funnel-breakdowns' },
-        h('h3', { class: 'funnel-breakdowns-title' }, 'Breakdown'),
-        h(
-          'div',
-          { class: 'table-wrap' },
-          h(
-            'table',
-            { class: 'funnel-breakdown-table' },
-            h(
-              'thead',
-              {},
-              h(
-                'tr',
-                {},
-                h('th', {}, 'Segment'),
-                ...steps.map((st) => h('th', { class: 'num' }, st.label)),
-                h('th', { class: 'num' }, 'Conversion'),
-              ),
-            ),
-            h(
-              'tbody',
-              {},
-              options.breakdowns.map((b, bi) => {
-                const bFirst = b.steps[0]?.count ?? 0;
-                const bLast = b.steps[b.steps.length - 1]?.count ?? 0;
-                const conv = bFirst ? bLast / bFirst : 0;
-                return h(
-                  'tr',
-                  {},
-                  h(
-                    'td',
-                    {},
-                    h('span', {
-                      class: 'swatch',
-                      style: `background:${SERIES[bi % SERIES.length]}`,
-                    }),
-                    h('code', {}, b.value),
-                  ),
-                  ...b.steps.map((st) =>
-                    h(
-                      'td',
-                      { class: 'num' },
-                      h('div', { class: 'funnel-bd-count' }, count(st.count)),
-                      h('div', { class: 'muted small' }, percent(st.conversionFromStart, 0)),
-                    ),
-                  ),
-                  h(
-                    'td',
-                    { class: 'num' },
-                    h(
-                      'div',
-                      { class: 'funnel-bd-conv' },
-                      h(
-                        'span',
-                        { class: 'funnel-bd-conv-track' },
-                        h('span', { class: 'funnel-bd-conv-bar', style: `width:${conv * 100}%` }),
-                      ),
-                      h('span', {}, percent(conv, 1)),
-                    ),
-                  ),
-                );
-              }),
-            ),
-          ),
-        ),
-      )
-    : null;
-
+  const base = Math.max(1, steps[0]!.count);
+  const worst = worstStep(steps);
   return h(
     'div',
     { class: 'funnel funnel-view' },
+    funnelStats(steps, noun, options.windowSeconds),
     h(
       'div',
-      { class: 'stats' },
-      kpiStat(
-        'Conversion',
-        percent(overall, 1),
-        `${count(last.count)} of ${count(first.count)} ${noun}`,
-      ),
-      kpiStat('Completed', count(last.count), last.label),
-      kpiStat(
-        'Drop-off',
-        count(totalDrop),
-        first.count ? `${percent(totalDrop / first.count, 1)} of starters` : undefined,
-      ),
-      avgThrough !== null && avgThrough > 0
-        ? kpiStat('Avg. time to convert', duration(avgThrough), 'first step → last step')
-        : null,
-      options.windowSeconds ? kpiStat('Conversion window', duration(options.windowSeconds)) : null,
+      { class: 'funnel-columns', style: `--steps:${steps.length}` },
+      steps.map((_, i) => funnelColumn(steps, i, base, noun, worst?.i === i)),
     ),
-    columns,
     worst && steps.length > 2
       ? h(
           'p',
@@ -922,7 +1008,7 @@ export function funnelChart(
           ` (${percent(1 - worst.rate, 1)} of the previous step lost).`,
         )
       : null,
-    breakdowns,
+    options.breakdowns?.length ? funnelBreakdowns(steps, options.breakdowns) : null,
   );
 }
 

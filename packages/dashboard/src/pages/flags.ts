@@ -282,6 +282,53 @@ function usagePanel(key: string): HTMLElement {
   });
 }
 
+function describeChange(c: Record<string, unknown>): string {
+  if (c.enabled === true) return 'Turn on';
+  if (c.enabled === false) return 'Turn off';
+  return c.rollout !== undefined ? `Rollout ${c.rollout}%` : JSON.stringify(c);
+}
+
+interface Schedule {
+  id: string;
+  runAt: string;
+  change: Record<string, unknown>;
+  status: string;
+  error?: string;
+}
+
+const reloadFlag = (key: string) =>
+  go(`flags/${encodeURIComponent(key)}`, { t: String(Date.now()) });
+
+function scheduleTable(
+  schedules: Schedule[],
+  key: string,
+  project: string | undefined,
+): HTMLElement | null {
+  if (!schedules.length) return null;
+  const cancel = (x: Schedule) =>
+    h(
+      'button',
+      {
+        type: 'button',
+        class: 'link-button',
+        onclick: async () => {
+          await api.delete(`/api/flags/schedules/${x.id}`, { project });
+          reloadFlag(key);
+        },
+      },
+      'Cancel',
+    );
+  return table(
+    ['When', 'Change', 'Status', ''],
+    schedules.map((x) => [
+      h('span', { class: 'nowrap' }, dateTime(x.runAt)),
+      describeChange(x.change),
+      x.error ? `${x.status}: ${x.error}` : x.status,
+      x.status === 'pending' ? cancel(x) : '',
+    ]),
+  );
+}
+
 function schedulesPanel(key: string): HTMLElement {
   const project = scope().project;
   return later(async () => {
@@ -342,46 +389,9 @@ function schedulesPanel(key: string): HTMLElement {
         mount(error, errorState(err));
       }
     });
-    const describe = (c: Record<string, unknown>) =>
-      c.enabled === true
-        ? 'Turn on'
-        : c.enabled === false
-          ? 'Turn off'
-          : c.rollout !== undefined
-            ? `Rollout ${c.rollout}%`
-            : JSON.stringify(c);
-    return panel(
-      'Scheduled changes',
-      [
-        r.schedules.length
-          ? table(
-              ['When', 'Change', 'Status', ''],
-              r.schedules.map((x) => [
-                h('span', { class: 'nowrap' }, dateTime(x.runAt)),
-                describe(x.change),
-                x.error ? `${x.status}: ${x.error}` : x.status,
-                x.status === 'pending'
-                  ? h(
-                      'button',
-                      {
-                        type: 'button',
-                        class: 'link-button',
-                        onclick: async () => {
-                          await api.delete(`/api/flags/schedules/${x.id}`, { project });
-                          go(`flags/${encodeURIComponent(key)}`, { t: String(Date.now()) });
-                        },
-                      },
-                      'Cancel',
-                    )
-                  : '',
-              ]),
-            )
-          : null,
-        form,
-        error,
-      ],
-      { icon: 'clock' },
-    );
+    return panel('Scheduled changes', [scheduleTable(r.schedules, key, project), form, error], {
+      icon: 'clock',
+    });
   });
 }
 
