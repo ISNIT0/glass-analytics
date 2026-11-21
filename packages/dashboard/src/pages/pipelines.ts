@@ -16,6 +16,7 @@ import { cleanFilters, type FilterRow, filterEditor } from '../components/filter
 import { icon } from '../components/icons.ts';
 import { jsonEditor } from '../components/json-editor.ts';
 import { toggle } from '../components/menu.ts';
+import { isChannel } from '../components/notification-channels.ts';
 import { eventPicker } from '../components/picker.ts';
 import {
   cleanTransformationRule,
@@ -385,12 +386,14 @@ function destinations(route: Route): Child {
   }
   if (sub) return destinationDetail(sub);
   return later(async () => {
-    const [{ destinations: list, delivery }, { templates }] = await Promise.all([
+    const [{ destinations: all, delivery }, { templates }] = await Promise.all([
       api.get<{ destinations: Destination[]; delivery: 'queue' | 'outbox' }>('/api/destinations', {
         project,
       }),
       api.get<{ templates: Template[] }>('/api/destinations/templates'),
     ]);
+    const list = all.filter((d) => !isChannel(d));
+    const channels = channelsNote(all.length - list.length);
     const newButton = h(
       'a',
       { class: 'button primary', href: href('pipelines/destinations/new') },
@@ -410,11 +413,14 @@ function destinations(route: Route): Child {
       ),
     );
     if (!list.length)
-      return panel('Pick a destination', gallery, {
-        icon: 'zap',
-        subtitle:
-          'No destinations yet. Forward events as they arrive: chat alerts, ad platforms (with hashed identifiers), CRMs, other analytics tools or your own webhook.',
-      });
+      return [
+        panel('Pick a destination', gallery, {
+          icon: 'zap',
+          subtitle:
+            'No destinations yet. Forward events as they arrive: chat alerts, ad platforms (with hashed identifiers), CRMs, other analytics tools or your own webhook.',
+        }),
+        channels,
+      ];
     return [
       panel(
         `${list.length} ${list.length === 1 ? 'destination' : 'destinations'}`,
@@ -444,8 +450,21 @@ function destinations(route: Route): Child {
         },
       ),
       panel('Add another', gallery, {}),
+      channels,
     ];
   });
+}
+
+/** Report and alert channels live in Settings; say so when some exist. */
+function channelsNote(n: number): Child {
+  if (!n) return null;
+  return h(
+    'p',
+    { class: 'muted small' },
+    `${count(n)} notification ${n === 1 ? 'channel' : 'channels'} for reports and alerts ${n === 1 ? 'is' : 'are'} in `,
+    h('a', { href: href('settings') }, 'Settings'),
+    '.',
+  );
 }
 
 // ── Transformations ────────────────────────────────────────────────────────

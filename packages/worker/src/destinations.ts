@@ -20,6 +20,7 @@ import {
   type DestinationTemplate,
   TEMPLATES,
 } from '@dataflare/core/destinations/index';
+import { NOTICE_RENDERERS, type Notice } from '@dataflare/core/destinations/notices';
 import type { StoredEvent } from '@dataflare/core/events';
 import { type Filter, matchEventFilter } from '@dataflare/core/filters';
 import type { D1Database, D1PreparedStatement, Env, MessageBatch } from './env.ts';
@@ -726,6 +727,54 @@ export async function destinationActivity(db: D1Database, project: string, id: s
     byHour: stats.map((s) => ({ ...s, hour: new Date(s.hour).toISOString() })),
     failures: failures.map((f) => ({ ...f, at: new Date(f.at).toISOString() })),
   };
+}
+
+/**
+ * Send a report or alert to a destination now (not through the queue: reports are already
+ * scheduled work, and their links are what matters). Reports go even to a paused destination,
+ * since the subscription chose it; a template that can't carry notices is an error.
+ */
+export async function sendNotice(
+  env: Env,
+  project: string,
+  id: string,
+  notice: Notice,
+  fetcher: typeof fetch = deliveryFetch,
+): Promise<DeliveryOutcome> {
+  const r = await row(env.DB, project, id);
+  const render = NOTICE_RENDERERS[r.template];
+  if (!render)
+    return {
+      ok: false,
+      retryable: false,
+      error: `${r.name} (${r.template}) can't receive reports or alerts.`,
+    };
+  const secrets = r.secrets
+    ? await decryptJson<Record<string, unknown>>(await encryptionKey(env), r.secrets)
+    : {};
+  const requests = render(notice, { ...parse(r.config, {}), ...secrets });
+  for (const req of requests) {
+    let res: Response;
+    try {
+      res = await fetcher(req.url, { method: req.method, headers: req.headers, body: req.body });
+    } catch (err) {
+      return {
+        ok: false,
+        retryable: true,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+    if (!res.ok) {
+      const text = (await res.text().catch(() => '')).slice(0, 200);
+      return {
+        ok: false,
+        retryable: res.status === 429 || res.status >= 500,
+        status: res.status,
+        error: `HTTP ${res.status}: ${text}`,
+      };
+    }
+  }
+  return { ok: true, retryable: false };
 }
 
 /** Send a sample (or a given) event through a destination now, and report what happened. */

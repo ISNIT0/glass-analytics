@@ -56,7 +56,8 @@ export const GLASS: Record<Row, string> = {
     'Your Cloudflare bill: $0 on Workers Free for small sites, $5/month Workers Paid above that',
   cookieless: 'Yes',
   web: 'Yes, with Core Web Vitals, error tracking and revenue',
-  product: 'Yes: trends, funnels, retention, user paths, cohorts, correlation and group (account) analytics',
+  product:
+    'Yes: trends, funnels, retention, user paths, cohorts, correlation, group (account) analytics, dashboards with scheduled Slack and email reports, and alerts',
   replay: 'Yes, with a text transcript for agents',
   flags:
     'Yes: payloads, targeting, schedules and early access; experiments with several metrics, holdouts, Bayesian or frequentist',

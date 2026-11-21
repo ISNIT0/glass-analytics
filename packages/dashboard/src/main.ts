@@ -12,6 +12,7 @@ import { type IconName, icon } from './components/icons.ts';
 import { listKeys, selectMenu, toggle } from './components/menu.ts';
 import { stagePill } from './components/ui.ts';
 import { h, mount } from './dom.ts';
+import { dashboardsPage } from './pages/dashboards.ts';
 import { eventsPage, sqlPage } from './pages/data.ts';
 import { errorsPage } from './pages/errors.ts';
 import { experimentsPage } from './pages/experiments.ts';
@@ -41,6 +42,7 @@ const PAGES: Record<string, PageDef> = {
   sites: { label: 'All sites', icon: 'layers', render: sitesPage },
   // Old #/web bookmarks land on Reports.
   web: { label: 'Reports', icon: 'reports', render: webPage },
+  dashboards: { label: 'Dashboards', icon: 'dashboard', render: dashboardsPage },
   insights: { label: 'Insights', icon: 'insights', render: insightsPage },
   users: { label: 'People', icon: 'users', render: peoplePage },
   groups: { label: 'Groups', icon: 'layers', render: groupsPage },
@@ -59,7 +61,7 @@ const PAGES: Record<string, PageDef> = {
 const GROUPS: { label: string; pages: string[] }[] = [
   {
     label: 'Analytics',
-    pages: ['reports', 'insights', 'revenue', 'users', 'groups', 'replays', 'errors'],
+    pages: ['dashboards', 'reports', 'insights', 'revenue', 'users', 'groups', 'replays', 'errors'],
   },
   { label: 'Release', pages: ['flags', 'experiments'] },
   { label: 'Data', pages: ['events', 'pipelines', 'sql', 'usage'] },
@@ -235,6 +237,7 @@ function sidebar(route: Route): HTMLElement {
 /** The second crumb: a tab name, "New analysis", or the item open (a group, a holdout…). */
 function crumbLabel(route: Route, sub: string): string {
   if (route.page === 'insights' && sub === 'new') return 'New analysis';
+  if (route.page === 'dashboards') return 'Dashboard';
   if (route.page === 'reports' || route.page === 'pipelines')
     return sub[0]!.toUpperCase() + sub.slice(1);
   const nested = route.page === 'groups' || (route.page === 'experiments' && sub === 'holdouts');

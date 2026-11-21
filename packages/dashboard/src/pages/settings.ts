@@ -4,6 +4,7 @@
 
 import { api } from '../api.ts';
 import { icon } from '../components/icons.ts';
+import { notificationChannelsPanel } from '../components/notification-channels.ts';
 import { projectSettingsPanels } from '../components/project-settings.ts';
 import {
   copyButton,
@@ -69,6 +70,7 @@ export function settingsPage(): Node[] {
       ),
     ),
     projectSettingsPanels(),
+    notificationChannelsPanel(),
     later(async () => {
       const [health, projects] = await Promise.all([
         api.get<{

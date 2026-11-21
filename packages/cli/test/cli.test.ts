@@ -36,6 +36,7 @@ import {
   type Wrangler,
   WranglerError,
 } from '../src/cloudflare/wrangler.ts';
+import { email } from '../src/commands/email.ts';
 import { init, normaliseRoute } from '../src/commands/init.ts';
 import { lakeMaintain, PYICEBERG } from '../src/commands/lake.ts';
 import { mcpBridge } from '../src/commands/mcp.ts';
@@ -775,6 +776,50 @@ describe('onboarding details', () => {
       renderWranglerConfig({ ...config, route: 'acme.com/_glass/*' }),
       /"workers_dev": false/,
     );
+  });
+
+  it('binds Email Sending with only the configured sender, and the email command sets it', async () => {
+    const config: GlassConfig = {
+      name: 'glass-web-app',
+      accountId: 'acc',
+      host: HOST,
+      project: 'web-app',
+      store: 'd1',
+      d1: { name: 'glass-web-app', id: 'db' },
+      replay: null,
+      lake: null,
+      route: null,
+      eu: false,
+      version: GLASS_VERSION,
+    };
+    assert.doesNotMatch(renderWranglerConfig(config), /send_email/);
+    const jsonc = renderWranglerConfig({ ...config, email: { from: 'reports@acme.com' } });
+    const rendered = JSON.parse(jsonc.replace(/^\s*\/\/.*$/gm, ''));
+    assert.deepEqual(rendered.send_email, [
+      { name: 'EMAIL', allowed_sender_addresses: ['reports@acme.com'] },
+    ]);
+    assert.equal(rendered.vars.GLASS_EMAIL_FROM, 'reports@acme.com');
+
+    const dir = mkdtempSync(join(tmpdir(), 'glass-email-'));
+    mkdirSync(join(dir, '.glass'));
+    writeFileSync(join(dir, '.glass', 'config.json'), JSON.stringify(config));
+    const cwd = process.cwd();
+    process.chdir(dir);
+    try {
+      await assert.rejects(() => email('enable', { from: 'nope' }), /Which address/);
+      await email('enable', { from: 'reports@acme.com', json: true });
+      assert.deepEqual(JSON.parse(readFileSync(join(dir, '.glass', 'config.json'), 'utf8')).email, {
+        from: 'reports@acme.com',
+      });
+      await email('disable', { json: true });
+      assert.equal(
+        JSON.parse(readFileSync(join(dir, '.glass', 'config.json'), 'utf8')).email,
+        null,
+      );
+      await assert.rejects(() => email('send', {}), /email enable/);
+    } finally {
+      process.chdir(cwd);
+    }
   });
 
   it("doesn't copy the Dataflare section into a CLAUDE.md that imports AGENTS.md", () => {

@@ -14,7 +14,11 @@ const MIN = 60_000;
 const BASE = NOW - 2 * DAY;
 
 /** One person's visit: steps a minute apart, in one session. */
-function visit(person: string, steps: string[], opts: { session?: string; at?: number } = {}): TestEvent[] {
+function visit(
+  person: string,
+  steps: string[],
+  opts: { session?: string; at?: number } = {},
+): TestEvent[] {
   const at = opts.at ?? BASE;
   return steps.map((step, i) => ({
     distinct_id: person,
@@ -92,10 +96,11 @@ describe('paths', () => {
     // The end is the last column; what led there is before it.
     assert.equal(node(end, 3, '/pricing')?.count, 5);
     assert.equal(link(end, '2:/', '3:/pricing')?.count, 3);
-    assert.deepEqual(
-      end.topPaths.find((p) => p.items[0] === '/blog/two')?.items,
-      ['/blog/two', '/', '/pricing'],
-    );
+    assert.deepEqual(end.topPaths.find((p) => p.items[0] === '/blog/two')?.items, [
+      '/blog/two',
+      '/',
+      '/pricing',
+    ]);
   });
 
   it('between a start and an end keeps only paths that got there, and stops at the end', async () => {
@@ -167,32 +172,60 @@ describe('paths', () => {
     assert.equal(other?.count, 3);
     const min = await run(seed(), { steps: 2, minPeople: 2 });
     assert.ok(min.links.every((l) => l.count >= 2));
-    assert.ok(min.nodes.every((n) => min.links.some((l) => l.source === n.id || l.target === n.id)));
+    assert.ok(
+      min.nodes.every((n) => min.links.some((l) => l.source === n.id || l.target === n.id)),
+    );
   });
 
   it('looks around a funnel step', async () => {
-    const funnel = { steps: [{ event: '$pageview', filters: [{ property: 'path', value: '/' }] }, { event: '$pageview', filters: [{ property: 'path', value: '/pricing' }] }] };
+    const funnel = {
+      steps: [
+        { event: '$pageview', filters: [{ property: 'path', value: '/' }] },
+        { event: '$pageview', filters: [{ property: 'path', value: '/pricing' }] },
+      ],
+    };
     const after = await run(seed(), { funnel: { spec: funnel, step: 2, mode: 'after' }, steps: 3 });
     // a, b, c, e reached /pricing after /: their paths start there.
     assert.equal(node(after, 1, '/pricing')?.count, 4);
-    const dropoff = await run(seed(), { funnel: { spec: funnel, step: 2, mode: 'dropoff' }, steps: 3 });
+    const dropoff = await run(seed(), {
+      funnel: { spec: funnel, step: 2, mode: 'dropoff' },
+      steps: 3,
+    });
     // No one who visited / failed to reach /pricing except f (/ is f's last page).
     assert.equal(dropoff.total, 1);
-    const between = await run(seed(), { funnel: { spec: funnel, step: 1, mode: 'between' }, steps: 4 });
+    const between = await run(seed(), {
+      funnel: { spec: funnel, step: 1, mode: 'between' },
+      steps: 4,
+    });
     // c went / → /docs → /pricing: /docs sits between.
     assert.equal(link(between, '1:/', '2:/docs')?.count, 1);
     assert.ok(!between.nodes.some((n) => n.label === '/signup'));
-    const before = await run(seed(), { funnel: { spec: funnel, step: 2, mode: 'before' }, steps: 3 });
+    const before = await run(seed(), {
+      funnel: { spec: funnel, step: 2, mode: 'before' },
+      steps: 3,
+    });
     assert.equal(before.direction, 'backward');
     assert.equal(node(before, 3, '/pricing')?.count, 4);
   });
 
   it('rejects specs that cannot work', async () => {
     const funnel = { steps: [{ event: 'a' }, { event: 'b' }] };
-    await assert.rejects(run(seed(), { funnel: { spec: funnel, step: 1, mode: 'after' }, start: { value: '/' } }), /not both/);
-    await assert.rejects(run(seed(), { funnel: { spec: { ...funnel, order: 'unordered' }, step: 1, mode: 'after' } }), /ordered/);
-    await assert.rejects(run(seed(), { funnel: { spec: funnel, step: 2, mode: 'between' } }), /before the last/);
-    await assert.rejects(run(seed(), { funnel: { spec: funnel, step: 1, mode: 'dropoff' } }), /step 2/);
+    await assert.rejects(
+      run(seed(), { funnel: { spec: funnel, step: 1, mode: 'after' }, start: { value: '/' } }),
+      /not both/,
+    );
+    await assert.rejects(
+      run(seed(), { funnel: { spec: { ...funnel, order: 'unordered' }, step: 1, mode: 'after' } }),
+      /ordered/,
+    );
+    await assert.rejects(
+      run(seed(), { funnel: { spec: funnel, step: 2, mode: 'between' } }),
+      /before the last/,
+    );
+    await assert.rejects(
+      run(seed(), { funnel: { spec: funnel, step: 1, mode: 'dropoff' } }),
+      /step 2/,
+    );
     await assert.rejects(run(seed(), { include: { pages: false } }), /Include/);
   });
 
@@ -201,12 +234,20 @@ describe('paths', () => {
     const ctx = context(db);
     const spec = pathsSpec.parse({ from: '-7d', steps: 4 });
     const actors = async (sel: Parameters<typeof compilePathsActors>[2]) =>
-      (await ctx.execute(compilePathsActors(spec, ctx, sel, { limit: 50, offset: 0 }))).map((r) => r.actor);
+      (await ctx.execute(compilePathsActors(spec, ctx, sel, { limit: 50, offset: 0 }))).map(
+        (r) => r.actor,
+      );
     assert.deepEqual(await actors({ node: '1:/' }), ['a', 'b', 'c']);
     assert.deepEqual(await actors({ node: '1:/', target: '2:/pricing' }), ['a', 'b']);
     assert.deepEqual(await actors({ node: '3:/signup', dropOff: true }), ['a']);
-    assert.throws(() => compilePathsActors(spec, ctx, { node: '1:Other' }, { limit: 1, offset: 0 }), /Other/);
-    assert.throws(() => compilePathsActors(spec, ctx, { node: 'nope' }, { limit: 1, offset: 0 }), /node id/);
+    assert.throws(
+      () => compilePathsActors(spec, ctx, { node: '1:Other' }, { limit: 1, offset: 0 }),
+      /Other/,
+    );
+    assert.throws(
+      () => compilePathsActors(spec, ctx, { node: 'nope' }, { limit: 1, offset: 0 }),
+      /node id/,
+    );
   });
 });
 

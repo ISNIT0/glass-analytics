@@ -5,6 +5,7 @@
  * gets the same answer whichever way it asks.
  */
 
+import { alertConditionSchema, alertTargetSchema, describeCondition } from '@dataflare/core/alerts';
 import {
   type CohortDefinition,
   cohortDefinitionV2,
@@ -13,6 +14,12 @@ import {
   describeCohort,
   normaliseCohort,
 } from '@dataflare/core/cohorts';
+import {
+  DASHBOARD_TEMPLATES,
+  guessEvents,
+  type TemplateTile,
+  templateTiles,
+} from '@dataflare/core/dashboard-templates';
 import { TEMPLATES } from '@dataflare/core/destinations/index';
 import { MAX_GROUP_TYPES } from '@dataflare/core/events';
 import { COHORT_PROPERTY, type CohortMembers, type Filter, toList } from '@dataflare/core/filters';
@@ -34,6 +41,7 @@ import {
 } from '@dataflare/core/insights/actors';
 import { issueCounts, issueDetail, issueSeries } from '@dataflare/core/insights/errors';
 import { planExperiment, runExperiment } from '@dataflare/core/insights/experiment';
+import { suggestPathRules } from '@dataflare/core/insights/paths';
 import {
   type EventRole,
   type KeyEvent,
@@ -43,7 +51,6 @@ import {
   SOURCE_DIMENSIONS,
   type SourceDimension,
 } from '@dataflare/core/insights/report';
-import { suggestPathRules } from '@dataflare/core/insights/paths';
 import { runRevenue } from '@dataflare/core/insights/revenue';
 import { experimentOptions, metricSchema } from '@dataflare/core/insights/schemas';
 import { runSites } from '@dataflare/core/insights/sites';
@@ -65,6 +72,8 @@ import {
   summariseReplay,
   type TimelineItem,
 } from '@dataflare/core/replay-summary';
+import { type ReportTile, reportTile } from '@dataflare/core/reports';
+import { describeSchedule, quietHoursSchema, scheduleSchema } from '@dataflare/core/schedule';
 import {
   excludeInternal,
   type ProjectSettings,
@@ -85,6 +94,14 @@ import {
 } from '@dataflare/core/version';
 import { z } from 'zod/v4';
 import {
+  alertHistory,
+  checkAlert,
+  deleteAlert,
+  getAlert,
+  listAlerts,
+  saveAlert,
+} from './alerts.ts';
+import {
   type CohortRow,
   cohortContext,
   cohortsUsedByFlags,
@@ -92,6 +109,18 @@ import {
   materialise,
   membershipSql,
 } from './cohorts.ts';
+import {
+  addTile,
+  deleteDashboard,
+  duplicateDashboard,
+  getDashboard,
+  listDashboards,
+  removeTile,
+  reorderTiles,
+  saveDashboard,
+  tileSpec,
+  updateTile,
+} from './dashboards.ts';
 import {
   type DestinationInput,
   deleteDestination,
@@ -170,6 +199,13 @@ import {
   replaysEnabled,
   writeCachedSummary,
 } from './replays.ts';
+import {
+  deleteSubscription,
+  listSubscriptions,
+  type ReportContext,
+  runNow,
+  saveSubscription,
+} from './reports.ts';
 import { connectStripe, disconnectStripe, storeRates, stripeStatus } from './revenue.ts';
 import type { EventStore } from './stores/types.ts';
 import {
@@ -281,6 +317,147 @@ const reportRange = {
     .preprocess(jsonValue, z.array(filterSchema))
     .optional()
     .describe('Only events matching these, e.g. [{"property":"utm_source","value":"google"}].'),
+};
+
+const filtersInput = z
+  .object({
+    from: z.string().optional().describe('Date range start for every tile, e.g. "-30d".'),
+    to: z.string().optional(),
+    filters: z.array(filterSchema).optional().describe('Filters added to every tile.'),
+    filterTestAccounts: z.boolean().optional(),
+  })
+  .describe("The dashboard's date range and filters; a tile can ignore them.");
+
+const channelsInput = z
+  .object({
+    destinations: z
+      .array(z.string())
+      .max(10)
+      .optional()
+      .describe('Ids of Slack, Discord, Teams or webhook destinations (list_destinations).'),
+    emails: z
+      .array(z.string().email())
+      .max(200)
+      .optional()
+      .describe('Email addresses (needs email set up).'),
+  })
+  .describe('Where it goes.');
+
+const tileInput = {
+  insightKey: z.string().optional().describe('A saved analysis to show.'),
+  insight: z
+    .object({ name: z.string().min(1), kind: insightKind, spec: z.record(z.string(), z.unknown()) })
+    .optional()
+    .describe('Or a new analysis: saved, then added.'),
+  text: z
+    .string()
+    .max(4000)
+    .optional()
+    .describe('Or a text tile (headings, **bold**, _italic_, links, lists).'),
+  width: z
+    .union([z.literal(3), z.literal(4), z.literal(6), z.literal(12)])
+    .optional()
+    .describe('Columns of 12. Default 6.'),
+  height: z
+    .union([z.literal(1), z.literal(2)])
+    .optional()
+    .describe('1 (short, default) or 2 (tall).'),
+  ignoreFilters: z
+    .boolean()
+    .optional()
+    .describe("Don't apply the dashboard's date range and filters."),
+  overrides: z
+    .record(z.string(), z.unknown())
+    .optional()
+    .describe('Shown on this tile only, e.g. { "display": "bar" }.'),
+};
+
+const BOARD_INPUTS = {
+  listDashboards: z.object({ project }),
+  getDashboard: z.object({
+    project,
+    id: z.string(),
+    results: z
+      .preprocess((v) => (v === 'true' ? true : v === 'false' ? false : v), z.boolean())
+      .optional()
+      .describe("Also run every tile and include each one's headline numbers."),
+  }),
+  saveDashboard: z.object({
+    project,
+    id: z.string().optional().describe('Update this dashboard; omit to create one.'),
+    name: z.string().min(1).max(120),
+    description: z.string().max(500).optional(),
+    filters: filtersInput.optional(),
+  }),
+  deleteDashboard: z.object({ project, id: z.string() }),
+  duplicateDashboard: z.object({ project, id: z.string(), name: z.string().min(1).max(120) }),
+  addDashboardTile: z.object({ project, dashboard: z.string(), ...tileInput }),
+  updateDashboardTile: z.object({ project, dashboard: z.string(), tile: z.string(), ...tileInput }),
+  removeDashboardTile: z.object({ project, dashboard: z.string(), tile: z.string() }),
+  reorderDashboardTiles: z.object({
+    project,
+    dashboard: z.string(),
+    tiles: z.array(z.string()).max(60),
+  }),
+  dashboardTemplates: z.object({ project }),
+  createDashboardFromTemplate: z.object({
+    project,
+    template: z.string().describe('website, product, revenue or errors (dashboard_templates).'),
+    name: z.string().optional(),
+    events: z
+      .object({ signup: z.string().optional(), purchase: z.string().optional() })
+      .optional()
+      .describe('Your signup and purchase events; guessed from event names when left out.'),
+  }),
+  listSubscriptions: z.object({
+    project,
+    dashboard: z.string().optional(),
+    insight: z.string().optional(),
+  }),
+  saveSubscription: z.object({
+    project,
+    id: z.string().optional().describe('Update this report; omit to create one.'),
+    target: z
+      .enum(['dashboard', 'insight'])
+      .describe('Report on a dashboard or one saved analysis.'),
+    targetId: z.string().describe('The dashboard id or analysis key.'),
+    name: z.string().max(120).optional(),
+    channels: channelsInput,
+    schedule: scheduleSchema,
+    tiles: z
+      .array(z.string())
+      .max(20)
+      .optional()
+      .describe('Dashboard tile ids to include; default the first 20.'),
+    message: z.string().max(500).optional().describe('A line at the top of each report.'),
+    enabled: z.boolean().optional(),
+  }),
+  deleteSubscription: z.object({ project, id: z.string() }),
+  sendSubscriptionNow: z.object({ project, id: z.string() }),
+  listAlerts: z.object({ project, insight: z.string().optional() }),
+  getAlert: z.object({ project, id: z.string(), days: z.number().int().min(1).max(90).optional() }),
+  saveAlert: z.object({
+    project,
+    id: z.string().optional().describe('Update this alert; omit to create one.'),
+    name: z.string().min(1).max(120),
+    insightKey: z.string().describe('The saved trends or funnel analysis to watch.'),
+    target: alertTargetSchema.optional(),
+    condition: alertConditionSchema,
+    schedule: scheduleSchema.describe(
+      'When to check, e.g. { "frequency": "hourly", "minute": 5 }.',
+    ),
+    ongoing: z
+      .boolean()
+      .optional()
+      .describe('Check the period still filling up (default: the last complete one).'),
+    skipWeekends: z.boolean().optional(),
+    quiet: quietHoursSchema.optional(),
+    channels: channelsInput,
+    enabled: z.boolean().optional(),
+  }),
+  deleteAlert: z.object({ project, id: z.string() }),
+  checkAlertNow: z.object({ project, id: z.string() }),
+  capabilities: z.object({ project }),
 };
 
 export const inputs = {
@@ -805,7 +982,9 @@ export const inputs = {
   }),
   actors: z.object({
     project,
-    kind: z.enum(['trends', 'funnel', 'retention', 'paths']).describe('The insight the number comes from.'),
+    kind: z
+      .enum(['trends', 'funnel', 'retention', 'paths'])
+      .describe('The insight the number comes from.'),
     spec: z
       .record(z.string(), z.unknown())
       .describe(
@@ -1069,6 +1248,7 @@ export const inputs = {
       .describe('Query spec without kind/project (series, steps, cohortEvent, …).'),
   }),
   deleteInsight: z.object({ project, key: z.string() }),
+  ...BOARD_INPUTS,
 };
 
 /** Cohort key → name, so summaries name the cohorts a definition references. */
@@ -4721,6 +4901,414 @@ GROUP BY path ORDER BY views DESC, path LIMIT 2000`);
       .run();
     if (!result.meta.changes) throw new HttpError(404, `No saved analysis "${spec.key}"`);
     return { project: ctx.project, deleted: spec.key, summary: `Deleted analysis "${spec.key}".` };
+  }
+
+  // ── Dashboards, reports and alerts ─────────────────────────────────────
+
+  /** What reports and alerts need: run a query as this service, the project zone, links. */
+  reportRunner(fetcher?: typeof fetch): ReportContext {
+    return {
+      env: this.env,
+      base: this.baseUrl,
+      fetcher,
+      query: async (project, kind, spec) => this.runInsight(kind, { ...spec, project }),
+      timezone: async (project) =>
+        (await getProject(this.env.DB, project))?.settings.timezone ?? 'UTC',
+    };
+  }
+
+  async capabilities(input: unknown) {
+    const { project: requested } = BOARD_INPUTS.capabilities.parse(input);
+    const ctx = await this.context(requested);
+    const email = Boolean(this.env.EMAIL && this.env.GLASS_EMAIL_FROM);
+    return {
+      project: ctx.project,
+      email,
+      emailFrom: email ? this.env.GLASS_EMAIL_FROM : null,
+      replay: replaysEnabled(this.env),
+      store: this.store.kind,
+      summary: email
+        ? `Reports and alerts can go to chat channels and email (from ${this.env.GLASS_EMAIL_FROM}).`
+        : 'Reports and alerts can go to chat channels; email is not set up (`dataflare email enable`).',
+    };
+  }
+
+  async listDashboards(input: unknown) {
+    const ctx = await this.context(BOARD_INPUTS.listDashboards.parse(input).project);
+    const dashboards = await listDashboards(this.env.DB, ctx.project);
+    return {
+      project: ctx.project,
+      dashboards: dashboards.map((d) => ({
+        ...d,
+        dashboard: this.link(`dashboards/${d.id}`, { project: ctx.project }),
+      })),
+      summary: dashboards.length
+        ? `${dashboards.length} dashboard${dashboards.length === 1 ? '' : 's'}: ${dashboards.map((d) => d.name).join(', ')}.`
+        : 'No dashboards yet. Start one from a template (dashboard_templates) or with save_dashboard.',
+      dashboard: this.link('dashboards', { project: ctx.project }),
+    };
+  }
+
+  async getDashboard(input: unknown) {
+    const spec = BOARD_INPUTS.getDashboard.parse(input);
+    const ctx = await this.context(spec.project);
+    const d = await getDashboard(this.env.DB, ctx.project, spec.id);
+    const tiles = d.tiles.map((t) => ({
+      ...t,
+      ...(t.insight ? { runSpec: tileSpec(t.insight.spec, d.filters, t.ignoreFilters) } : {}),
+    }));
+    const results = spec.results ? await this.tileSummaries(ctx.project, tiles) : undefined;
+    return {
+      project: ctx.project,
+      ...d,
+      tiles,
+      ...(results ? { results } : {}),
+      summary: `${d.name}: ${d.tiles.length} tile${d.tiles.length === 1 ? '' : 's'}.${results ? ` ${results.map((r) => `${r.title}: ${r.value ?? r.note ?? '–'}`).join('; ')}.` : ''}`,
+      dashboard: this.link(`dashboards/${d.id}`, { project: ctx.project }),
+    };
+  }
+
+  /** Each insight tile's headline numbers, for agents. */
+  private async tileSummaries(
+    project: string,
+    tiles: { insight?: { name: string; kind: string } | null; runSpec?: Record<string, unknown> }[],
+  ) {
+    const out: ReportTile[] = [];
+    for (const t of tiles) {
+      if (!t.insight || !t.runSpec) continue;
+      try {
+        const spec = t.insight.kind === 'trends' ? { ...t.runSpec, compare: true } : t.runSpec;
+        const r = await this.runInsight(t.insight.kind, { ...spec, project });
+        out.push({ ...reportTile(t.insight.name, t.insight.kind, r), chart: null });
+      } catch (err) {
+        out.push({
+          title: t.insight.name,
+          note: err instanceof Error ? err.message : String(err),
+          chart: null,
+        });
+      }
+    }
+    return out;
+  }
+
+  async saveDashboard(input: unknown) {
+    const spec = BOARD_INPUTS.saveDashboard.parse(input);
+    const ctx = await this.context(spec.project);
+    const r = await saveDashboard(this.env.DB, ctx.project, spec, Date.now());
+    return {
+      project: ctx.project,
+      ...r,
+      summary: `${r.created ? 'Created' : 'Updated'} dashboard "${spec.name}".`,
+      dashboard: this.link(`dashboards/${r.id}`, { project: ctx.project }),
+    };
+  }
+
+  async deleteDashboard(input: unknown) {
+    const spec = BOARD_INPUTS.deleteDashboard.parse(input);
+    const ctx = await this.context(spec.project);
+    await deleteDashboard(this.env.DB, ctx.project, spec.id);
+    return {
+      project: ctx.project,
+      deleted: spec.id,
+      summary: `Deleted the dashboard and its reports (the analyses stay).`,
+    };
+  }
+
+  async duplicateDashboard(input: unknown) {
+    const spec = BOARD_INPUTS.duplicateDashboard.parse(input);
+    const ctx = await this.context(spec.project);
+    const r = await duplicateDashboard(this.env.DB, ctx.project, spec.id, spec.name, Date.now());
+    return {
+      project: ctx.project,
+      ...r,
+      summary: `Copied to "${spec.name}".`,
+      dashboard: this.link(`dashboards/${r.id}`, { project: ctx.project }),
+    };
+  }
+
+  /** A tile's analysis: the key given, or a new analysis saved first. */
+  private async tileInsightKey(
+    project: string,
+    spec: {
+      insightKey?: string;
+      insight?: { name: string; kind: string; spec: Record<string, unknown> };
+    },
+  ) {
+    if (spec.insightKey || !spec.insight) return spec.insightKey;
+    const saved = await this.saveInsight({
+      project,
+      ...spec.insight,
+      key: await this.freeInsightKey(project, spec.insight.name),
+    });
+    return saved.key;
+  }
+
+  /** A key for a new analysis that doesn't overwrite an existing one. */
+  private async freeInsightKey(project: string, name: string): Promise<string> {
+    const base = slugKey(name).slice(0, 56) || 'analysis';
+    for (let n = 1; n < 100; n++) {
+      const key = n === 1 ? base : `${base}-${n}`;
+      const taken = await this.env.DB.prepare(
+        'SELECT 1 FROM insights WHERE project = ? AND key = ?',
+      )
+        .bind(project, key)
+        .first();
+      if (!taken && key !== 'new' && !insightKind.safeParse(key).success) return key;
+    }
+    return `${base}-${Date.now().toString(36)}`;
+  }
+
+  async addDashboardTile(input: unknown) {
+    const spec = BOARD_INPUTS.addDashboardTile.parse(input);
+    const ctx = await this.context(spec.project);
+    const insightKey = await this.tileInsightKey(ctx.project, spec);
+    const tile = await addTile(
+      this.env.DB,
+      ctx.project,
+      spec.dashboard,
+      { ...spec, insightKey, kind: insightKey ? 'insight' : 'text' },
+      Date.now(),
+    );
+    return {
+      project: ctx.project,
+      tile,
+      summary: 'Added the tile.',
+      dashboard: this.link(`dashboards/${spec.dashboard}`, { project: ctx.project }),
+    };
+  }
+
+  async updateDashboardTile(input: unknown) {
+    const spec = BOARD_INPUTS.updateDashboardTile.parse(input);
+    const ctx = await this.context(spec.project);
+    await updateTile(this.env.DB, ctx.project, spec.dashboard, spec.tile, spec, Date.now());
+    return { project: ctx.project, summary: 'Updated the tile.' };
+  }
+
+  async removeDashboardTile(input: unknown) {
+    const spec = BOARD_INPUTS.removeDashboardTile.parse(input);
+    const ctx = await this.context(spec.project);
+    await removeTile(this.env.DB, ctx.project, spec.dashboard, spec.tile, Date.now());
+    return { project: ctx.project, summary: 'Removed the tile (the analysis stays).' };
+  }
+
+  async reorderDashboardTiles(input: unknown) {
+    const spec = BOARD_INPUTS.reorderDashboardTiles.parse(input);
+    const ctx = await this.context(spec.project);
+    await reorderTiles(this.env.DB, ctx.project, spec.dashboard, spec.tiles, Date.now());
+    return { project: ctx.project, summary: 'Saved the order.' };
+  }
+
+  /** The starter dashboards, with the events they would use here. */
+  async dashboardTemplates(input: unknown) {
+    const ctx = await this.context(BOARD_INPUTS.dashboardTemplates.parse(input).project);
+    const events = guessEvents(await this.eventNamesByVolume(ctx.project));
+    return {
+      project: ctx.project,
+      events,
+      templates: DASHBOARD_TEMPLATES.map((t) => ({
+        id: t.id,
+        name: t.name,
+        description: t.description,
+        needs: t.needs,
+      })),
+      summary: `Templates: ${DASHBOARD_TEMPLATES.map((t) => t.name).join(', ')}. Guessed signup: ${events.signup ?? 'none'}; purchase: ${events.purchase ?? 'none'}.`,
+    };
+  }
+
+  private async eventNamesByVolume(project: string): Promise<string[]> {
+    const d = this.store.dialect;
+    const rows = await this.store.query(
+      `SELECT event, COUNT(*) AS n FROM ${d.table('events')} WHERE project = ${d.str(project)} AND ts_ms >= ${d.num(Date.now() - 30 * DAY_MS)} GROUP BY event ORDER BY n DESC LIMIT 200`,
+    );
+    return rows.map((r) => String(r.event));
+  }
+
+  async createDashboardFromTemplate(input: unknown) {
+    const spec = BOARD_INPUTS.createDashboardFromTemplate.parse(input);
+    const ctx = await this.context(spec.project);
+    // Events given (and not blank) win over the guesses.
+    const given = Object.fromEntries(Object.entries(spec.events ?? {}).filter(([, v]) => v));
+    const events = { ...guessEvents(await this.eventNamesByVolume(ctx.project)), ...given };
+    let tiles: TemplateTile[];
+    try {
+      tiles = templateTiles(spec.template, events);
+    } catch (err) {
+      throw new HttpError(
+        400,
+        err instanceof Error ? err.message : String(err),
+        'Pass events: { signup, purchase }.',
+      );
+    }
+    const template = DASHBOARD_TEMPLATES.find((t) => t.id === spec.template)!;
+    const now = Date.now();
+    const d = await saveDashboard(
+      this.env.DB,
+      ctx.project,
+      { name: spec.name ?? template.name, description: template.description },
+      now,
+    );
+    for (const t of tiles) {
+      const insightKey = t.insight
+        ? await this.tileInsightKey(ctx.project, { insight: t.insight })
+        : undefined;
+      await addTile(
+        this.env.DB,
+        ctx.project,
+        d.id,
+        {
+          insightKey,
+          text: t.text,
+          width: t.width,
+          height: t.height,
+          kind: insightKey ? 'insight' : 'text',
+        },
+        now,
+      );
+    }
+    return {
+      project: ctx.project,
+      id: d.id,
+      summary: `Created "${spec.name ?? template.name}" with ${tiles.length} tiles.`,
+      dashboard: this.link(`dashboards/${d.id}`, { project: ctx.project }),
+    };
+  }
+
+  async listSubscriptions(input: unknown) {
+    const spec = BOARD_INPUTS.listSubscriptions.parse(input);
+    const ctx = await this.context(spec.project);
+    const target = spec.dashboard
+      ? { kind: 'dashboard', id: spec.dashboard }
+      : spec.insight
+        ? { kind: 'insight', id: spec.insight }
+        : undefined;
+    const subscriptions = (await listSubscriptions(this.env.DB, ctx.project, target)).map((s) => ({
+      ...s,
+      when: describeSchedule(s.schedule),
+      nextRun: new Date(s.nextRunAt).toISOString(),
+    }));
+    return {
+      project: ctx.project,
+      subscriptions,
+      summary: subscriptions.length
+        ? subscriptions
+            .map(
+              (s) =>
+                `${s.name || s.targetId}: ${s.when}${s.lastStatus === 'failed' ? ` (last failed: ${s.lastError})` : ''}`,
+            )
+            .join('; ')
+        : 'No scheduled reports.',
+    };
+  }
+
+  async saveSubscription(input: unknown) {
+    const spec = BOARD_INPUTS.saveSubscription.parse(input);
+    const ctx = await this.context(spec.project);
+    const r = await saveSubscription(this.reportRunner(), ctx.project, spec, Date.now());
+    return {
+      project: ctx.project,
+      ...r,
+      nextRun: new Date(r.nextRunAt).toISOString(),
+      summary: `${r.created ? 'Scheduled' : 'Updated'}: ${r.when}. Next: ${new Date(r.nextRunAt).toISOString()}.`,
+    };
+  }
+
+  async deleteSubscription(input: unknown) {
+    const spec = BOARD_INPUTS.deleteSubscription.parse(input);
+    const ctx = await this.context(spec.project);
+    await deleteSubscription(this.env.DB, ctx.project, spec.id);
+    return { project: ctx.project, summary: 'Deleted the report.' };
+  }
+
+  async sendSubscriptionNow(input: unknown, fetcher?: typeof fetch) {
+    const spec = BOARD_INPUTS.sendSubscriptionNow.parse(input);
+    const ctx = await this.context(spec.project);
+    const r = await runNow(this.reportRunner(fetcher), ctx.project, spec.id, Date.now());
+    return {
+      project: ctx.project,
+      ...r,
+      summary: r.status === 'sent' ? 'Sent.' : `Not sent: ${r.error}`,
+    };
+  }
+
+  async listAlerts(input: unknown) {
+    const spec = BOARD_INPUTS.listAlerts.parse(input);
+    const ctx = await this.context(spec.project);
+    const alerts = await listAlerts(this.env.DB, ctx.project, spec.insight);
+    return {
+      project: ctx.project,
+      alerts: alerts.map((a) => ({
+        ...a,
+        when: describeSchedule(a.checks.schedule),
+        condition: a.condition,
+        describe: describeCondition(a.condition),
+      })),
+      summary: alerts.length
+        ? alerts
+            .map(
+              (a) => `${a.name}: ${a.state}${a.lastValue !== null ? ` (last ${a.lastValue})` : ''}`,
+            )
+            .join('; ')
+        : 'No alerts.',
+    };
+  }
+
+  async getAlert(input: unknown) {
+    const spec = BOARD_INPUTS.getAlert.parse(input);
+    const ctx = await this.context(spec.project);
+    const a = await getAlert(this.env.DB, ctx.project, spec.id);
+    const history = await alertHistory(
+      this.env.DB,
+      ctx.project,
+      spec.id,
+      Date.now(),
+      spec.days ?? 30,
+    );
+    return {
+      project: ctx.project,
+      ...a,
+      history,
+      summary: `${a.name}: ${a.state}, ${describeCondition(a.condition)}, ${describeSchedule(a.checks.schedule).toLowerCase()}. ${history.length} checks in ${spec.days ?? 30} days, ${history.filter((h) => h.fired).length} fired.`,
+    };
+  }
+
+  async saveAlert(input: unknown) {
+    const spec = BOARD_INPUTS.saveAlert.parse(input);
+    const ctx = await this.context(spec.project);
+    const checks = {
+      schedule: spec.schedule,
+      ongoing: spec.ongoing,
+      skipWeekends: spec.skipWeekends,
+      quiet: spec.quiet,
+    };
+    const r = await saveAlert(this.reportRunner(), ctx.project, { ...spec, checks }, Date.now());
+    return {
+      project: ctx.project,
+      ...r,
+      nextCheck: new Date(r.nextCheckAt).toISOString(),
+      summary: `${r.created ? 'Created' : 'Updated'} alert "${spec.name}": ${describeCondition(spec.condition)}, ${describeSchedule(spec.schedule).toLowerCase()}.`,
+    };
+  }
+
+  async deleteAlert(input: unknown) {
+    const spec = BOARD_INPUTS.deleteAlert.parse(input);
+    const ctx = await this.context(spec.project);
+    await deleteAlert(this.env.DB, ctx.project, spec.id);
+    return { project: ctx.project, summary: 'Deleted the alert.' };
+  }
+
+  async checkAlertNow(input: unknown, fetcher?: typeof fetch) {
+    const spec = BOARD_INPUTS.checkAlertNow.parse(input);
+    const ctx = await this.context(spec.project);
+    const a = await getAlert(this.env.DB, ctx.project, spec.id);
+    const r = await checkAlert(this.reportRunner(fetcher), ctx.project, a, Date.now());
+    const value = r.evaluation?.value;
+    return {
+      project: ctx.project,
+      ...r,
+      summary: r.evaluation
+        ? `${a.name}: ${r.state}${value !== null && value !== undefined ? `, value ${value}` : ''}${r.notified ? ` (sent: ${r.notified})` : ''}.${r.evaluation.note ? ` ${r.evaluation.note}` : ''}`
+        : `${a.name}: ${r.state}: ${r.errors.join('; ')}`,
+    };
   }
 
   /** Seed starter analyses once per project (new creates and empty existing projects). */

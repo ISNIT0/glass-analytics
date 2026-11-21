@@ -374,7 +374,7 @@ export const pathsSpec = z
           .union([z.boolean(), z.array(z.string()).min(1).max(50)])
           .optional()
           .describe(
-            'Custom events: true for all (not Dataflare\'s own bookkeeping), or a list of names. Default false.',
+            "Custom events: true for all (not Dataflare's own bookkeeping), or a list of names. Default false.",
           ),
       })
       .optional()
@@ -411,11 +411,11 @@ export const pathsSpec = z
       .array(pathCleaningRule)
       .max(50)
       .optional()
-      .describe('Rules for this query, applied before the project\'s pathCleaning rules.'),
+      .describe("Rules for this query, applied before the project's pathCleaning rules."),
     projectCleaning: z
       .boolean()
       .optional()
-      .describe('Apply the project\'s pathCleaning rules (see get_settings). Default true.'),
+      .describe("Apply the project's pathCleaning rules (see get_settings). Default true."),
     groups: z
       .array(z.string().min(1).max(500))
       .max(20)

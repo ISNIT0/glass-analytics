@@ -26,6 +26,7 @@ import { handleIngest } from './ingest.ts';
 import { llmsTxt } from './llms.ts';
 import { handleMcp } from './mcp/server.ts';
 import { handleReplayChunk } from './replays.ts';
+import { reportImage, unsubscribe } from './reports.ts';
 import { handleStripeWebhook } from './revenue.ts';
 import { GlassService } from './service.ts';
 import { D1Store } from './stores/d1.ts';
@@ -175,6 +176,53 @@ const ROUTES: Record<string, Route> = {
   },
 };
 
+/** The Workers Cache API, when there is one (not in Node). */
+const edgeCache = () => (globalThis as { caches?: { default?: Cache } }).caches?.default;
+
+/** A report chart: rendered on the first fetch, then served from the edge cache. */
+async function reportImageResponse(
+  c: RequestContext,
+  run: string,
+  index: number,
+): Promise<Response> {
+  const cache = edgeCache();
+  const hit = await cache?.match(c.request);
+  if (hit) return hit;
+  const q = c.url.searchParams;
+  const png = await reportImage(c.env, run, index, Number(q.get('e')), q.get('s') ?? '', c.now);
+  const response = new Response(png as BodyInit, {
+    headers: { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=86400, immutable' },
+  });
+  await cache?.put(c.request, response.clone());
+  return response;
+}
+
+/** Signed public links: report chart images, and unsubscribing from a report. */
+async function publicLinks(c: RequestContext): Promise<Response | null> {
+  const image = /^\/report\/([a-z0-9]{1,16})\/(\d{1,2})\.png$/.exec(c.path);
+  if (image) return reportImageResponse(c, image[1]!, Number(image[2]));
+  const unsub = /^\/unsubscribe\/([A-Za-z0-9_-]{1,64})\/([a-z0-9]{1,16})$/.exec(c.path);
+  if (!unsub) return null;
+  const q = c.url.searchParams;
+  const message = await unsubscribe(
+    c.env,
+    unsub[1]!,
+    unsub[2]!,
+    q.get('email') ?? '',
+    q.get('s') ?? '',
+  );
+  const safe = message.replaceAll('&', '&amp;').replaceAll('<', '&lt;');
+  return new Response(
+    `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Unsubscribed</title><body style="font-family:system-ui,sans-serif;max-width:32rem;margin:4rem auto;padding:0 1rem;color:#16201c"><h1 style="font-size:1.25rem">Unsubscribed</h1><p>${safe}</p></body>`,
+    {
+      headers: {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'",
+      },
+    },
+  );
+}
+
 /** Stripe webhooks (authenticated by their signature, not an API key), then the API. */
 async function stripeOrApi(c: RequestContext): Promise<Response | null> {
   const stripe = /^\/hooks\/stripe\/([A-Za-z0-9_-]{1,64})\/?$/.exec(c.path);
@@ -196,7 +244,7 @@ export function createApp(options: AppOptions) {
     const c = requestContext(request, env, options, makeStore);
     try {
       const route = Object.hasOwn(ROUTES, c.path) ? ROUTES[c.path] : undefined;
-      const routed = (await route?.(c)) ?? (await stripeOrApi(c));
+      const routed = (await route?.(c)) ?? (await publicLinks(c)) ?? (await stripeOrApi(c));
       if (routed) return routed;
       throw new HttpError(404, `Nothing at ${c.path}`, `See ${c.base}/api or ${c.base}/llms.txt`);
     } catch (err) {

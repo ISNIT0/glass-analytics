@@ -43,10 +43,7 @@ export const actorSelection = z
       .min(0)
       .optional()
       .describe('Retention: period number (0 is the cohort itself).'),
-    node: z
-      .string()
-      .optional()
-      .describe('Paths: a node id from the result, e.g. "2:/pricing".'),
+    node: z.string().optional().describe('Paths: a node id from the result, e.g. "2:/pricing".'),
     target: z
       .string()
       .optional()
@@ -83,7 +80,8 @@ export const ACTOR_COMPILERS: Record<string, ActorCompiler> = {
       page,
     ),
   paths: (spec, ctx, sel, page) => {
-    if (!sel.node) throw new TypeError('Paths drill-down needs selection.node (a node id from the result).');
+    if (!sel.node)
+      throw new TypeError('Paths drill-down needs selection.node (a node id from the result).');
     return compilePathsActors(
       spec as Parameters<typeof compilePathsActors>[0],
       ctx,
