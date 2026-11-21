@@ -1,15 +1,23 @@
 /**
  * Settings › Notification channels: the Slack, Discord, Teams and webhook channels scheduled
- * reports and alerts go to. They are destinations (the same table as Pipelines), created
- * paused so they never forward events: reports and alerts reach them anyway.
+ * reports and alerts go to. They are rows in the destinations table (so they share its
+ * encrypted secrets, test sends and delivery log), created paused and matching only `$report`,
+ * an event nothing sends, so they never forward events. Pipelines leaves them out.
  */
 
 import { api } from '../api.ts';
 import { h, mount } from '../dom.ts';
-import { href, scope } from '../state.ts';
+import { scope } from '../state.ts';
 import { selectMenu } from './menu.ts';
 import { channelSources } from './report-dialogs.ts';
 import { empty, errorState, later, panel, toast } from './ui.ts';
+
+/** What a channel matches: an event no one sends. */
+const CHANNEL_EVENTS = ['$report'];
+
+/** A notification channel, as opposed to a destination that forwards events. */
+export const isChannel = (d: { match?: { events?: string[] } }): boolean =>
+  d.match?.events?.length === 1 && d.match.events[0] === CHANNEL_EVENTS[0];
 
 const KINDS = [
   { value: 'slack', label: 'Slack (incoming webhook)' },
@@ -71,9 +79,8 @@ function addForm(reload: () => void): HTMLElement {
         name:
           name.value.trim() || KINDS.find((k) => k.value === template)!.label.replace(/ \(.*$/, ''),
         template,
-        // Paused, and for an event nothing sends: a channel only carries reports and alerts.
         enabled: false,
-        events: ['$report'],
+        events: CHANNEL_EVENTS,
         filters: [],
         inputs: { url: url.value.trim() },
       });
@@ -131,18 +138,7 @@ export function notificationChannelsPanel(): HTMLElement {
               { class: 'muted small' },
               'Email reports need Cloudflare Email Sending: run dataflare email enable --from reports@yourdomain.com.',
             );
-        return [
-          list,
-          addForm(load),
-          email,
-          h(
-            'p',
-            { class: 'muted small' },
-            'Channels are destinations that forward no events; ',
-            h('a', { href: href('pipelines/destinations') }, 'Pipelines'),
-            ' shows them too.',
-          ),
-        ];
+        return [list, addForm(load), email];
       }),
     );
   load();
