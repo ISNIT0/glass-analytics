@@ -325,6 +325,15 @@ kbd {
   grid-template-columns: 28px minmax(0, 1fr);
 }
 
+/* .select-trigger (later in the file) sets page ink; the rail is dark in both themes. */
+.project-switch.select-trigger {
+  color: var(--rail-ink);
+}
+
+.project-switch.select-trigger > .icon:last-child {
+  color: var(--rail-muted);
+}
+
 button.project-switch:hover {
   border-color: rgb(255 255 255 / 0.16);
   background: var(--rail-2);
