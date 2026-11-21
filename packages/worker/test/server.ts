@@ -99,8 +99,9 @@ export async function startDevServer(
     try {
       await send(res, await app.fetch(await toRequest(req, `http://${req.headers.host}`), env));
     } catch (err) {
+      console.error('[dev server]', err);
       res.statusCode = 500;
-      res.end(String(err));
+      res.end('Internal error (see the dev server log)');
     }
   });
   const glassPort = await listen(glass, options.port ?? 8787);
