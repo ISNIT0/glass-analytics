@@ -4,12 +4,10 @@ import { Marked, type Tokens } from 'marked';
 import { FACTS_CHECKED, INSTALL, REPO } from './config.ts';
 import { COMPETITORS, type Competitor, GLASS, ROWS } from './content/compare.ts';
 import { GUIDES, type Guide } from './content/guides.ts';
-import { command, esc, layout } from './layout.ts';
+import { command, esc, layout, stripTags } from './layout.ts';
 
 export function slugify(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/<[^>]+>/g, '')
+  return stripTags(text.toLowerCase())
     .replace(/[`*_]/g, '')
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '');
@@ -99,7 +97,7 @@ export function markdown(md: string): { html: string; headings: { id: string; te
       ) {
         const text = this.parser.parseInline(token.tokens);
         const id = slugify(token.text);
-        if (token.depth === 2) headings.push({ id, text: text.replace(/<[^>]+>/g, '') });
+        if (token.depth === 2) headings.push({ id, text: stripTags(text) });
         if (token.depth === 1) return '';
         return `<h${token.depth} id="${id}"><a class="anchor" href="#${id}" aria-hidden="true" tabindex="-1">#</a>${text}</h${token.depth}>\n`;
       },
@@ -342,7 +340,7 @@ export function pricingPage(checked: string): string {
           name: q,
           acceptedAnswer: {
             '@type': 'Answer',
-            text: a.replace(/<[^>]+>|&amp;/g, (m) => (m === '&amp;' ? '&' : '')),
+            text: stripTags(a).replaceAll('&amp;', '&'),
           },
         })),
       },
