@@ -92,6 +92,17 @@ export function glassDir(root = projectRoot()): string {
   return join(root, GLASS_DIR);
 }
 
+/** A file's text, or undefined when it doesn't exist. Reading first (not `existsSync` then read)
+ * leaves no gap for the file to change between the check and the use. */
+export function readTextIfExists(path: string): string | undefined {
+  try {
+    return readFileSync(path, 'utf8');
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+    throw err;
+  }
+}
+
 function readJson<T>(path: string): T | null {
   try {
     return JSON.parse(readFileSync(path, 'utf8')) as T;

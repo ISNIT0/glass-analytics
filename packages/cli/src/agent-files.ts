@@ -7,9 +7,10 @@
  * - .mcp.json (and .cursor/mcp.json if .cursor/ exists): the MCP server
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { EVENT_DOCUMENTATION_GUIDE, EVENT_NAMING_GUIDE } from '@dataflare/core/instrument';
+import { readTextIfExists } from './config.ts';
 
 const START = '<!-- glass:start -->';
 const END = '<!-- glass:end -->';
@@ -57,16 +58,15 @@ ${END}`;
 
 /** True when CLAUDE.md pulls in AGENTS.md (`@AGENTS.md`), so it needs no copy of the section. */
 export function importsAgentsMd(path: string): boolean {
-  if (!existsSync(path)) return false;
-  const text = readFileSync(path, 'utf8');
-  return /^@AGENTS\.md\s*$/m.test(text) && !text.includes(START);
+  const text = readTextIfExists(path);
+  return text !== undefined && /^@AGENTS\.md\s*$/m.test(text) && !text.includes(START);
 }
 
 /** Insert or replace the Dataflare section in a markdown file. */
 export function upsertSection(path: string, section: string, createIfMissing: boolean): boolean {
-  const exists = existsSync(path);
-  if (!exists && !createIfMissing) return false;
-  const current = exists ? readFileSync(path, 'utf8') : '';
+  const existing = readTextIfExists(path);
+  if (existing === undefined && !createIfMissing) return false;
+  const current = existing ?? '';
   const pattern = new RegExp(`${START}[\\s\\S]*?${END}`);
   const next = pattern.test(current)
     ? current.replace(pattern, section)
@@ -156,9 +156,10 @@ Destinations, transformations, exports and imports are alpha: their settings may
 
 export function upsertMcpConfig(path: string): boolean {
   let config: { mcpServers?: Record<string, unknown> } = {};
-  if (existsSync(path)) {
+  const existing = readTextIfExists(path);
+  if (existing !== undefined) {
     try {
-      config = JSON.parse(readFileSync(path, 'utf8')) as typeof config;
+      config = JSON.parse(existing) as typeof config;
     } catch {
       return false; // don't overwrite a file we can't parse
     }

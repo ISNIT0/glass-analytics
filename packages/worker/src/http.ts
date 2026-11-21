@@ -69,7 +69,8 @@ export function errorResponse(err: unknown): Response {
   }
   console.error('[glass] unhandled error', err);
   return json(
-    { error: 'Internal error', detail: err instanceof Error ? err.message : String(err) },
+    // The message only: the stack (and whatever `String()` of a non-Error holds) stays in the log.
+    { error: 'Internal error', ...(err instanceof Error ? { detail: err.message } : {}) },
     { status: 500 },
   );
 }
