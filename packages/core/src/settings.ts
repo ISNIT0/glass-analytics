@@ -6,7 +6,7 @@
  */
 
 import { z } from 'zod/v4';
-import { filterSchema } from './insights/schemas.ts';
+import { filterSchema, pathCleaningRule } from './insights/schemas.ts';
 import { isValidTimeZone } from './time.ts';
 
 export const revenueEventSchema = z.object({
@@ -80,6 +80,13 @@ export const projectSettingsSchema = z.object({
     .optional()
     .describe(
       'Error tracking: path fragments of your own code (e.g. "/assets/app-"), so stack frames from them count as in-app.',
+    ),
+  pathCleaning: z
+    .array(pathCleaningRule)
+    .max(100)
+    .optional()
+    .describe(
+      'Paths: page path patterns shown as one step, e.g. [{"match":"/users/*/settings","alias":"/users/:id/settings"}]. suggest_path_rules proposes some. Paths queries apply them unless projectCleaning is false.',
     ),
   allowFlagOverrides: z
     .boolean()

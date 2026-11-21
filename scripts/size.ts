@@ -28,7 +28,8 @@ const BUDGETS: Record<string, number> = {
   // 19: the code field, fold and chip styles shared by the new editors.
   'packages/dashboard/dist/app.css': 19,
   // Destinations, exports, issues, revenue and group analytics (Workers allow 3 MB on Free).
-  'packages/worker/dist/worker.js': 600,
+  // 620: user paths (the compiler, the dashboard's Sankey and rail), +5 KB.
+  'packages/worker/dist/worker.js': 620,
   'packages/cli/dist/glass.js': 42, // import, sourcemaps and stripe commands
 };
 

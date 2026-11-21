@@ -113,6 +113,7 @@ const PATHS: Record<string, string[]> = {
   ],
   trendingUp: ['M23 6l-9.5 9.5-5-5L1 18', 'M17 6h6v6'],
   funnel: ['M3 4h18l-7 8v6l-4 2v-8L3 4z'],
+  paths: ['M3 5h4c5 0 5 14 10 14h4', 'M3 5h4c3 0 5 4 10 4h4', 'M3 12h4'],
   retention: ['M3 3h7v7H3z', 'M14 3h7v7h-7z', 'M14 14h7v7h-7z', 'M3 14h7v7H3z'],
   lineChart: ['M3 3v18h18', 'M7 14l3-3 3 3 5-6'],
   barChart: ['M3 3v18h18', 'M8 17v-5', 'M13 17V8', 'M18 17v-8'],

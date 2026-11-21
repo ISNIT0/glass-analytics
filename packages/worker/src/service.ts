@@ -43,6 +43,7 @@ import {
   SOURCE_DIMENSIONS,
   type SourceDimension,
 } from '@dataflare/core/insights/report';
+import { suggestPathRules } from '@dataflare/core/insights/paths';
 import { runRevenue } from '@dataflare/core/insights/revenue';
 import { experimentOptions, metricSchema } from '@dataflare/core/insights/schemas';
 import { runSites } from '@dataflare/core/insights/sites';
@@ -187,7 +188,7 @@ const SESSION_MATCH_LIMIT = 1000;
 const SETTLED_MS = 30 * 60_000;
 /** analyse_replays computes at most this many missing summaries per call (each reads every chunk of a session). */
 const FRESH_SUMMARIES_PER_CALL = 3;
-const insightKind = z.enum(['trends', 'funnel', 'retention']);
+const insightKind = z.enum(['trends', 'funnel', 'retention', 'paths']);
 
 const csv = (v: unknown) =>
   typeof v === 'string'
@@ -804,7 +805,7 @@ export const inputs = {
   }),
   actors: z.object({
     project,
-    kind: z.enum(['trends', 'funnel', 'retention']).describe('The insight the number comes from.'),
+    kind: z.enum(['trends', 'funnel', 'retention', 'paths']).describe('The insight the number comes from.'),
     spec: z
       .record(z.string(), z.unknown())
       .describe(
@@ -1046,6 +1047,7 @@ export const inputs = {
   }),
   deleteSourcemaps: z.object({ project, release: z.string(), path: z.string().optional() }),
   getSettings: z.object({ project }),
+  suggestPathRules: z.object({ project }),
   updateSettings: z.object({
     project,
     settings: projectSettingsSchema
@@ -1297,6 +1299,7 @@ export class GlassService {
       project,
       execute: (sql) => this.store.query(sql),
       timezone: settings.timezone,
+      pathCleaning: settings.pathCleaning,
       settings,
     };
   }
@@ -1410,7 +1413,7 @@ export class GlassService {
 
   // ── Actors ───────────────────────────────────────────────────────────────
 
-  /** The people, sessions or groups behind one number of a trends, funnel or retention result. */
+  /** The people, sessions or groups behind one number of a trends, funnel, retention or paths result. */
   async actors(input: unknown) {
     const args = inputs.actors.parse(input);
     const compile = ACTOR_COMPILERS[args.kind];
@@ -4528,8 +4531,37 @@ WHERE project = ${d.str(project)} AND session_id = ${d.str(row.session_id)} AND 
         s.revenueEvents?.length
           ? `revenue from ${s.revenueEvents.map((r) => r.event).join(', ')}`
           : 'no revenue events',
+        s.pathCleaning?.length
+          ? `${s.pathCleaning.length} path cleaning rule${s.pathCleaning.length === 1 ? '' : 's'}`
+          : 'no path cleaning rules',
       ].join('; ')}.`,
       dashboard: this.link('settings', { project: p.id }),
+    };
+  }
+
+  /** Path cleaning rules for paths with ids in them, from the last 30 days of page views. */
+  async suggestPathRules(input: unknown) {
+    const spec = inputs.suggestPathRules.parse(input);
+    const ctx = await this.context(spec.project);
+    const d = ctx.dialect;
+    const since = Date.now() - 30 * DAY_MS;
+    const rows = await ctx.execute(`SELECT path, COUNT(*) AS views FROM ${d.table('events')}
+WHERE project = ${d.str(ctx.project)} AND event = '$pageview' AND ts_ms >= ${d.num(since)}
+GROUP BY path ORDER BY views DESC, path LIMIT 2000`);
+    const existing = new Set((ctx.settings.pathCleaning ?? []).map((r) => r.match));
+    const suggestions = suggestPathRules(
+      rows.map((r) => ({ path: String(r.path ?? ''), views: Number(r.views ?? 0) })),
+    ).filter((s) => !existing.has(s.match));
+    return {
+      project: ctx.project,
+      suggestions,
+      summary: suggestions.length
+        ? `${suggestions.length} rule${suggestions.length === 1 ? '' : 's'} would merge paths with ids: ${suggestions
+            .slice(0, 3)
+            .map((s) => `${s.match} → ${s.alias} (${s.paths} paths)`)
+            .join(', ')}. Add them with update_settings (pathCleaning).`
+        : 'No paths with ids to merge in the last 30 days.',
+      dashboard: this.link('settings', { project: ctx.project }),
     };
   }
 
@@ -4587,7 +4619,7 @@ WHERE project = ${d.str(project)} AND session_id = ${d.str(row.session_id)} AND 
       key: r.key,
       name: r.name,
       description: r.description,
-      kind: r.kind as 'trends' | 'funnel' | 'retention',
+      kind: r.kind as 'trends' | 'funnel' | 'retention' | 'paths',
       spec: safeParse(r.spec),
       updatedAt: new Date(r.updated_at).toISOString(),
       dashboard: this.link(`insights/${r.key}`, { project: ctx.project }),
@@ -4625,7 +4657,7 @@ WHERE project = ${d.str(project)} AND session_id = ${d.str(row.session_id)} AND 
       key: row.key,
       name: row.name,
       description: row.description,
-      kind: row.kind as 'trends' | 'funnel' | 'retention',
+      kind: row.kind as 'trends' | 'funnel' | 'retention' | 'paths',
       spec: safeParse(row.spec),
       updatedAt: new Date(row.updated_at).toISOString(),
       dashboard: this.link(`insights/${row.key}`, { project: ctx.project }),
@@ -4647,7 +4679,7 @@ WHERE project = ${d.str(project)} AND session_id = ${d.str(row.session_id)} AND 
       throw new HttpError(
         400,
         `Key "${key}" is reserved`,
-        'Pick another name; trends, funnel, retention and new are used by the UI.',
+        'Pick another name; trends, funnel, retention, paths and new are used by the UI.',
       );
     }
     const now = Date.now();

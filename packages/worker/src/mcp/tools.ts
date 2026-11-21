@@ -461,7 +461,7 @@ const ALL_TOOLS: ToolDefinition[] = [
     name: 'list_actors',
     title: 'Who is behind a number',
     description:
-      'List the people (or sessions, or groups when the spec has aggregateBy) behind one number of a trends, funnel or retention result: a trends point (selection {series, bucket, breakdown}), a funnel step ({step, status: "converted"|"dropped"}), or a retention cell ({cohort, period}). Pass the same spec you queried. Each has properties and a link; format "csv" exports the list.',
+      'List the people (or sessions, or groups when the spec has aggregateBy) behind one number of a trends, funnel, retention or paths result: a trends point (selection {series, bucket, breakdown}), a funnel step ({step, status: "converted"|"dropped"}), a retention cell ({cohort, period}), or a paths step ({node}), link ({node, target}) or drop-off ({node, dropOff: true}). Pass the same spec you queried. Each has properties and a link; format "csv" exports the list.',
     input: inputs.actors.omit({ saveAsCohort: true }),
     scope: 'read',
     run: (s, a) => s.actors({ ...(a as object), saveAsCohort: undefined }),
@@ -757,6 +757,15 @@ const ALL_TOOLS: ToolDefinition[] = [
     input: inputs.backfillExport,
     scope: 'admin',
     run: (s, a) => s.backfillExport(a),
+  },
+  {
+    name: 'suggest_path_rules',
+    title: 'Suggest path cleaning rules',
+    description:
+      'Path cleaning rules for page paths with ids in them ("/users/42" and "/users/7" → "/users/:id"), from the last 30 days, with how many paths each merges. Save the ones you want with update_settings (pathCleaning); paths queries then show each as one step.',
+    input: inputs.suggestPathRules,
+    scope: 'read',
+    run: (s, a) => s.suggestPathRules(a),
   },
   {
     name: 'get_settings',

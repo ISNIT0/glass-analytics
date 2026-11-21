@@ -93,6 +93,10 @@ describe('data and flag commands', () => {
       await output(() => query('trends', { event: 'report_run', from: '-1d' })),
       /report_run/,
     );
+    const paths = await output(() => query('paths', { from: '-1d', steps: '3', events: true }));
+    assert.match(paths, /Path/);
+    assert.match(paths, /report_run/);
+    await assert.rejects(() => query('journeys', {}), /Unknown query/);
     assert.match(await output(() => sql('SELECT COUNT(*) AS n FROM events', {})), /n/);
     assert.match(await output(() => person('ann', {})), /ann/);
     assert.match(await output(() => projects(undefined, undefined, {})), /demo/);

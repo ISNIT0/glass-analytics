@@ -137,6 +137,29 @@ for (let i = 0; i < 60; i++) {
       }),
     );
 }
+// Journeys for the paths chart: visitors who follow a few common routes through the site.
+const ROUTES = [
+  ['', 'pricing', 'signup', 'checkout'],
+  ['', 'pricing', 'docs'],
+  ['', 'features', 'pricing', 'signup'],
+  ['blog/launch', '', 'pricing'],
+  ['blog/launch', 'blog/tips', 'features'],
+  ['docs', 'docs/api', 'pricing', 'signup'],
+  ['', 'docs', 'pricing'],
+];
+for (let v = 0; v < 70; v++) {
+  const route = ROUTES[(v * 5 + (v % 3)) % ROUTES.length]!.slice(0, 2 + (v % 3));
+  const start = now - ((v * 37) % 5) * 86_400_000 - 3_600_000 - v * 61_000;
+  for (const [i, page] of route.entries())
+    events.push(
+      ev('$pageview', {
+        ts: start + i * 45_000,
+        distinct_id: `walker-${v}`,
+        session_id: `walk-${v}`,
+        url: `https://demo.test/${page}`,
+      }),
+    );
+}
 await call(
   'POST',
   '/e',
@@ -348,6 +371,24 @@ const routes: [string, string][] = [
     'insights-retention',
     'insights/new/retention?project=demo&from=-7d&spec=%7B%22cohortEvent%22%3A%7B%22event%22%3A%22%24pageview%22%7D%2C%22returnEvent%22%3A%7B%22event%22%3A%22%24pageview%22%7D%2C%22period%22%3A%22day%22%2C%22periods%22%3A6%2C%22retentionType%22%3A%22recurring%22%2C%22cumulative%22%3Atrue%2C%22aggregateBy%22%3A%22company%22%7D',
   ],
+  ['insights-paths', insight('paths', { steps: 4 })],
+  ['insights-paths-top', insight('paths', { steps: 4, display: 'top' })],
+  [
+    'insights-paths-funnel',
+    insight('paths', {
+      steps: 3,
+      funnel: {
+        spec: {
+          steps: [
+            { event: '$pageview' },
+            { event: '$pageview', filters: [{ property: 'path', value: '/pricing' }] },
+          ],
+        },
+        step: 2,
+        mode: 'after',
+      },
+    }),
+  ],
   [
     'insights-table',
     insight('trends', {
@@ -542,6 +583,10 @@ async function touchingBlocks(page: Page): Promise<string[]> {
 }
 
 const actions: Record<string, (p: Page) => Promise<void>> = {
+  'insights-paths': async (p) => {
+    await p.locator('.sankey .sankey-node:not(.other)').nth(1).click();
+    await p.waitForTimeout(300);
+  },
   'insights-funnel': async (p) => {
     await p.locator('.fold > summary').first().click();
     await p.waitForTimeout(300);
@@ -641,6 +686,17 @@ const checks: Record<string, (p: Page) => Promise<string | null>> = {
       ? `countries with values are not shaded (both ${fills.shaded})`
       : null;
   },
+};
+// The paths chart draws steps and the bands between them, and hovering a step traces its flow.
+checks['insights-paths'] = async (p) => {
+  const nodes = await p.locator('.sankey .sankey-node').count();
+  const links = await p.locator('.sankey .sankey-link').count();
+  const list = await p.locator('.sankey-list-row').count();
+  if (list) return list > 3 ? null : `only ${list} steps in the narrow list`;
+  if (nodes < 4 || links < 3) return `the paths chart has ${nodes} steps and ${links} links`;
+  await p.locator('.sankey .sankey-node').first().hover();
+  const lit = await p.locator('.sankey.tracing .sankey-link.lit').count();
+  return lit ? null : 'hovering a step traces no links';
 };
 checks['insights-trends'] = async (p) => {
   // A setting hidden in the closed "More options" fold still shows as a chip.

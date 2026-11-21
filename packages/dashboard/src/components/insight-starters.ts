@@ -8,7 +8,7 @@ import { type CatalogEvent, loadEvents } from '../catalog.ts';
 import { h, mount } from '../dom.ts';
 import type { Spec } from './insight-rail.ts';
 
-type Kind = 'trends' | 'funnel' | 'retention';
+type Kind = 'trends' | 'funnel' | 'retention' | 'paths';
 
 interface Starter {
   title: string;
@@ -98,11 +98,29 @@ function retentionStarters(signup: string | null): Starter[] {
   ]);
 }
 
+function pathsStarters(signup: string | null): Starter[] {
+  return present([
+    {
+      title: 'Where do visitors go from the home page?',
+      spec: { start: { type: 'page', value: '/' }, steps: 5 },
+    },
+    { title: 'The most common visits', spec: { steps: 5 }, display: 'top' },
+    signup
+      ? {
+          title: `What leads to ${signup}?`,
+          spec: { end: { type: 'event', value: signup }, include: { events: true }, steps: 5 },
+        }
+      : null,
+    { title: 'Journeys across visits (7 days)', spec: { steps: 6, boundary: { minutes: 10_080 } } },
+  ]);
+}
+
 function startersFor(kind: Kind, events: CatalogEvent[]): Starter[] {
   const signup = find(events, SIGNUP);
   const purchase = find(events, PURCHASE);
   if (kind === 'funnel') return funnelStarters(signup, purchase);
   if (kind === 'retention') return retentionStarters(signup);
+  if (kind === 'paths') return pathsStarters(signup);
   return trendsStarters(signup);
 }
 

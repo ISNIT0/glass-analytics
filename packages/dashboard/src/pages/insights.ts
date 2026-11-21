@@ -10,6 +10,7 @@
  */
 
 import type { FunnelResult } from '@dataflare/core/insights/funnel';
+import type { PathsResult } from '@dataflare/core/insights/paths';
 import type { RetentionResult } from '@dataflare/core/insights/retention';
 import type { TrendsResult } from '@dataflare/core/insights/trends';
 import { resolveRange } from '@dataflare/core/time';
@@ -32,6 +33,8 @@ import {
   trendsView,
 } from '../components/insight-views.ts';
 import { modal, popover, selectMenu, toggle } from '../components/menu.ts';
+import { pathsRail } from '../components/paths-rail.ts';
+import { pathsView } from '../components/paths-view.ts';
 import { INSIGHT_PROMPT } from '../components/prompts.ts';
 import { retentionRail } from '../components/retention-rail.ts';
 import { type RailContext, type RailState, trendsRail } from '../components/trends-rail.ts';
@@ -51,24 +54,27 @@ import { type Child, h, mount } from '../dom.ts';
 import { ago, bucketLabel, count, percent } from '../format.ts';
 import { go, href, prefs, type Route, scope } from '../state.ts';
 
-type Kind = 'trends' | 'funnel' | 'retention';
+type Kind = 'trends' | 'funnel' | 'retention' | 'paths';
 type Spec = Record<string, unknown>;
 
-const KINDS: Kind[] = ['trends', 'funnel', 'retention'];
+const KINDS: Kind[] = ['trends', 'funnel', 'retention', 'paths'];
 const KIND_LABEL: Record<Kind, string> = {
   trends: 'Trends',
   funnel: 'Funnel',
   retention: 'Retention',
+  paths: 'Paths',
 };
 const KIND_ICON: Record<Kind, IconName> = {
   trends: 'lineChart',
   funnel: 'funnel',
   retention: 'retention',
+  paths: 'paths',
 };
 const KIND_BLURB: Record<Kind, string> = {
   trends: 'Counts, uniques or sums of any event over time.',
   funnel: 'How many people complete a sequence of steps.',
   retention: 'How many people come back after their first visit.',
+  paths: 'The journeys people take, page by page or event by event.',
 };
 
 const DEFAULTS: Record<Kind, Spec> = {
@@ -80,6 +86,7 @@ const DEFAULTS: Record<Kind, Spec> = {
     period: 'week',
     periods: 8,
   },
+  paths: { steps: 5 },
 };
 
 interface SavedInsight {
@@ -129,6 +136,13 @@ const KIND_CLEANERS: Record<Kind, (out: Spec) => void> = {
       if (step) out[key] = withCleanFilters(step);
     }
   },
+  paths: (out) => {
+    // Patterns still being typed aren't part of the query yet.
+    for (const key of ['exclude', 'groups']) {
+      const list = ((out[key] as string[] | undefined) ?? []).filter((x) => x.trim());
+      setOrDelete(out, key, list.length ? list : undefined);
+    }
+  },
 };
 
 function sanitizeSpec(kind: Kind, spec: Spec): Spec {
@@ -142,6 +156,22 @@ function sanitizeSpec(kind: Kind, spec: Spec): Spec {
   // A map wants every country, not the top ten, however the breakdown got there.
   if (out.display === 'world_map' && breakdowns.join() === 'country') out.breakdownLimit ??= 50;
   return out;
+}
+
+/** A saved paths card: how many paths, and the most common one. */
+function pathsPreview(r: PathsResult): HTMLElement {
+  const top = r.topPaths[0];
+  return h(
+    'div',
+    { class: 'card-preview' },
+    h(
+      'div',
+      { class: 'card-number' },
+      count(r.total),
+      h('span', { class: 'muted small' }, ' paths'),
+    ),
+    top ? h('div', { class: 'muted small card-path' }, top.items.join(' → ')) : null,
+  );
 }
 
 // ── Library ─────────────────────────────────────────────────────────────────
@@ -220,6 +250,73 @@ function newMenu(label = 'New analysis'): HTMLElement {
 }
 
 /** A small async preview for a library card. */
+function trendsPreview(r: Record<string, unknown>): HTMLElement {
+  const t = r as unknown as TrendsResult;
+  const s = t.series[0];
+  if (!s) return h('div', { class: 'card-preview muted small' }, 'No data');
+  return h(
+    'div',
+    { class: 'card-preview' },
+    h(
+      'div',
+      { class: 'card-number' },
+      count(s.total),
+      h('span', { class: 'muted small' }, ` ${s.label}`),
+    ),
+    sparkline(s.values, { height: 44 }),
+  );
+}
+
+function funnelPreview(r: Record<string, unknown>): HTMLElement {
+  const f = r as unknown as FunnelResult;
+  const first = f.steps[0]?.count ?? 0;
+  const lastStep = f.steps[f.steps.length - 1]?.count ?? 0;
+  return h(
+    'div',
+    { class: 'card-preview' },
+    h(
+      'div',
+      { class: 'card-number' },
+      percent(first ? lastStep / first : 0, 1),
+      h('span', { class: 'muted small' }, ' converted'),
+    ),
+    h(
+      'div',
+      { class: 'mini-funnel' },
+      f.steps.map((st) =>
+        h('span', { style: `height:${first ? Math.max(4, (st.count / first) * 100) : 4}%` }),
+      ),
+    ),
+  );
+}
+
+function retentionPreview(r: Record<string, unknown>): HTMLElement {
+  const rr = r as unknown as RetentionResult;
+  const now = Date.now();
+  let last = rr.average.length - 1;
+  while (last > 0 && !rr.cohorts.some((c) => periodReached(c.start, last, rr.period, now))) last--;
+  return h(
+    'div',
+    { class: 'card-preview' },
+    h(
+      'div',
+      { class: 'card-number' },
+      last >= 1 ? percent(rr.average[1] ?? 0, 0) : '–',
+      h('span', { class: 'muted small' }, ` back after 1 ${rr.period}`),
+    ),
+    last >= 1
+      ? sparkline(rr.average.slice(0, last + 1), { height: 44 })
+      : h('div', { class: 'sparkline' }),
+  );
+}
+
+const PREVIEWS: Record<Kind, (r: Record<string, unknown>) => HTMLElement> = {
+  trends: trendsPreview,
+  funnel: funnelPreview,
+  retention: retentionPreview,
+  paths: (r) => pathsPreview(r as unknown as PathsResult),
+};
+
 function cardPreview(insight: SavedInsight): HTMLElement {
   const sc = scope();
   return later(
@@ -232,62 +329,7 @@ function cardPreview(insight: SavedInsight): HTMLElement {
         project: sc.project,
       };
       const r = await api.post<Record<string, unknown>>('/api/query', body);
-      if (insight.kind === 'trends') {
-        const t = r as unknown as TrendsResult;
-        const s = t.series[0];
-        if (!s) return h('div', { class: 'card-preview muted small' }, 'No data');
-        return h(
-          'div',
-          { class: 'card-preview' },
-          h(
-            'div',
-            { class: 'card-number' },
-            count(s.total),
-            h('span', { class: 'muted small' }, ` ${s.label}`),
-          ),
-          sparkline(s.values, { height: 44 }),
-        );
-      }
-      if (insight.kind === 'funnel') {
-        const f = r as unknown as FunnelResult;
-        const first = f.steps[0]?.count ?? 0;
-        const lastStep = f.steps[f.steps.length - 1]?.count ?? 0;
-        return h(
-          'div',
-          { class: 'card-preview' },
-          h(
-            'div',
-            { class: 'card-number' },
-            percent(first ? lastStep / first : 0, 1),
-            h('span', { class: 'muted small' }, ' converted'),
-          ),
-          h(
-            'div',
-            { class: 'mini-funnel' },
-            f.steps.map((st) =>
-              h('span', { style: `height:${first ? Math.max(4, (st.count / first) * 100) : 4}%` }),
-            ),
-          ),
-        );
-      }
-      const rr = r as unknown as RetentionResult;
-      const now = Date.now();
-      let last = rr.average.length - 1;
-      while (last > 0 && !rr.cohorts.some((c) => periodReached(c.start, last, rr.period, now)))
-        last--;
-      return h(
-        'div',
-        { class: 'card-preview' },
-        h(
-          'div',
-          { class: 'card-number' },
-          last >= 1 ? percent(rr.average[1] ?? 0, 0) : '–',
-          h('span', { class: 'muted small' }, ` back after 1 ${rr.period}`),
-        ),
-        last >= 1
-          ? sparkline(rr.average.slice(0, last + 1), { height: 44 })
-          : h('div', { class: 'sparkline' }),
-      );
+      return PREVIEWS[insight.kind](r);
     },
     'Loading preview',
     'block',
@@ -379,7 +421,7 @@ function listView(route: Route): Node[] {
         const r = await api.get<{ insights: SavedInsight[] }>('/api/insights', { project });
         if (r.insights.length === 0) {
           return empty(
-            'Build a trends, funnel or retention chart, then save it here so you and your agents can reopen it.',
+            'Build a trends, funnel, retention or paths chart, then save it here so you and your agents can reopen it.',
             newMenu('Create your first analysis'),
             { icon: 'insights', title: 'No saved analyses yet' },
           );
@@ -418,6 +460,11 @@ const MISSING: Record<Kind, (spec: Spec) => string | null> = {
     (spec.cohortEvent as StepSpec).event && (spec.returnEvent as StepSpec).event
       ? null
       : 'Pick both events.',
+  paths: (spec) => {
+    if (spec.start && !(spec.start as { value: string }).value) return 'Pick where paths start.';
+    if (spec.end && !(spec.end as { value: string }).value) return 'Pick where paths end.';
+    return null;
+  },
 };
 
 function missingInput(kind: Kind, spec: Spec): string | null {
@@ -533,6 +580,8 @@ interface ResultContext {
   onAnnotate: () => void;
   onDeleteNote: (id: string) => void;
   onMapBreakdown: () => void;
+  /** Change the spec, then run again. */
+  edit: (change: (spec: Spec) => void) => void;
 }
 
 const RENDER: Record<Kind, (f: Fetched, c: ResultContext) => HTMLElement> = {
@@ -560,12 +609,20 @@ const RENDER: Record<Kind, (f: Fetched, c: ResultContext) => HTMLElement> = {
       ),
     );
   },
+  paths: (f, c) =>
+    pathsView(f.result as unknown as PathsResult, {
+      display: c.display,
+      noun: c.spec.aggregateBy === 'session' ? ['session', 'sessions'] : ['person', 'people'],
+      shared: c.shared,
+      edit: c.edit,
+    }),
 };
 
 const RAILS: Record<Kind, (spec: Spec, ctx: RailContext) => HTMLElement> = {
   trends: trendsRail,
   funnel: funnelRail,
   retention: retentionRail,
+  paths: pathsRail,
 };
 
 function builder(kind: Kind, spec: Spec, ctx: RailContext): HTMLElement {
@@ -661,6 +718,19 @@ function trendsToolbar(
   ];
 }
 
+/** Paths: the flow chart, or the most common whole paths. */
+function pathsToolbar(display: string, set: (v: string) => void): HTMLElement {
+  return tabs(
+    [
+      { value: 'line', label: 'Flow', icon: 'paths' as IconName },
+      { value: 'top', label: 'Top paths', icon: 'table' as IconName },
+    ],
+    display === 'top' ? 'top' : 'line',
+    set,
+    'tabs-small',
+  );
+}
+
 /** Delete a saved analysis, after asking. */
 function deleteButton(key: string, project: string | undefined): HTMLElement {
   const remove = async () => {
@@ -672,7 +742,7 @@ function deleteButton(key: string, project: string | undefined): HTMLElement {
   return iconButton('trash', 'Delete analysis', () => void remove());
 }
 
-/** Trends, funnel or retention: tabs while the analysis is new, a label once it's saved. */
+/** The kind (trends, funnel, retention, paths): tabs while the analysis is new, a label once it's saved. */
 function kindSwitch(mode: 'new' | 'saved' | 'ephemeral', kind: Kind): HTMLElement {
   if (mode === 'saved')
     return h(
@@ -791,6 +861,10 @@ function editorView(options: {
         onAnnotate: addNote,
         onDeleteNote: deleteNote,
         onMapBreakdown,
+        edit: (change) => {
+          change(spec);
+          update();
+        },
       });
       mount(
         output,
@@ -1041,7 +1115,9 @@ function editorView(options: {
           })
         : kind === 'funnel'
           ? funnelViewControls(spec, (spec.steps as StepSpec[]).length, update)
-          : [h('span', { class: 'muted small' }, kindSentence(kind, spec))];
+          : kind === 'paths'
+            ? [pathsToolbar(display, setDisplay)]
+            : [h('span', { class: 'muted small' }, kindSentence(kind, spec))];
     mount(toolbar, ...controls, h('span', { class: 'toolbar-spacer' }), status);
   }
 

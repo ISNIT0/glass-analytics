@@ -11,6 +11,7 @@
 import { z } from 'zod/v4';
 import { type Aggregation, parseAggregation } from '../sql/source.ts';
 import { compileFunnelActors } from './funnel.ts';
+import { compilePathsActors } from './paths.ts';
 import { compileRetentionActors } from './retention.ts';
 import { compileTrendsActors } from './trends.ts';
 import type { QueryContext } from './types.ts';
@@ -42,6 +43,15 @@ export const actorSelection = z
       .min(0)
       .optional()
       .describe('Retention: period number (0 is the cohort itself).'),
+    node: z
+      .string()
+      .optional()
+      .describe('Paths: a node id from the result, e.g. "2:/pricing".'),
+    target: z
+      .string()
+      .optional()
+      .describe('Paths: with node, a node in the next column: those who took that link.'),
+    dropOff: z.boolean().optional().describe('Paths: with node, those who stopped there.'),
   })
   .describe('Which number to list the actors of.');
 
@@ -72,6 +82,15 @@ export const ACTOR_COMPILERS: Record<string, ActorCompiler> = {
       { step: sel.step, status: sel.status, breakdown: sel.breakdown },
       page,
     ),
+  paths: (spec, ctx, sel, page) => {
+    if (!sel.node) throw new TypeError('Paths drill-down needs selection.node (a node id from the result).');
+    return compilePathsActors(
+      spec as Parameters<typeof compilePathsActors>[0],
+      ctx,
+      { node: sel.node, target: sel.target, dropOff: sel.dropOff },
+      page,
+    );
+  },
   retention: (spec, ctx, sel, page) => {
     if (sel.cohort === undefined)
       throw new TypeError(
