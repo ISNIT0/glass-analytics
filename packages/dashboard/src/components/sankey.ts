@@ -181,9 +181,7 @@ function nodeReadout(n: PathNode, r: PathsResult, noun: [string, string]): Child
           `${count(n.dropOff)} stopped here (${percent(n.dropOff / n.count, 0)})`,
         )
       : null,
-    n.other
-      ? h('span', { class: 'muted' }, 'Several rarer steps, grouped')
-      : h('span', { class: 'muted small' }, 'Click for more'),
+    n.other ? h('span', { class: 'muted' }, 'Several rarer steps, grouped') : null,
   ];
 }
 

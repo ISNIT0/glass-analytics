@@ -399,11 +399,10 @@ function listView(route: Route): Node[] {
     paint();
   });
   return [
-    pageHeader(
-      'Insights',
-      'Saved analyses you and your agents can reopen. New projects start with DAU, WAU, retention and a few other defaults.',
-      [copyButton(INSIGHT_PROMPT, 'Ask your agent to build analyses', 'bot'), newMenu()],
-    ),
+    pageHeader('Insights', 'Saved analyses you and your agents can reopen.', [
+      copyButton(INSIGHT_PROMPT, 'Ask your agent to build analyses', 'bot'),
+      newMenu(),
+    ]),
     h(
       'div',
       { class: 'toolbar' },

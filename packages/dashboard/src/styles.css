@@ -325,6 +325,15 @@ kbd {
   grid-template-columns: 28px minmax(0, 1fr);
 }
 
+/* .select-trigger (later in the file) sets page ink; the rail is dark in both themes. */
+.project-switch.select-trigger {
+  color: var(--rail-ink);
+}
+
+.project-switch.select-trigger > .icon:last-child {
+  color: var(--rail-muted);
+}
+
 button.project-switch:hover {
   border-color: rgb(255 255 255 / 0.16);
   background: var(--rail-2);
@@ -334,15 +343,10 @@ button.project-switch:hover {
   grid-row: 1 / 3;
 }
 
-.project-switch .project-kicker {
-  grid-column: 2;
-  grid-row: 1;
-}
-
 .project-switch .select-value,
 .project-switch .project-name {
   grid-column: 2;
-  grid-row: 2;
+  grid-row: 1 / 3;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -370,15 +374,6 @@ button.project-switch:hover {
   color: #fff;
   font-weight: 700;
   font-size: 13px;
-}
-
-.project-kicker {
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--rail-muted);
-  line-height: 1.2;
 }
 
 .cmdk-trigger {
@@ -519,7 +514,6 @@ button.project-switch:hover {
 .shell.collapsed .nav-label,
 .shell.collapsed .brand-name,
 .shell.collapsed .nav-group-label,
-.shell.collapsed .project-kicker,
 .shell.collapsed .project-switch .select-value,
 .shell.collapsed .project-switch .project-text,
 .shell.collapsed .project-switch > .icon:last-child,
@@ -2775,14 +2769,6 @@ textarea.prose {
 .date-custom {
   display: grid;
   gap: 10px;
-}
-
-.date-custom-title {
-  font-size: 11.5px;
-  font-weight: 650;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--muted);
 }
 
 .date-custom button {

@@ -86,14 +86,9 @@ function projectSwitcher(route: Route): HTMLElement {
   if (projects.length <= 1) {
     return h(
       'div',
-      { class: 'project-switch static', title: project },
+      { class: 'project-switch static', title: project, 'aria-label': `Project ${project}` },
       projectMark(project),
-      h(
-        'span',
-        { class: 'project-text' },
-        h('span', { class: 'project-kicker' }, 'Project'),
-        h('span', { class: 'project-name' }, project),
-      ),
+      h('span', { class: 'project-text' }, h('span', { class: 'project-name' }, project)),
     );
   }
   const all = route.page === 'sites';
@@ -120,7 +115,6 @@ function projectSwitcher(route: Route): HTMLElement {
     all
       ? h('span', { class: 'project-mark all', 'aria-hidden': 'true' }, icon('layers', 13))
       : projectMark(project),
-    h('span', { class: 'project-kicker' }, 'Project'),
   );
   return trigger;
 }

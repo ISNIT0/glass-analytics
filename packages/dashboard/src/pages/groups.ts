@@ -220,10 +220,7 @@ export function groupsPage(route: Route): Node[] {
   const [type, key] = route.rest;
   if (type && key) return [groupDetail(type, key)];
   return [
-    pageHeader(
-      'Groups',
-      'Companies, workspaces and other groups: who in them is active, and what they pay.',
-    ),
+    pageHeader('Groups', 'Companies, workspaces and other groups.'),
     later(async () => {
       const r = await api.get<{ types: GroupType[] }>('/api/groups/types', {
         project: scope().project,

@@ -131,7 +131,6 @@ export function dateRangeControl(route: Route, onCompareChange: () => void): HTM
       const custom = h(
         'form',
         { class: 'date-custom' },
-        h('div', { class: 'date-custom-title' }, 'Custom range'),
         h('label', { class: 'field' }, h('span', {}, 'From'), fromInput),
         h('label', { class: 'field' }, h('span', {}, 'To (inclusive)'), toInput),
         apply,

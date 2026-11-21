@@ -924,10 +924,9 @@ function experimentActions(
   return [...ordered, duplicate];
 }
 
-function experimentMeta(e: Experiment, r: ExperimentResult): HTMLElement {
-  const engine = r.engine === 'frequentist' ? 'Frequentist' : 'Bayesian';
-  const extras = [
-    e.holdout ? `holdout ${e.holdout}` : '',
+/** Status, the flag, and when it started or shipped; engine and holdout are in Settings below. */
+function experimentMeta(e: Experiment): HTMLElement {
+  const when = [
     e.startedAt ? `started ${dateTime(e.startedAt)}` : '',
     e.shippedVariant ? `shipped ${e.shippedVariant}` : '',
   ]
@@ -940,7 +939,7 @@ function experimentMeta(e: Experiment, r: ExperimentResult): HTMLElement {
     statusBadge(e.status),
     ' Flag ',
     h('a', { href: href(`flags/${encodeURIComponent(e.flag)}`) }, e.flag),
-    ` · ${engine}, ${Math.round(r.confidence * 100)}% confidence${extras}`,
+    when,
   );
 }
 
@@ -975,7 +974,7 @@ async function experimentView(key: string, project: string | undefined): Promise
         'Copy code',
       ),
     ),
-    experimentMeta(e, r.results),
+    experimentMeta(e),
     h(
       'div',
       { class: 'page-actions experiment-actions' },
@@ -1201,10 +1200,7 @@ async function experimentList(
 
 function newExperimentPage(project: string | undefined): Node[] {
   return [
-    pageHeader(
-      'New experiment',
-      'Pick what it measures, how sure it must be, and (optionally) the page changes to test without code.',
-    ),
+    pageHeader('New experiment', undefined),
     later(async () => {
       const { holdouts } = await api.get<{ holdouts: Holdout[] }>('/api/holdouts', { project });
       return createForm(holdouts);
@@ -1220,11 +1216,7 @@ export function experimentsPage(route: Route): Node[] {
   if (target) return detail(target);
   const archived = route.params.get('archived') === '1';
   return [
-    pageHeader(
-      'Experiments',
-      'A/B tests on top of flags. Results update as exposures and conversions arrive.',
-      newExperimentLink(),
-    ),
+    pageHeader('Experiments', 'A/B tests on top of flags.', newExperimentLink()),
     h(
       'div',
       { class: 'toolbar' },
