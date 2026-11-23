@@ -1,0 +1,80 @@
+{
+  "_about": "One source for directory, registry and awesome-list submissions. See skills/directory-submissions in the brain repo. Nothing here is submitted without the operator's go-ahead.",
+  "product": {
+    "name": "Dataflare",
+    "slug": "dataflare",
+    "url": "https://dataflare.dev",
+    "docs_url": "https://dataflare.dev/docs/",
+    "pricing_url": "https://dataflare.dev/pricing/",
+    "demo_url": "https://dataflare.dev/demo/",
+    "repo": "https://github.com/ISNIT0/glass-analytics",
+    "license": "MIT",
+    "privacy_url": "https://dataflare.dev/docs/privacy/",
+    "contact_email": null,
+    "contact_url": "https://github.com/ISNIT0/glass-analytics/issues",
+    "todo": "No role address on dataflare.dev yet. Several directories require one (verification codes). Operator to create one, e.g. a hello@ forward, before wave 1."
+  },
+  "install": {
+    "command": "npx dataflare-cli init",
+    "npm": ["dataflare-cli", "dataflare-web"],
+    "mcp_command": "npx -y dataflare-cli mcp"
+  },
+  "copy": {
+    "tagline_40c": "Analytics in your own Cloudflare account",
+    "tagline_60c": "Open-source product analytics in your own Cloudflare account",
+    "mcp_description_100c": "Query your Dataflare analytics: trends, funnels, retention, replays and flags in your Cloudflare.",
+    "description_160c": "Open-source product analytics that deploys into your Cloudflare account with one command: web stats, funnels, retention, session replay, flags and A/B tests.",
+    "description_500c": "Dataflare is open-source product analytics that runs in your own Cloudflare account. `npx dataflare-cli init` deploys a Worker, a D1 database and an R2 bucket for session replays, then prints the snippet for your framework. It covers web analytics, custom events, funnels, retention, session replay, feature flags and A/B tests.\n\nIt is built for coding agents: init writes agent instructions, a skill and an MCP server config, and every query result carries its SQL. There is no subscription. Cloudflare bills you at its list prices, and small sites fit the Workers free plan.",
+    "awesome_list_bullet": "- [Dataflare](https://github.com/ISNIT0/glass-analytics) - Open-source product analytics (web, funnels, retention, session replay, flags, A/B tests) that deploys into your own Cloudflare account, with an MCP server for coding agents.",
+    "key_features": [
+      "One command (`npx dataflare-cli init`) deploys a Worker, D1 database and R2 replay bucket into your Cloudflare account",
+      "Web analytics, custom events, funnels, retention, session replay, feature flags and A/B tests in one dashboard",
+      "MCP server, CLI with --json and an HTTP API; every result carries its SQL",
+      "Cookieless mode that stores nothing on the device and never stores IP addresses"
+    ]
+  },
+  "taxonomy": {
+    "primary_category": "Developer Tools / Web Analytics",
+    "tags": [
+      "analytics",
+      "product-analytics",
+      "web-analytics",
+      "session-replay",
+      "feature-flags",
+      "ab-testing",
+      "cloudflare-workers",
+      "cloudflare-d1",
+      "mcp",
+      "self-hosted",
+      "privacy",
+      "open-source"
+    ],
+    "alternative_to": [
+      "PostHog",
+      "Google Analytics",
+      "Plausible",
+      "Amplitude",
+      "Mixpanel",
+      "Umami",
+      "Cloudflare Web Analytics"
+    ],
+    "pricing_model": "Free and open source (MIT); Cloudflare usage billed by Cloudflare",
+    "free_tier_details": "No Dataflare plan or fee. Small sites fit Cloudflare's Workers free plan; larger ones pay Cloudflare list prices (calculator at /pricing/)."
+  },
+  "assets": {
+    "favicon": "https://dataflare.dev/favicon.svg",
+    "logo_square_512": null,
+    "og_image_1200x630": "https://dataflare.dev/img/og.png",
+    "screenshots": [
+      "https://dataflare.dev/img/web-light.webp",
+      "https://dataflare.dev/img/funnel-light.webp",
+      "https://dataflare.dev/img/replay-light.webp",
+      "https://dataflare.dev/img/sql-light.webp"
+    ],
+    "todo": "No 512 px square PNG logo yet (only favicon.svg). Export one to site/public/img/logo-512.png. Screenshots are WebP at their native size; some directories want 1280x800 PNG."
+  },
+  "registries": {
+    "mcp_transport": "stdio via `npx -y dataflare-cli mcp` (also /mcp over HTTP on each deployment's Worker)",
+    "todo": "Official MCP Registry needs `mcpName` in packages/cli/package.json (released to npm) before `server.json` can be published. glama.json and the plugin manifests can be added any time."
+  }
+}
