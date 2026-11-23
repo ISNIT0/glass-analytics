@@ -1,0 +1,164 @@
+[
+  {
+    "wave": 1,
+    "name": "AlternativeTo",
+    "submissionUrl": "https://alternativeto.net/manage-item/",
+    "status": "planned",
+    "liveOrPrUrl": null,
+    "submittedAt": null,
+    "notes": "Free. List as alternative to PostHog, Plausible, Google Analytics."
+  },
+  {
+    "wave": 1,
+    "name": "SaaSHub",
+    "submissionUrl": "https://www.saashub.com/submit",
+    "status": "planned",
+    "liveOrPrUrl": null,
+    "submittedAt": null,
+    "notes": "Free path is slow (weeks); skip the paid fast-track."
+  },
+  {
+    "wave": 1,
+    "name": "StackShare",
+    "submissionUrl": "https://stackshare.io/",
+    "status": "planned",
+    "liveOrPrUrl": null,
+    "submittedAt": null,
+    "notes": "Developer tool profile."
+  },
+  {
+    "wave": 1,
+    "name": "LibHunt",
+    "submissionUrl": "https://www.libhunt.com/",
+    "status": "planned",
+    "liveOrPrUrl": null,
+    "submittedAt": null,
+    "notes": "Open-source tracking; often picks up GitHub repos on its own, check first."
+  },
+  {
+    "wave": 2,
+    "name": "Official MCP Registry",
+    "submissionUrl": "https://registry.modelcontextprotocol.io",
+    "status": "planned",
+    "liveOrPrUrl": null,
+    "submittedAt": null,
+    "notes": "Blocked: needs mcpName in the published dataflare-cli package, then server.json and mcp-publisher. Downstream registries sync from it."
+  },
+  {
+    "wave": 2,
+    "name": "Glama",
+    "submissionUrl": "https://glama.ai/mcp/servers",
+    "status": "planned",
+    "liveOrPrUrl": null,
+    "submittedAt": null,
+    "notes": "Needs glama.json in the repo to claim."
+  },
+  {
+    "wave": 2,
+    "name": "Smithery",
+    "submissionUrl": "https://smithery.ai/",
+    "status": "planned",
+    "liveOrPrUrl": null,
+    "submittedAt": null,
+    "notes": ""
+  },
+  {
+    "wave": 2,
+    "name": "PulseMCP",
+    "submissionUrl": "https://www.pulsemcp.com/",
+    "status": "planned",
+    "liveOrPrUrl": null,
+    "submittedAt": null,
+    "notes": "Syncs from the official registry."
+  },
+  {
+    "wave": 2,
+    "name": "mcp.so",
+    "submissionUrl": "https://mcp.so/",
+    "status": "planned",
+    "liveOrPrUrl": null,
+    "submittedAt": null,
+    "notes": ""
+  },
+  {
+    "wave": 2,
+    "name": "MCP Market",
+    "submissionUrl": "https://mcpmarket.com/",
+    "status": "planned",
+    "liveOrPrUrl": null,
+    "submittedAt": null,
+    "notes": ""
+  },
+  {
+    "wave": 2,
+    "name": "Cursor Marketplace / cursor.directory",
+    "submissionUrl": "https://cursor.directory/",
+    "status": "planned",
+    "liveOrPrUrl": null,
+    "submittedAt": null,
+    "notes": "Needs .cursor-plugin/plugin.json and .mcp.json in the repo."
+  },
+  {
+    "wave": 3,
+    "name": "Show HN",
+    "submissionUrl": "https://news.ycombinator.com/submit",
+    "status": "planned",
+    "liveOrPrUrl": null,
+    "submittedAt": null,
+    "notes": "Draft and timing in memory/brands/glass/launch.md section 2."
+  },
+  {
+    "wave": 3,
+    "name": "Product Hunt",
+    "submissionUrl": "https://www.producthunt.com/",
+    "status": "planned",
+    "liveOrPrUrl": null,
+    "submittedAt": null,
+    "notes": "One launch; time it with a release."
+  },
+  {
+    "wave": 3,
+    "name": "DevHunt",
+    "submissionUrl": "https://devhunt.org/",
+    "status": "planned",
+    "liveOrPrUrl": null,
+    "submittedAt": null,
+    "notes": ""
+  },
+  {
+    "wave": 3,
+    "name": "Peerlist Launchpad",
+    "submissionUrl": "https://peerlist.io/",
+    "status": "planned",
+    "liveOrPrUrl": null,
+    "submittedAt": null,
+    "notes": ""
+  },
+  {
+    "wave": 4,
+    "name": "awesome-mcp-servers (punkpeye)",
+    "submissionUrl": "https://github.com/punkpeye/awesome-mcp-servers",
+    "status": "planned",
+    "liveOrPrUrl": null,
+    "submittedAt": null,
+    "notes": "Needs glama.json; read CONTRIBUTING and recent merged PRs first."
+  },
+  {
+    "wave": 4,
+    "name": "awesome-cloudflare",
+    "submissionUrl": "https://github.com/zhuima/awesome-cloudflare",
+    "status": "planned",
+    "liveOrPrUrl": null,
+    "submittedAt": null,
+    "notes": "Section Analytics or Tools; check the list's rules first."
+  },
+  {
+    "wave": 4,
+    "name": "awesome-selfhosted",
+    "submissionUrl": "https://github.com/awesome-selfhosted/awesome-selfhosted",
+    "status": "planned",
+    "liveOrPrUrl": null,
+    "submittedAt": null,
+    "notes": "May not qualify: it lists software run on your own server. Check rules; skip if not."
+  }
+]

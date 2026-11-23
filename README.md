@@ -4,7 +4,7 @@
 Web analytics, funnels and retention, session replay, feature flags and A/B tests. Deployed with one command, queried by your coding agent. Your data never leaves your account.</p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/dataflare"><img alt="npm" src="https://img.shields.io/npm/v/dataflare?color=2a7a67&label=npm"></a>
+  <a href="https://www.npmjs.com/package/dataflare-cli"><img alt="npm" src="https://img.shields.io/npm/v/dataflare-cli?color=2a7a67&label=npm"></a>
   <a href="https://github.com/ISNIT0/glass-analytics/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/ISNIT0/glass-analytics/actions/workflows/ci.yml/badge.svg"></a>
   <a href="https://scorecard.dev/viewer/?uri=github.com/ISNIT0/glass-analytics"><img alt="OpenSSF Scorecard" src="https://api.scorecard.dev/projects/github.com/ISNIT0/glass-analytics/badge"></a>
   <a href="LICENSE"><img alt="MIT licence" src="https://img.shields.io/badge/licence-MIT-2a7a67"></a>
