@@ -96,7 +96,7 @@ Without JavaScript:
 
 Name events `object_action` in snake_case and past tense. Put details in properties, and never send emails, names or other personal data.
 
-Document every custom event once it is shipping — agents and teammates need to know **how and when** it fires, and **what each property means**:
+Document every custom event once it is shipping. Agents and teammates need to know **how and when** it fires, and **what each property means**:
 
 ```sh
 npx dataflare-cli events signup_completed --describe "Fired when the user finishes signup after email verification."
