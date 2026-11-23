@@ -63,21 +63,21 @@ Each deployment is named after its project (`glass-<project>`: Worker, D1 databa
 
 ## 3. Add the snippet
 
-The script tag works everywhere and needs no build step:
+The script tag works everywhere and needs no build step ([plain HTML guide](https://dataflare.dev/guides/html/)):
 
 ```html
 <script defer src="https://glass.<you>.workers.dev/s.js" data-project="my-app"></script>
 ```
 
-| Framework            | Where                                                                                                            |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| Next.js              | `app/layout.tsx`: `<Script src="…/s.js" data-project="my-app" strategy="afterInteractive" />` from `next/script` |
-| Astro                | `src/layouts/Layout.astro`, with `is:inline` on the script tag                                                   |
-| SvelteKit            | `src/app.html`                                                                                                   |
-| Nuxt                 | `app.head.script` in `nuxt.config.ts`                                                                            |
-| Remix / React Router | `app/root.tsx`                                                                                                   |
-| Vite apps            | `npm i dataflare-web`, then `glass.init({ host, project })` in `main.ts`                                         |
-| Server-side          | `POST <host>/e`; see [sdk.md](sdk.md#server-side-events)                                                         |
+| Framework                                                   | Where                                                                                                                                         |
+| ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Next.js](https://dataflare.dev/guides/nextjs/)             | `app/layout.tsx`: `<Script src="…/s.js" data-project="my-app" strategy="afterInteractive" />` from `next/script`                              |
+| [Astro](https://dataflare.dev/guides/astro/)                | `src/layouts/Layout.astro`, with `is:inline` on the script tag                                                                                |
+| [SvelteKit](https://dataflare.dev/guides/sveltekit/)        | `src/app.html`                                                                                                                                |
+| [Nuxt](https://dataflare.dev/guides/nuxt/)                  | `app.head.script` in `nuxt.config.ts`                                                                                                         |
+| [Remix / React Router](https://dataflare.dev/guides/remix/) | `app/root.tsx`                                                                                                                                |
+| [Vite apps](https://dataflare.dev/guides/vite/)             | `npm i dataflare-web`, then `glass.init({ host, project })` in `main.ts`                                                                      |
+| Server-side                                                 | `POST <host>/e`; see [sdk.md](sdk.md#server-side-events) and the [Cloudflare Workers guide](https://dataflare.dev/guides/cloudflare-workers/) |
 
 ## 4. Track what matters
 
