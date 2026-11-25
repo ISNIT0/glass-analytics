@@ -31,14 +31,14 @@
     "release": "pnpm build && changeset publish"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.0.0",
+    "@biomejs/biome": "^2.6.8",
     "@changesets/cli": "^2.29.0",
     "@stryker-mutator/core": "10.1.1",
     "@types/node": "^22.18.0",
     "esbuild": "^0.28.0",
     "knip": "6.45.1",
     "marked": "^15.0.12",
-    "playwright": "^1.63.0",
+    "playwright": "^1.65.1",
     "typescript": "^6.0.0"
   }
 }
