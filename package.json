@@ -39,6 +39,6 @@
     "knip": "6.45.1",
     "marked": "^15.0.12",
     "playwright": "^1.63.0",
-    "typescript": "^6.0.0"
+    "typescript": "^7.0.2"
   }
 }
