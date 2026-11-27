@@ -270,6 +270,74 @@ export async function person(id: string | undefined, flags: Flags): Promise<void
   );
 }
 
+/** `dataflare groups [type] [--search x]`: group types, or the groups of one type. */
+export async function groups(type: string | undefined, flags: Flags): Promise<void> {
+  const params = new URLSearchParams();
+  if (str(flags.project)) params.set('project', str(flags.project)!);
+  if (!type) {
+    const r = await call<{ summary: string; types: { type: string; groups: number }[] }>(
+      'GET',
+      `/api/groups/types${params.size ? `?${params}` : ''}`,
+    );
+    if (flags.json) return printJson(r);
+    line(r.summary);
+    if (r.types.length)
+      table(
+        ['Type', 'Groups'],
+        r.types.map((t) => [t.type, String(t.groups)]),
+      );
+    return;
+  }
+  params.set('type', type);
+  if (str(flags.search)) params.set('search', str(flags.search)!);
+  const r = await call<{
+    summary: string;
+    groups: { key: string; lastSeen: string; properties: Record<string, unknown> }[];
+  }>('GET', `/api/groups?${params}`);
+  if (flags.json) return printJson(r);
+  line(r.summary);
+  if (r.groups.length) {
+    table(
+      ['Key', 'Last seen', 'Properties'],
+      r.groups.map((g) => [
+        g.key,
+        g.lastSeen.slice(0, 16).replace('T', ' '),
+        JSON.stringify(g.properties).slice(0, 60),
+      ]),
+    );
+  }
+}
+
+/** `dataflare group <type> <key> [--delete]`: one group, or erase it. */
+export async function group(
+  type: string | undefined,
+  key: string | undefined,
+  flags: Flags,
+): Promise<void> {
+  if (!type || !key) throw new UsageError('Usage: dataflare group <type> <key> [--delete]');
+  const q = str(flags.project) ? `?project=${encodeURIComponent(str(flags.project)!)}` : '';
+  const path = `/api/groups/${encodeURIComponent(type)}/${encodeURIComponent(key)}${q}`;
+  if (flags.delete) {
+    const r = await call<{ summary: string }>('DELETE', path);
+    return flags.json ? printJson(r) : line(r.summary);
+  }
+  const r = await call<{
+    summary: string;
+    properties: Record<string, unknown>;
+    members: { person: string; events: number; lastSeen: string }[];
+  }>('GET', path);
+  if (flags.json) return printJson(r);
+  line(color.bold(r.summary));
+  for (const [k, v] of Object.entries(r.properties)) line(`  ${k}: ${JSON.stringify(v)}`);
+  if (r.members.length) {
+    line();
+    table(
+      ['Member', 'Events', 'Last seen'],
+      r.members.map((m) => [m.person, String(m.events), m.lastSeen.slice(0, 16).replace('T', ' ')]),
+    );
+  }
+}
+
 export async function replays(
   sub: string | undefined,
   arg: string | undefined,

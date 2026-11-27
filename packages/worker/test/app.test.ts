@@ -87,6 +87,14 @@ describe('auth', () => {
     assert.equal((await t.call('POST', '/mcp', { key: null, body: {} })).status, 401);
   });
 
+  it('marks alpha endpoints in the API index', async () => {
+    const index = await t.json<{ endpoints: Record<string, string> }>('GET', '/api');
+    assert.match(index.endpoints['POST /api/destinations']!, /^\(alpha\) /);
+    assert.match(index.endpoints['POST /api/import']!, /^\(alpha\) /);
+    assert.match(index.endpoints['GET /api/exports/:id/runs']!, /^\(alpha\) /);
+    assert.doesNotMatch(index.endpoints['GET /api/issues']!, /alpha/);
+  });
+
   it('lets the read key query but not change things', async () => {
     assert.equal((await t.call('GET', '/api/flags', { key: READ })).status, 200);
     const res = await t.call('PUT', '/api/flags/x', { key: READ, body: { rollout: 10 } });
@@ -555,7 +563,7 @@ describe('query API', () => {
     const unknown = await t.call('POST', '/api/query', { body: { kind: 'paths' } });
     assert.match(
       ((await unknown.json()) as { hint: string }).hint,
-      /web, trends, funnel, retention/,
+      /web, trends, funnel, funnel_correlation, retention/,
     );
   });
 
@@ -1231,12 +1239,18 @@ describe('MCP server', () => {
       result: {
         tools: {
           name: string;
+          description: string;
           inputSchema: { type: string; properties: Record<string, unknown> };
           annotations: { readOnlyHint: boolean };
         }[];
       };
     };
     const names = list.result.tools.map((x) => x.name);
+    // Pipelines tools say they are alpha (core/stages.ts); stable tools don't.
+    const described = new Map(list.result.tools.map((x) => [x.name, x.description]));
+    for (const alpha of ['save_destination', 'test_transformation', 'backfill_export'])
+      assert.match(described.get(alpha)!, /^\(alpha\) /, alpha);
+    assert.doesNotMatch(described.get('overview')!, /alpha/);
     for (const expected of [
       'overview',
       'query_funnel',

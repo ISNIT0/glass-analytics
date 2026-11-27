@@ -4,16 +4,18 @@
  */
 
 import { experimentSpec, filterSchema, INSIGHTS, sqlSpec } from '@dataflare/core/insights';
+import { type StagedFeature, stagePrefix } from '@dataflare/core/stages';
 import { GLASS_VERSION } from '@dataflare/core/version';
 import { z } from 'zod/v4';
-import { requireScope, type Scope } from './auth.ts';
+import { authenticate, type Scope } from './auth.ts';
 import type { Env } from './env.ts';
 import { HttpError, json, Router, readJson } from './http.ts';
+import { handleImport } from './ingest.ts';
 import { TOOLS } from './mcp/tools.ts';
 import type { GlassService } from './service.ts';
 
 const NUMERIC = new Set(['days', 'limit']);
-const BOOLEAN = new Set(['with_errors', 'compare']);
+const BOOLEAN = new Set(['with_errors', 'compare', 'include_archived']);
 
 /** Query string → plain object, converting the few numeric/boolean parameters. */
 function params(url: URL): Record<string, unknown> {
@@ -24,10 +26,100 @@ function params(url: URL): Record<string, unknown> {
   return out;
 }
 
-export function apiRouter(service: GlassService, env: Env, request: Request): Router {
-  const scope: Scope = requireScope(request, env, 'read');
+/** Paths the server key may call (its whole job: imports, flag definitions, source maps). */
+const SERVER_PATHS = [
+  /^\/api\/import\/?$/,
+  /^\/api\/flags\/definitions\/?$/,
+  /^\/api\/sourcemaps(\/|$)/,
+];
+
+/** Endpoints of features that aren't stable yet, and which feature each belongs to. */
+const ENDPOINT_STAGES: [RegExp, StagedFeature][] = [
+  [/ \/api\/destinations\b/, 'destinations'],
+  [/ \/api\/transformations\b/, 'transformations'],
+  [/ \/api\/exports\b/, 'exports'],
+  [/^POST \/api\/import$/, 'imports'],
+];
+
+/** The API index with "(alpha) " in front of every endpoint of an alpha feature. */
+function withStages(endpoints: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(endpoints).map(([route, text]) => {
+      const feature = ENDPOINT_STAGES.find(([re]) => re.test(route))?.[1];
+      return [route, feature ? stagePrefix(feature) + text : text];
+    }),
+  );
+}
+
+/** The key's scope, or an error that says what's wrong with the request's key. */
+async function authorize(request: Request, env: Env): Promise<Scope> {
+  if (!env.GLASS_ADMIN_KEY)
+    throw new HttpError(
+      503,
+      'GLASS_ADMIN_KEY is not set on this Worker',
+      'Run `dataflare upgrade` or set it with `wrangler secret put GLASS_ADMIN_KEY`.',
+    );
+  const scope = await authenticate(request, env);
+  if (!scope)
+    throw new HttpError(
+      401,
+      'Missing or invalid API key',
+      'Send "Authorization: Bearer <key>". Keys are in .glass/credentials.json; run `dataflare key`.',
+    );
+  const path = new URL(request.url).pathname.replace(/^\/_glass/, '');
+  if (scope === 'server' && !SERVER_PATHS.some((re) => re.test(path)))
+    throw new HttpError(
+      403,
+      'The server key only imports events, reads flag definitions and uploads source maps',
+      'Use the read key (`dataflare key --read`) to query, or the admin key to change things.',
+    );
+  return scope;
+}
+
+/** Who changed something, for flag history: the agent's name when it sends one, and the key. */
+function actorLabel(request: Request, scope: Scope): string {
+  const name = request.headers.get('X-Glass-Actor')?.slice(0, 60);
+  return name ? `${name} (${scope} key)` : `${scope} key`;
+}
+
+/** A result as a CSV download when it has one (?format=csv), JSON otherwise. */
+function csvOrJson(result: object, filename: string): Response {
+  const csv = (result as { csv?: string }).csv;
+  if (csv === undefined) return json(result);
+  return new Response(csv, {
+    headers: {
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+    },
+  });
+}
+
+/** 304 when the client already has this version. */
+function withEtag(req: Request, defs: { etag: string }): Response {
+  if (req.headers.get('If-None-Match') === defs.etag)
+    return new Response(null, { status: 304, headers: { ETag: defs.etag } });
+  return json(defs, { headers: { ETag: defs.etag, 'Cache-Control': 'no-cache' } });
+}
+
+export async function apiRouter(
+  service: GlassService,
+  env: Env,
+  request: Request,
+  now = Date.now(),
+): Promise<Router> {
+  const scope = await authorize(request, env);
+  service.actor = actorLabel(request, scope);
   const admin = () => {
     if (scope !== 'admin') throw new HttpError(403, 'This action needs the admin key');
+  };
+  /** Server-side writes: the server key or the admin key. */
+  const server = () => {
+    if (scope !== 'admin' && scope !== 'server')
+      throw new HttpError(
+        403,
+        'This action needs the server or admin key',
+        'Run `dataflare key --server`.',
+      );
   };
   const body = () => readJson<Record<string, unknown>>(request);
   const r = new Router();
@@ -42,7 +134,7 @@ export function apiRouter(service: GlassService, env: Env, request: Request): Ro
       schemas: `${service.baseUrl}/api/schema`,
       mcp: `${service.baseUrl}/mcp`,
       health: `${service.baseUrl}/health`,
-      endpoints: {
+      endpoints: withStages({
         'GET /health': 'Deployment version, latest release, upgradeAvailable',
         'GET /api/overview?from=-30d':
           'Headline stats and movers (includes upgrade notice when outdated)',
@@ -66,6 +158,11 @@ export function apiRouter(service: GlassService, env: Env, request: Request): Ro
         'POST /api/cohorts': 'Create or update a cohort (admin)',
         'POST /api/cohorts/count': 'Count people matching a cohort definition',
         'DELETE /api/cohorts/:key': 'Delete a cohort (admin)',
+        'GET /api/cohorts/:key/members?format=csv': 'People in a cohort (CSV with format=csv)',
+        'PATCH /api/cohorts/:key/members':
+          'Add or remove people of a static cohort: { "add": [...], "remove": [...] } (admin)',
+        'POST /api/cohorts/:key/duplicate':
+          'Copy a cohort as a static list of its current members (admin)',
         'GET /api/insights': 'Saved analyses (seeded with DAU/WAU/retention defaults)',
         'GET /api/insights/:key': 'One saved analysis',
         'POST /api/insights': 'Create or update a saved analysis (admin)',
@@ -92,16 +189,93 @@ export function apiRouter(service: GlassService, env: Env, request: Request): Ro
           'Leave a note at a moment: { "at": "00:14", "text": "…" } (admin)',
         'DELETE /api/replays/:session/notes/:id': 'Delete a note (admin)',
         'GET /api/flags': 'Feature flags',
+        'GET /api/flags/definitions':
+          'Flag definitions and targeted cohort members for local evaluation (server key; ETag)',
+        'POST /api/flags/evaluate':
+          'Every flag for one user, with payloads and reasons: { distinct_id, user_id?, groups? }',
+        'GET /api/flags/:key/history': 'Changes to a flag: who, when, what',
+        'GET /api/flags/:key/usage?from=-30d': 'Exposures to a flag over time by value',
+        'POST /api/flags/:key/schedule':
+          'Change a flag later: { "at": "2026-11-20T09:00Z", "change": { "rollout": 50 } } (admin)',
+        'GET /api/flags/schedules?key=': 'Scheduled flag changes',
+        'DELETE /api/flags/schedules/:id': 'Cancel a scheduled change (admin)',
         'PUT /api/flags/:key': 'Create/update a flag (admin)',
         'DELETE /api/flags/:key': 'Delete a flag (admin)',
         'GET /api/experiments': 'Experiments',
         'POST /api/experiments': 'Create an experiment (admin)',
         'GET /api/experiments/:key': 'Experiment with results',
-        'POST /api/experiments/:key/start|stop|ship': 'Change experiment state (admin)',
+        'POST /api/experiments/:key/start|pause|resume|stop|ship|reset|archive|unarchive':
+          'Change experiment state (admin)',
+        'PATCH /api/experiments/:key': 'Change metrics, engine, confidence or holdout (admin)',
+        'POST /api/experiments/:key/duplicate':
+          'Copy an experiment as a new draft: { "newKey": "…" } (admin)',
+        'POST /api/experiments/plan':
+          'How long to detect a change: { metric, mde?, variants?, traffic? }',
+        'GET /api/holdouts': 'Holdouts and the experiments using them',
+        'PUT /api/holdouts/:key': 'Create or update a holdout: { "percentage": 10 } (admin)',
+        'DELETE /api/holdouts/:key': 'Delete an unused holdout (admin)',
+        'GET /api/holdouts/:key/results':
+          'Everyone in the holdout’s experiments vs the people held out',
+        'POST /api/import':
+          'Import events with their own timestamps (server or admin key): { project, events: [...] }, up to 1,000 per request',
+        'GET /api/settings':
+          'Project settings: time zone, internal-traffic filters, currency, revenue events',
+        'PATCH /api/settings': 'Change project settings (admin)',
+        'POST /api/actors':
+          'The people/sessions/groups behind a number: { kind, spec, selection: { series, bucket } | { step, status } | { cohort, period } }; ?format=csv for CSV; saveAsCohort: { name } saves them (admin)',
+        'GET /api/annotations?from=&to=': 'Notes pinned to moments on time charts',
+        'POST /api/annotations':
+          'Pin a note: { "at": "2026-11-03", "text": "Launched v2" } (admin)',
+        'DELETE /api/annotations/:id': 'Delete an annotation (admin)',
+        'GET /api/destinations/templates':
+          'What events can be forwarded to: Slack, webhooks, Meta CAPI, GA4, CRMs…',
+        'GET /api/destinations': 'Destinations',
+        'POST /api/destinations':
+          'Create a destination: { template, events, filters, inputs } (admin)',
+        'GET /api/destinations/:id': 'A destination with deliveries per hour and recent failures',
+        'PUT /api/destinations/:id': 'Change a destination (admin)',
+        'DELETE /api/destinations/:id': 'Delete a destination (admin)',
+        'POST /api/destinations/:id/test': 'Send a sample event now (admin)',
+        'POST /api/destinations/:id/retry': 'Retry failed deliveries (admin)',
+        'GET /api/transformations': 'Rules applied to events at ingest',
+        'POST /api/transformations':
+          'Add a rule: drop events, drop/rename/set/hash properties, redact personal data (admin)',
+        'PUT /api/transformations/:id': 'Change a rule (admin)',
+        'DELETE /api/transformations/:id': 'Delete a rule (admin)',
+        'POST /api/transformations/test': 'Try a rule on a sample event',
+        'GET /api/exports': 'Batch exports (S3/R2, BigQuery, HTTP)',
+        'POST /api/exports': 'Create a batch export (admin)',
+        'PUT /api/exports/:id': 'Change an export (admin)',
+        'DELETE /api/exports/:id': 'Delete an export (admin)',
+        'GET /api/exports/:id/runs': 'Recent export runs',
+        'POST /api/exports/:id/backfill': 'Re-export from a time: { "from": "-30d" } (admin)',
+        'GET /api/issues': 'Error tracking: issues with counts, people and a series for the range',
+        'GET /api/issues/:id':
+          'An issue: symbolicated stack, trend, breakdowns, people, replays at the moment',
+        'PATCH /api/issues/:id': 'Resolve, suppress, reopen or assign an issue (admin)',
+        'POST /api/issues/:id/merge': 'Merge issues into this one: { "ids": [...] } (admin)',
+        'PUT /api/sourcemaps?release=&path=':
+          'Upload a source map for a minified file (server or admin key)',
+        'GET /api/sourcemaps?release=': 'Uploaded source maps',
+        'DELETE /api/sourcemaps?release=&path=':
+          "Delete a release's source maps (server or admin key)",
+        'GET /api/groups/types': 'Group types (company, workspace…) with how many groups each has',
+        'PUT /api/groups/types/:type': 'Add a group type or name it: { singular, plural } (admin)',
+        'GET /api/groups?type=&search=': 'Groups of a type, most recently active first',
+        'GET /api/groups/:type/:key':
+          'A group: properties, activity, members, recent events, revenue',
+        'PATCH /api/groups/:type/:key': 'Set group properties: { properties } (admin)',
+        'DELETE /api/groups/:type/:key': 'Delete a group and remove it from its events (admin)',
+        'GET /api/stripe': 'Stripe connection: webhook URL, events received, customers linked',
+        'POST /api/stripe':
+          'Connect Stripe: { webhookSecret, apiKey?, personKey?, groupType?, groupKey?, linkByEmail? } (admin)',
+        'DELETE /api/stripe': 'Disconnect Stripe (admin)',
+        'POST /api/fx-rates': 'Store exchange rates (what `dataflare revenue rates` sends) (admin)',
+        'POST /hooks/stripe/:project': 'Stripe webhook endpoint (signed by Stripe; no API key)',
         'GET /api/projects': 'Projects',
         'POST /api/projects': 'Create a project (admin)',
         'GET /api/instrument?event=&framework=': 'Tracking code for an event',
-      },
+      }),
       tools: TOOLS.map((t) => t.name),
     }),
   );
@@ -119,6 +293,181 @@ export function apiRouter(service: GlassService, env: Env, request: Request): Ro
       ),
     }),
   );
+
+  r.post('/api/import', async () => {
+    server();
+    return json(await handleImport(request, env, service.store, now, { base: service.baseUrl }));
+  });
+
+  r.post('/api/actors', async ({ url }) => {
+    const input = { ...params(url), ...(await body()) };
+    if (input.saveAsCohort) admin();
+    const result = await service.actors(input);
+    return csvOrJson(result, `${result.kind}-actors.csv`);
+  });
+
+  r.get('/api/annotations', async ({ url }) => json(await service.listAnnotations(params(url))));
+  r.post('/api/annotations', async ({ url }) => {
+    admin();
+    return json(await service.createAnnotation({ ...params(url), ...(await body()) }), {
+      status: 201,
+    });
+  });
+  r.delete('/api/annotations/:id', async ({ url, params: p }) => {
+    admin();
+    return json(await service.deleteAnnotation({ ...params(url), id: p.id }));
+  });
+
+  r.get('/api/destinations/templates', () => json(service.listDestinationTemplates()));
+  r.get('/api/destinations', async ({ url }) => json(await service.listDestinations(params(url))));
+  r.post('/api/destinations', async ({ url }) => {
+    admin();
+    return json(await service.saveDestination({ ...params(url), ...(await body()) }), {
+      status: 201,
+    });
+  });
+  r.get('/api/destinations/:id', async ({ url, params: p }) =>
+    json(await service.getDestination({ ...params(url), id: p.id })),
+  );
+  r.put('/api/destinations/:id', async ({ url, params: p }) => {
+    admin();
+    return json(await service.saveDestination({ ...params(url), ...(await body()), id: p.id }));
+  });
+  r.delete('/api/destinations/:id', async ({ url, params: p }) => {
+    admin();
+    return json(await service.deleteDestination({ ...params(url), id: p.id }));
+  });
+  r.post('/api/destinations/:id/test', async ({ url, params: p }) => {
+    admin();
+    return json(await service.testDestination({ ...params(url), ...(await body()), id: p.id }));
+  });
+  r.post('/api/destinations/:id/retry', async ({ url, params: p }) => {
+    admin();
+    return json(await service.retryDestination({ ...params(url), ...(await body()), id: p.id }));
+  });
+
+  r.get('/api/transformations', async ({ url }) =>
+    json(await service.listTransformations(params(url))),
+  );
+  r.post('/api/transformations/test', async ({ url }) =>
+    json(await service.testTransformation({ ...params(url), ...(await body()) })),
+  );
+  r.post('/api/transformations', async ({ url }) => {
+    admin();
+    return json(await service.saveTransformation({ ...params(url), ...(await body()) }), {
+      status: 201,
+    });
+  });
+  r.put('/api/transformations/:id', async ({ url, params: p }) => {
+    admin();
+    return json(await service.saveTransformation({ ...params(url), ...(await body()), id: p.id }));
+  });
+  r.delete('/api/transformations/:id', async ({ url, params: p }) => {
+    admin();
+    return json(await service.deleteTransformation({ ...params(url), id: p.id }));
+  });
+
+  r.get('/api/exports', async ({ url }) => json(await service.listExports(params(url))));
+  r.post('/api/exports', async ({ url }) => {
+    admin();
+    return json(await service.saveExport({ ...params(url), ...(await body()) }), { status: 201 });
+  });
+  r.put('/api/exports/:id', async ({ url, params: p }) => {
+    admin();
+    return json(await service.saveExport({ ...params(url), ...(await body()), id: p.id }));
+  });
+  r.delete('/api/exports/:id', async ({ url, params: p }) => {
+    admin();
+    return json(await service.deleteExport({ ...params(url), id: p.id }));
+  });
+  r.get('/api/exports/:id/runs', async ({ url, params: p }) =>
+    json(await service.exportRuns({ ...params(url), id: p.id })),
+  );
+  r.post('/api/exports/:id/backfill', async ({ url, params: p }) => {
+    admin();
+    return json(await service.backfillExport({ ...params(url), ...(await body()), id: p.id }));
+  });
+
+  r.get('/api/issues', async ({ url }) => json(await service.listIssues(params(url))));
+  r.get('/api/issues/:id', async ({ url, params: p }) =>
+    json(await service.getIssue({ ...params(url), id: p.id })),
+  );
+  r.patch('/api/issues/:id', async ({ url, params: p }) => {
+    admin();
+    return json(await service.updateIssue({ ...params(url), ...(await body()), id: p.id }));
+  });
+  r.post('/api/issues/:id/merge', async ({ url, params: p }) => {
+    admin();
+    return json(await service.mergeIssues({ ...params(url), ...(await body()), into: p.id }));
+  });
+  // Source maps: the raw map as the body, `release` and `path` (the minified file's served path)
+  // in the query. The server key can upload, so a CI job doesn't need the admin key.
+  r.put('/api/sourcemaps', async ({ url }) => {
+    server();
+    const q = params(url);
+    const text = await request.text();
+    return json(
+      await service.uploadSourcemap(
+        q.project as string | undefined,
+        String(q.release ?? ''),
+        String(q.path ?? ''),
+        text,
+      ),
+      {
+        status: 201,
+      },
+    );
+  });
+  r.get('/api/sourcemaps', async ({ url }) => json(await service.listSourcemaps(params(url))));
+  r.delete('/api/sourcemaps', async ({ url }) => {
+    server();
+    return json(await service.deleteSourcemaps(params(url)));
+  });
+
+  r.get('/api/groups/types', async ({ url }) => json(await service.listGroupTypes(params(url))));
+  r.put('/api/groups/types/:type', async ({ url, params: p }) => {
+    admin();
+    return json(await service.setGroupType({ ...params(url), ...(await body()), type: p.type }));
+  });
+  r.get('/api/groups', async ({ url }) => json(await service.searchGroups(params(url))));
+  r.get('/api/groups/:type/:key', async ({ url, params: p }) =>
+    json(await service.getGroup({ ...params(url), type: p.type, key: p.key })),
+  );
+  r.patch('/api/groups/:type/:key', async ({ url, params: p }) => {
+    admin();
+    return json(
+      await service.setGroupProperties({
+        ...params(url),
+        ...(await body()),
+        type: p.type,
+        key: p.key,
+      }),
+    );
+  });
+  r.delete('/api/groups/:type/:key', async ({ url, params: p }) => {
+    admin();
+    return json(await service.deleteGroup({ ...params(url), type: p.type, key: p.key }));
+  });
+
+  r.get('/api/stripe', async ({ url }) => json(await service.stripeStatus(params(url))));
+  r.post('/api/stripe', async ({ url }) => {
+    admin();
+    return json(await service.connectStripe({ ...params(url), ...(await body()) }));
+  });
+  r.delete('/api/stripe', async ({ url }) => {
+    admin();
+    return json(await service.disconnectStripe(params(url)));
+  });
+  r.post('/api/fx-rates', async () => {
+    admin();
+    return json(await service.importFxRates(await readJson(request, 5_000_000)));
+  });
+
+  r.get('/api/settings', async ({ url }) => json(await service.getSettings(params(url))));
+  r.patch('/api/settings', async ({ url }) => {
+    admin();
+    return json(await service.updateSettings({ ...params(url), ...(await body()) }));
+  });
 
   r.get('/api/projects', async () => json(await service.listProjects()));
   r.post('/api/projects', async () => {
@@ -180,6 +529,20 @@ export function apiRouter(service: GlassService, env: Env, request: Request): Ro
     admin();
     return json(await service.deleteCohort({ ...params(url), key: p.key }));
   });
+  r.get('/api/cohorts/:key/members', async ({ url, params: p }) => {
+    const result = await service.cohortMembers({ ...params(url), key: p.key });
+    return csvOrJson(result, `cohort-${p.key}.csv`);
+  });
+  r.patch('/api/cohorts/:key/members', async ({ url, params: p }) => {
+    admin();
+    return json(await service.editCohortMembers({ ...params(url), ...(await body()), key: p.key }));
+  });
+  r.post('/api/cohorts/:key/duplicate', async ({ url, params: p }) => {
+    admin();
+    return json(await service.duplicateCohort({ ...params(url), ...(await body()), key: p.key }), {
+      status: 201,
+    });
+  });
 
   r.get('/api/insights', async ({ url }) => json(await service.listInsights(params(url))));
   r.get('/api/insights/:key', async ({ url, params: p }) =>
@@ -233,6 +596,30 @@ export function apiRouter(service: GlassService, env: Env, request: Request): Ro
   });
 
   r.get('/api/flags', async ({ url }) => json(await service.listFlags(params(url))));
+  r.get('/api/flags/definitions', async ({ url, request: req }) => {
+    server();
+    return withEtag(req, await service.flagDefinitions(params(url)));
+  });
+  r.get('/api/flags/schedules', async ({ url }) => json(await service.flagSchedules(params(url))));
+  r.delete('/api/flags/schedules/:id', async ({ url, params: p }) => {
+    admin();
+    return json(await service.cancelFlagSchedule({ ...params(url), id: p.id }));
+  });
+  r.post('/api/flags/evaluate', async ({ url }) =>
+    json(await service.evaluateFlags({ ...params(url), ...(await body()) })),
+  );
+  r.get('/api/flags/:key/history', async ({ url, params: p }) =>
+    json(await service.flagHistory({ ...params(url), key: p.key })),
+  );
+  r.get('/api/flags/:key/usage', async ({ url, params: p }) =>
+    json(await service.flagUsage({ ...params(url), key: p.key })),
+  );
+  r.post('/api/flags/:key/schedule', async ({ url, params: p }) => {
+    admin();
+    return json(await service.scheduleFlag({ ...params(url), ...(await body()), key: p.key }), {
+      status: 201,
+    });
+  });
   r.get('/api/flags/:key', async ({ url, params: p }) =>
     json(await service.getFlag({ ...params(url), key: p.key })),
   );
@@ -250,6 +637,32 @@ export function apiRouter(service: GlassService, env: Env, request: Request): Ro
     admin();
     return json(await service.createExperiment(await body()), { status: 201 });
   });
+  r.post('/api/experiments/plan', async ({ url }) =>
+    json(await service.planExperiment({ ...params(url), ...(await body()) })),
+  );
+  r.patch('/api/experiments/:key', async ({ url, params: p }) => {
+    admin();
+    return json(await service.editExperiment({ ...params(url), ...(await body()), key: p.key }));
+  });
+  r.post('/api/experiments/:key/duplicate', async ({ url, params: p }) => {
+    admin();
+    return json(
+      await service.duplicateExperiment({ ...params(url), ...(await body()), key: p.key }),
+      { status: 201 },
+    );
+  });
+  r.get('/api/holdouts', async ({ url }) => json(await service.listHoldouts(params(url))));
+  r.put('/api/holdouts/:key', async ({ url, params: p }) => {
+    admin();
+    return json(await service.saveHoldout({ ...params(url), ...(await body()), key: p.key }));
+  });
+  r.delete('/api/holdouts/:key', async ({ url, params: p }) => {
+    admin();
+    return json(await service.deleteHoldout({ ...params(url), key: p.key }));
+  });
+  r.get('/api/holdouts/:key/results', async ({ url, params: p }) =>
+    json(await service.holdoutResults({ ...params(url), key: p.key })),
+  );
   r.get('/api/experiments/:key', async ({ url, params: p }) =>
     json(await service.experimentResults({ ...params(url), key: p.key })),
   );

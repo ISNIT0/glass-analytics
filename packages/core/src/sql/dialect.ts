@@ -48,6 +48,13 @@ export interface Dialect {
   monthIndex(tsMs: string): string;
   /** Epoch milliseconds of the start of the month for an epoch-milliseconds expression. */
   monthStartMs(tsMs: string): string;
+  /**
+   * `floor(ln(abs(x)) / lnBase)` as an integer: the logarithmic bucket of a non-zero number,
+   * for percentile sketches (see sql/sketch.ts). Callers keep `x` away from zero.
+   */
+  logBucket(expr: string, lnBase: number): string;
+  /** The largest of several values (NULL if any is NULL). */
+  greatest(exprs: readonly string[]): string;
 }
 
 /** Characters allowed in property keys. Excluding quotes and backslashes keeps JSON paths injection-proof. */
@@ -96,6 +103,9 @@ export const sqlite: Dialect = {
     `(CAST(strftime('%Y', (${ts}) / 1000, 'unixepoch') AS INTEGER) * 12 + CAST(strftime('%m', (${ts}) / 1000, 'unixepoch') AS INTEGER) - 1)`,
   monthStartMs: (ts) =>
     `(CAST(strftime('%s', (${ts}) / 1000, 'unixepoch', 'start of month') AS INTEGER) * 1000)`,
+  logBucket: (expr, lnBase) => `CAST(floor(ln(abs(${expr})) / ${sqlNumber(lnBase)}) AS INTEGER)`,
+  // SQLite's multi-argument MAX is the scalar maximum, and NULL when any argument is.
+  greatest: (exprs) => (exprs.length === 1 ? exprs[0]! : `MAX(${exprs.join(', ')})`),
 };
 
 function sqlitePath(path: readonly string[]): string {
@@ -134,5 +144,12 @@ export function basin(
     monthIndex: (ts) =>
       `(CAST(date_part('year', to_timestamp_millis(${ts})) AS INT) * 12 + CAST(date_part('month', to_timestamp_millis(${ts})) AS INT) - 1)`,
     monthStartMs: (ts) => `(to_unixtime(date_trunc('month', to_timestamp_millis(${ts}))) * 1000)`,
+    logBucket: (expr, lnBase) =>
+      `CAST(floor(ln(abs(CAST(${expr} AS DOUBLE))) / ${sqlNumber(lnBase)}) AS BIGINT)`,
+    // DataFusion's greatest() skips NULLs; the CASE keeps SQLite's "NULL if any is NULL".
+    greatest: (exprs) =>
+      exprs.length === 1
+        ? exprs[0]!
+        : `(CASE WHEN ${exprs.map((e) => `${e} IS NULL`).join(' OR ')} THEN NULL ELSE greatest(${exprs.join(', ')}) END)`,
   };
 }

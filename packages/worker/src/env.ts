@@ -49,6 +49,26 @@ export interface R2Bucket {
   delete(keys: string | string[]): Promise<void>;
 }
 
+/** A Cloudflare Queues producer binding. */
+interface QueueProducer {
+  send(body: unknown, options?: { delaySeconds?: number }): Promise<void>;
+  sendBatch(messages: { body: unknown; delaySeconds?: number }[]): Promise<void>;
+}
+
+/** One message handed to the Worker's queue() handler. */
+export interface QueueMessage<T = unknown> {
+  id: string;
+  body: T;
+  attempts: number;
+  ack(): void;
+  retry(options?: { delaySeconds?: number }): void;
+}
+
+export interface MessageBatch<T = unknown> {
+  queue: string;
+  messages: QueueMessage<T>[];
+}
+
 /** A Cloudflare Pipelines stream binding. */
 export interface PipelineStream {
   send(records: object[]): Promise<void>;
@@ -64,6 +84,8 @@ export interface Env {
    * bound here until the hourly job has moved its objects into REPLAYS (see `moveLegacyReplays`).
    */
   REPLAYS_LEGACY?: R2Bucket;
+  /** Queue for destination deliveries. Optional: without it, the five-minute task delivers. */
+  DELIVERIES?: QueueProducer;
   /** Lake mode: Pipelines streams feeding Iceberg tables. */
   EVENTS_STREAM?: PipelineStream;
   IDENTITIES_STREAM?: PipelineStream;
@@ -74,6 +96,10 @@ export interface Env {
   GLASS_ADMIN_KEY?: string;
   /** Read-only key for agents and shared dashboards. */
   GLASS_READ_KEY?: string;
+  /** Key for backends (import, flag definitions, source maps). Derived from the admin key when unset. */
+  GLASS_SERVER_KEY?: string;
+  /** Key for secrets stored in D1 (destination credentials). Derived from the salt secret when unset. */
+  GLASS_ENCRYPTION_KEY?: string;
   /** Secret used to derive daily-rotating ids in cookieless mode. */
   GLASS_SALT_SECRET?: string;
   /** Public URL of this Worker (for links in agent responses). Inferred from requests when unset. */

@@ -8,9 +8,18 @@
  */
 
 import type { z } from 'zod/v4';
+import { runFunnelCorrelation } from './correlation.ts';
 import { runFunnel } from './funnel.ts';
 import { runRetention } from './retention.ts';
-import { funnelSpec, retentionSpec, trendsSpec, webSpec } from './schemas.ts';
+import { runRevenue } from './revenue.ts';
+import {
+  funnelCorrelationSpec,
+  funnelSpec,
+  retentionSpec,
+  revenueSpec,
+  trendsSpec,
+  webSpec,
+} from './schemas.ts';
 import { runTrends } from './trends.ts';
 import type { QueryContext, ResultBase } from './types.ts';
 import { runWeb } from './web.ts';
@@ -46,15 +55,27 @@ export const INSIGHTS = {
   }),
   funnel: define({
     description:
-      'Conversion through ordered steps within a time window, with drop-off per step and optional breakdown. Use for signup or checkout flows.',
+      'Conversion through steps within a time window: ordered, strict or unordered, with exclusions and optional steps, drop-off and median time per step, breakdowns (first/last touch, a step, all steps), time-to-convert distribution or conversion over time (viz). Use for signup or checkout flows.',
     schema: funnelSpec,
     run: runFunnel,
+  }),
+  funnel_correlation: define({
+    description:
+      'What goes with converting through a funnel and with dropping off: other events done during the attempt, or values of properties (e.g. person.plan, browser), ranked by odds ratio with significance. Use after query_funnel to explain a drop-off.',
+    schema: funnelCorrelationSpec,
+    run: runFunnelCorrelation,
   }),
   retention: define({
     description:
       'Cohort retention: of people who first did an event in each day/week/month, how many came back to do another event in later periods.',
     schema: retentionSpec,
     run: runRetention,
+  }),
+  revenue: define({
+    description:
+      'Revenue and recurring revenue per period: gross, refunds, net, paying customers, ARPU, MRR/ARR and its movements (new, expansion, contraction, churned, reactivated), churn and LTV, by product or first-touch channel, and the top customers or accounts. Reads revenue events and Stripe.',
+    schema: revenueSpec,
+    run: runRevenue,
   }),
 } as const;
 
@@ -64,9 +85,11 @@ export function isInsightKind(kind: string): kind is InsightKind {
   return Object.hasOwn(INSIGHTS, kind);
 }
 
+export * from './correlation.ts';
 export * from './experiment.ts';
 export * from './funnel.ts';
 export * from './retention.ts';
+export * from './revenue.ts';
 export * from './schemas.ts';
 export * from './trends.ts';
 export * from './types.ts';

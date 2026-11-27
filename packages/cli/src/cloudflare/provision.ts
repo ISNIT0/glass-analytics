@@ -81,6 +81,36 @@ export async function ensureBucket(
   }
 }
 
+/**
+ * The delivery queue for destinations and its dead-letter queue. Returns null when the token
+ * can't create queues: destinations still work, through the Worker's five-minute outbox.
+ */
+export async function ensureQueues(
+  wrangler: Wrangler,
+  name: string,
+  report: ProvisionReport,
+): Promise<{ deliveries: string; dlq: string } | null> {
+  const names = { deliveries: `${name}-deliveries`, dlq: `${name}-deliveries-dlq` };
+  for (const queue of [names.dlq, names.deliveries]) {
+    try {
+      await must(wrangler, ['queues', 'create', queue]);
+      report('created', `Queue "${queue}" for destinations`);
+    } catch (err) {
+      if (isAlreadyExists(err)) {
+        report('ok', `Queue "${queue}" for destinations`, 'exists');
+        continue;
+      }
+      report(
+        'skipped',
+        'Destination queue',
+        'the API token needs Account › Queues › Edit; deliveries use the five-minute outbox until then',
+      );
+      return null;
+    }
+  }
+  return names;
+}
+
 /** One Pipelines resource, as the REST API lists it. */
 export interface PipelinesItem {
   id: string;
@@ -332,7 +362,8 @@ export function renderWranglerConfig(config: GlassConfig): string {
       },
     ],
     vars,
-    triggers: { crons: ['17 * * * *'] },
+    // Every five minutes: scheduled flag changes, alerts and exports; hourly housekeeping runs on one tick an hour.
+    triggers: { crons: ['*/5 * * * *'] },
     observability: { enabled: true },
   };
   if (config.replay) {
@@ -343,6 +374,22 @@ export function renderWranglerConfig(config: GlassConfig): string {
       { binding: 'REPLAYS', bucket_name: bucket, ...(jurisdiction ? { jurisdiction } : {}) },
       ...(legacyBucket ? [{ binding: 'REPLAYS_LEGACY', bucket_name: legacyBucket }] : []),
     ];
+  }
+  if (config.queues) {
+    wrangler.queues = {
+      producers: [{ binding: 'DELIVERIES', queue: config.queues.deliveries }],
+      consumers: [
+        {
+          queue: config.queues.deliveries,
+          // A delivery is a request or two; 25 keeps a batch inside the Free plan's 50 subrequests.
+          max_batch_size: 25,
+          max_batch_timeout: 5,
+          // The Worker retries with its own backoff (message.retry) before giving up.
+          max_retries: 8,
+          dead_letter_queue: config.queues.dlq,
+        },
+      ],
+    };
   }
   if (config.lake) {
     wrangler.pipelines = [
